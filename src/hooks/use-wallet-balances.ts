@@ -1,0 +1,185 @@
+import { useMemo } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { AssetValue, Chain, USwapNumber } from '@tcswap/core'
+import { useAssets } from '@/hooks/use-assets'
+import { useRates } from '@/hooks/use-rates'
+import { useAccounts } from '@/hooks/use-wallets'
+import { getAlchemyTokenBalances, getThorBankBalances } from '@/lib/api'
+import { isThorNativeToken, thorBalanceKey } from '@/lib/swap-helpers'
+import { getUSwap } from '@/lib/wallets'
+import { WalletAccount } from '@/store/wallets-store'
+
+const ETH_RPC_URL = process.env.NEXT_PUBLIC_ALCHEMY_ETH_RPC_URL || 'https://eth.llamarpc.com'
+
+// Spam tokens airdropped into user wallets. Prefer the address list: a ticker match also hides
+// any legitimate token that happens to share the symbol.
+const ETH_SCAM_TICKERS = new Set(['HEX', 'AICC', 'ETHG', 'PVC', 'PAP'])
+
+// Uncurated tokens (found via Alchemy/DexScreener) below this USD value are hidden as dust/spam.
+const MIN_UNCURATED_USD_VALUE = 1
+
+const SCAM_TOKEN_ADDRESSES = new Set([
+  '0x6051c1354ccc51b4d561e43b02735deae64768b8' // ETH.YRISE
+])
+
+const isScamToken = (b: AssetValue): boolean => {
+  const address = b.address?.toLowerCase()
+  if (address && SCAM_TOKEN_ADDRESSES.has(address)) return true
+  return b.chain === Chain.Ethereum && !!b.ticker && ETH_SCAM_TICKERS.has(b.ticker.toUpperCase())
+}
+
+function assetIdentifier(b: AssetValue): string {
+  // Secured Asset canonical identifier is the bare "<CHAIN>-<SYMBOL>" form (no "THOR." prefix).
+  if (b.isSecuredAsset) return b.symbol
+  const identifier = b.isSynthetic || b.isTradeAsset ? b.ticker : b.address ? `${b.ticker}-${b.address}` : b.ticker
+  return `${b.chain}.${identifier}`
+}
+
+export interface TokenBalance {
+  balance: AssetValue
+  amount: number
+  usdValue?: USwapNumber
+  logoURI?: string
+}
+
+export interface ChainWalletData {
+  account: WalletAccount
+  tokens: TokenBalance[]
+  totalUsd?: USwapNumber
+  isLoading: boolean
+}
+
+export const useWalletBalances = () => {
+  const { assets } = useAssets()
+  const accounts = useAccounts()
+  const uSwap = getUSwap()
+  const queryClient = useQueryClient()
+
+  const { iconMap, curatedIdentifiers } = useMemo(() => {
+    const iconMap = new Map<string, string>()
+    const curatedIdentifiers = new Set<string>()
+    if (!assets) return { iconMap, curatedIdentifiers }
+    for (const asset of assets) {
+      const key = `${asset.identifier}`.toLowerCase()
+      curatedIdentifiers.add(key)
+      if (asset.logoURI) iconMap.set(key, asset.logoURI)
+    }
+    return { iconMap, curatedIdentifiers }
+  }, [assets])
+
+  const queryKey = accounts.map(a => `${a.provider}-${a.network}-${a.address}`).join(',')
+
+  const { data: allBalances, isLoading } = useQuery({
+    queryKey: ['wallet-all-balances', queryKey],
+    queryFn: async () => {
+      const results = await Promise.allSettled(
+        accounts.map(async account => {
+          const wallet = uSwap.getWallet(account.provider, account.network)
+          if (!wallet || !('getBalance' in wallet)) return { account, balances: [] as AssetValue[], alchemyLogoMap: new Map<string, string>() }
+          const rawBalances = await queryClient.ensureQueryData({
+            queryKey: ['account-balance', account.network, account.address],
+            queryFn: () => (wallet as any).getBalance(wallet.address, false),
+            staleTime: 30_000
+          })
+          let balances: AssetValue[] = rawBalances ? [...rawBalances] : []
+
+          // For THORChain, also pull bank-module balances directly so Secured Asset denoms
+          // (btc-btc, eth-usdc-0x…) and pool-less natives (sTCY, LQDY…) are always surfaced.
+          // On collisions the bank entry wins.
+          if (account.network === Chain.THORChain) {
+            const bankBalances = await getThorBankBalances(account.address)
+            const bankKeys = new Set(bankBalances.map(thorBalanceKey))
+            balances = [...balances.filter(b => !bankKeys.has(thorBalanceKey(b))), ...bankBalances]
+          }
+
+          // For Ethereum, supplement with Alchemy to discover meme coins not in the curated API list
+          const alchemyLogoMap = new Map<string, string>()
+          if (account.network === Chain.Ethereum) {
+            const alchemyBalances = await getAlchemyTokenBalances(wallet.address, ETH_RPC_URL)
+            const existingAddresses = new Set(
+              balances.map(b => b.address?.toLowerCase()).filter(Boolean)
+            )
+            for (const t of alchemyBalances) {
+              const addr = t.contractAddress.toLowerCase()
+              if (t.logo) alchemyLogoMap.set(addr, t.logo)
+              if (existingAddresses.has(addr)) continue
+              if (SCAM_TOKEN_ADDRESSES.has(addr)) continue
+              if (t.symbol && ETH_SCAM_TICKERS.has(t.symbol.toUpperCase())) continue
+              const value = BigInt(t.tokenBalance).toString()
+              try {
+                const av = AssetValue.from({
+                  asset: `ETH.${t.symbol}-${t.contractAddress}`,
+                  fromBaseDecimal: t.decimals,
+                  value
+                })
+                balances.push(av)
+              } catch {
+                // skip tokens that can't be parsed
+              }
+            }
+          }
+
+          return { account, balances: balances.filter(b => !isScamToken(b)), alchemyLogoMap }
+        })
+      )
+      return results.map((r, i) => ({
+        account: accounts[i],
+        balances: r.status === 'fulfilled' ? r.value.balances : ([] as AssetValue[]),
+        alchemyLogoMap: r.status === 'fulfilled' ? r.value.alchemyLogoMap : new Map<string, string>()
+      }))
+    },
+    // Not gated on hasHydrated — rehydration can hang (e.g. a hardware wallet waiting on the
+    // device) and accounts connected in the meantime must still fetch.
+    enabled: accounts.length > 0,
+    staleTime: 30_000,
+    retry: false,
+    refetchOnMount: false
+  })
+
+  const tokenIdentifiers = useMemo(() => {
+    if (!allBalances) return []
+    const ids = new Set<string>()
+    for (const { balances } of allBalances) {
+      for (const b of balances) {
+        ids.add(assetIdentifier(b))
+      }
+    }
+    return Array.from(ids)
+  }, [allBalances])
+
+  const { rates, logos: dexScreenerLogos } = useRates(tokenIdentifiers)
+
+  const walletData: ChainWalletData[] = useMemo(() => {
+    if (!allBalances) {
+      return accounts.map(account => ({ account, tokens: [], totalUsd: undefined, isLoading }))
+    }
+
+    return allBalances.map(({ account, balances, alchemyLogoMap }) => {
+      const tokens: TokenBalance[] = balances
+        .filter(b => b.ticker && b.ticker.toLowerCase() !== 'unknown')
+        .map(b => {
+          const rate = rates[assetIdentifier(b)]
+          const amount = parseFloat(b.toSignificant())
+          const usdValue = rate ? rate.mul(amount) : undefined
+          const identifier = assetIdentifier(b)
+          const key = identifier.toLowerCase()
+          const logoURI = iconMap.get(key) ?? dexScreenerLogos[identifier] ?? (b.address ? alchemyLogoMap.get(b.address.toLowerCase()) : undefined)
+          return { balance: b, amount, usdValue, logoURI }
+        })
+        .filter(t => {
+          const key = `${assetIdentifier(t.balance)}`.toLowerCase()
+          if (curatedIdentifiers.has(key) || isThorNativeToken(t.balance)) return true
+          // Outside the curated list, a token is shown only when it is worth something: airdropped
+          // spam (1 DOG, 15 SEND…) is priced at dust, if at all.
+          return t.usdValue !== undefined && t.usdValue.gte(MIN_UNCURATED_USD_VALUE)
+        })
+
+      const pricedTokens = tokens.filter(t => t.usdValue !== undefined)
+      const totalUsd = pricedTokens.length > 0 ? pricedTokens.slice(1).reduce((sum, t) => sum.add(t.usdValue!), pricedTokens[0].usdValue!) : undefined
+
+      return { account, tokens, totalUsd, isLoading: false }
+    })
+  }, [allBalances, rates, accounts, iconMap, curatedIdentifiers, dexScreenerLogos, isLoading])
+
+  return { walletData, isLoading }
+}
