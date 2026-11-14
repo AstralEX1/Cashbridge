@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Regression tests for the localization protocol (docs/localization.md), i.e.
+// Regression tests for the localization protocol, i.e.
 // the two properties from issue #101:
 //   1. Editing one locale never changes English or any other locale.
 //   2. A translation improved by hand is never overwritten by the translator.

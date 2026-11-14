@@ -569,6 +569,34 @@
   }
 }
 
+@keyframes wallet-logo-bounce {
+  0%,
+  1%,
+  28%,
+  100% {
+    scale: 1;
+  }
+  7% {
+    scale: 0.8261;
+  }
+  12% {
+    scale: 0.85;
+  }
+  21% {
+    scale: 1.0239;
+  }
+}
+
+[data-wallet-logo-bounce]:is(:hover, :focus-visible) .wallet-choice-icon {
+  animation: wallet-logo-bounce 1s 1 forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-wallet-logo-bounce]:is(:hover, :focus-visible) .wallet-choice-icon {
+    animation: none;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

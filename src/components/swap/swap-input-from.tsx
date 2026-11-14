@@ -3,6 +3,7 @@ import { useTranslations } from 'next-intl'
 import { USwapNumber } from '@tcswap/core'
 import { DecimalInput } from '@/components/decimal/decimal-input'
 import { BridgeAssetButton, BridgeAssetPicker, type BridgeInputProps } from '@/components/swap/bridge-asset-picker'
+import { BridgeInputSwitcher } from '@/components/swap/bridge-input-switcher'
 import { SwapBalance } from '@/components/swap/swap-balance'
 import { BridgeWalletBadge } from '@/components/swap/bridge-wallet-badge'
 import { useSwapRates } from '@/hooks/use-rates'
@@ -20,30 +21,35 @@ export const SwapInputFrom = ({ selecting, onSelectOpenChange }: BridgeInputProp
     requestAnimationFrame(() => trigger.current?.focus())
   }
 
-  if (selecting) return <BridgeAssetPicker side="from" onClose={close} />
-
   return (
-    <section className="bridge-input" aria-label={t('from')}>
-      <div className="bridge-input-heading">
-        <BridgeAssetButton
-          ref={trigger}
-          asset={assetFrom}
-          aria-label={t('from')}
-          aria-expanded={selecting}
-          onClick={() => onSelectOpenChange(true)}
-        />
-        <BridgeWalletBadge side="from" />
+    <BridgeInputSwitcher selecting={selecting}>
+      <div className="bridge-input-switcher__slot" aria-hidden={selecting} inert={selecting}>
+        <section className="bridge-input" aria-label={t('from')}>
+          <div className="bridge-input-heading">
+            <BridgeAssetButton
+              ref={trigger}
+              asset={assetFrom}
+              aria-label={t('from')}
+              aria-expanded={selecting}
+              onClick={() => onSelectOpenChange(true)}
+            />
+            <BridgeWalletBadge side="from" />
+          </div>
+          <label htmlFor="swap-sell-amount" className="sr-only">
+            {t('sendAmount')}
+          </label>
+          <div className="bridge-amount-row">
+            <DecimalInput id="swap-sell-amount" className="bridge-amount" amount={amountFrom} onAmountChange={setAmountFrom} autoComplete="off" />
+            <SwapBalance />
+          </div>
+          <div className="bridge-input-meta">
+            <span>{toCurrencyFixed(valueFrom.mul(rateFrom || new USwapNumber(0)).toCurrency('$', { trimTrailingZeros: false }))}</span>
+          </div>
+        </section>
       </div>
-      <label htmlFor="swap-sell-amount" className="sr-only">
-        {t('sendAmount')}
-      </label>
-      <div className="bridge-amount-row">
-        <DecimalInput id="swap-sell-amount" className="bridge-amount" amount={amountFrom} onAmountChange={setAmountFrom} autoComplete="off" />
-        <SwapBalance />
+      <div className="bridge-input-switcher__slot bridge-input-switcher__picker-slot" aria-hidden={!selecting} inert={!selecting}>
+        <BridgeAssetPicker side="from" open={selecting} onClose={close} />
       </div>
-      <div className="bridge-input-meta">
-        <span>{toCurrencyFixed(valueFrom.mul(rateFrom || new USwapNumber(0)).toCurrency('$', { trimTrailingZeros: false }))}</span>
-      </div>
-    </section>
+    </BridgeInputSwitcher>
   )
 }

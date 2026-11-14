@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Automatic UI translation, with protection for hand-reviewed translations.
-// The protocol is documented in docs/localization.md; the short version:
+// The protocol:
 //
 // English (src/i18n/messages/en.json) is the only input to translation, so
 // editing zh.json can never change en.json or any other locale. Every other

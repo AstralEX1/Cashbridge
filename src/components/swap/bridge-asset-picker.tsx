@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, type ComponentProps } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import { Chain } from '@tcswap/core'
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -25,17 +25,19 @@ export const BridgeAssetButton = ({ asset, ticker, ...props }: ComponentProps<'b
     <button type="button" className="bridge-pill bridge-asset-button" {...props}>
       {chain ? (
         <>
-          <img src={`/networks/${chain.toLowerCase()}.svg`} width={18} height={18} alt="" />
+          <span className="bridge-asset-icon" aria-hidden="true">
+            <img src={`/networks/${chain.toLowerCase()}.svg`} width={22} height={22} alt="" />
+          </span>
           <span>{chainLabel(chain)}</span>
-          {ticker === 'PUSD' ? (
-            <span className="bridge-token-mark" aria-hidden="true">
-              P
-            </span>
-          ) : asset ? (
-            <AssetIcon asset={asset} className="size-5 [&_img]:size-5" />
-          ) : (
-            <img src="/networks/bch.svg" width={20} height={20} alt="" />
-          )}
+          <span className="bridge-asset-icon" aria-hidden="true">
+            {ticker === 'PUSD' ? (
+              <span className="bridge-token-mark">P</span>
+            ) : asset ? (
+              <AssetIcon asset={asset} className="size-[22px] [&_img]:size-[22px]" showNetworkIcons={false} />
+            ) : (
+              <img src="/networks/bch.svg" width={22} height={22} alt="" />
+            )}
+          </span>
           <span>{ticker ?? asset?.ticker}</span>
         </>
       ) : (
@@ -46,7 +48,7 @@ export const BridgeAssetButton = ({ asset, ticker, ...props }: ComponentProps<'b
   )
 }
 
-export const BridgeAssetPicker = ({ side, onClose }: { side: 'from' | 'to'; onClose: () => void }) => {
+export const BridgeAssetPicker = ({ side, open, onClose }: { side: 'from' | 'to'; open: boolean; onClose: () => void }) => {
   const t = useTranslations('bridge.form')
   const selected = useAssetFrom()
   const setAssetFrom = useSetAssetFrom()
@@ -56,6 +58,7 @@ export const BridgeAssetPicker = ({ side, onClose }: { side: 'from' | 'to'; onCl
   const { mimir, mayaMimir } = useMimir()
   const [chain, setChain] = useState<Chain | undefined>(selected?.chain)
   const [search, setSearch] = useState('')
+  const searchInput = useRef<HTMLInputElement>(null)
   const assets = useMemo(() => modeAssets?.filter(isBridgeSellAsset) ?? [], [modeAssets])
   const chains = useMemo(() => [...new Set(assets.map(a => a.chain))].sort((a, b) => chainLabel(a).localeCompare(chainLabel(b))), [assets])
   const activeChain = side === 'to' ? Chain.BitcoinCash : (chain ?? selected?.chain ?? chains[0])
@@ -63,6 +66,13 @@ export const BridgeAssetPicker = ({ side, onClose }: { side: 'from' | 'to'; onCl
   const tokens = assets.filter(
     a => a.chain === activeChain && [a.ticker, a.name, a.identifier, chainLabel(a.chain)].some(value => value?.toLowerCase().includes(query))
   )
+
+  useEffect(() => {
+    if (!open) return
+    setChain(selected?.chain)
+    setSearch('')
+    searchInput.current?.focus()
+  }, [open, selected?.chain])
 
   return (
     <section
@@ -83,12 +93,12 @@ export const BridgeAssetPicker = ({ side, onClose }: { side: 'from' | 'to'; onCl
       <div className="bridge-search">
         <Search size={19} aria-hidden="true" />
         <input
+          ref={searchInput}
           type="search"
           aria-label={t('search')}
           placeholder={t('search')}
           value={search}
           onChange={e => setSearch(e.target.value)}
-          autoFocus
           autoComplete="off"
         />
       </div>
@@ -119,7 +129,7 @@ export const BridgeAssetPicker = ({ side, onClose }: { side: 'from' | 'to'; onCl
                     onClose()
                   }}
                 >
-                  <AssetIcon asset={asset} className="size-5 [&_img]:size-5" />
+                  <AssetIcon asset={asset} className="size-5 [&_img]:size-5" showNetworkIcons={false} />
                   {asset.ticker}
                 </button>
               )

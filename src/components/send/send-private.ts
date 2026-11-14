@@ -12,9 +12,9 @@ import { TokenBalance } from '@/hooks/use-wallet-balances'
 import { getQuotes } from '@/lib/api'
 import { resolveQuoteError } from '@/lib/errors'
 
-// The Send dialog's Private Send tab is the swap form's private send (see docs/private-swaps.md): a
-// same-asset Houdini order whose deposit the connected wallet pays. Only assets on Houdini's list qualify, and
-// not XRP: its deposit needs Houdini's destination tag, which the toolboxes would sign as a free-text memo.
+// The Send dialog's Private Send tab places a same-asset Houdini order whose deposit the connected wallet pays.
+// Only assets on Houdini's list qualify. XRP is excluded because its deposit needs a destination tag
+// that the toolboxes would sign as a free-text memo.
 export const usePrivateSendAssetLookup = () => {
   const { assets } = useAssets()
 

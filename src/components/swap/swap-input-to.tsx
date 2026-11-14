@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { useTranslations } from 'next-intl'
 import { USwapNumber } from '@tcswap/core'
 import { BridgeAssetButton, BridgeAssetPicker, type BridgeInputProps } from '@/components/swap/bridge-asset-picker'
+import { BridgeInputSwitcher } from '@/components/swap/bridge-input-switcher'
 import { BridgeWalletBadge } from '@/components/swap/bridge-wallet-badge'
 import { PriceImpact } from '@/components/swap/price-impact'
 import { usePusdEstimate } from '@/components/swap/pusd-swap'
@@ -38,43 +39,48 @@ export const SwapInputTo = ({ priceImpact, selecting, onSelectOpenChange }: Brid
       : new USwapNumber(quote.expectedBuyAmount).toSignificant()
   const busy = isLoading || (isPusd && estimate.isLoading)
 
-  if (selecting) return <BridgeAssetPicker side="to" onClose={close} />
-
   return (
-    <section className="bridge-input" aria-label={t('to')}>
-      <div className="bridge-input-heading">
-        <BridgeAssetButton
-          ref={trigger}
-          asset={assetTo}
-          ticker={destination}
-          aria-label={t('to')}
-          aria-expanded={selecting}
-          onClick={() => onSelectOpenChange(true)}
-        />
-        <BridgeWalletBadge side="to" />
+    <BridgeInputSwitcher selecting={selecting}>
+      <div className="bridge-input-switcher__slot" aria-hidden={selecting} inert={selecting}>
+        <section className="bridge-input" aria-label={t('to')}>
+          <div className="bridge-input-heading">
+            <BridgeAssetButton
+              ref={trigger}
+              asset={assetTo}
+              ticker={destination}
+              aria-label={t('to')}
+              aria-expanded={selecting}
+              onClick={() => onSelectOpenChange(true)}
+            />
+            <BridgeWalletBadge side="to" />
+          </div>
+          <output className="bridge-amount" aria-label={t('receiveAmount')} aria-live="polite" aria-busy={busy}>
+            {busy ? <span className="bridge-muted animate-pulse">···</span> : (output ?? '')}
+          </output>
+          <div className="bridge-input-meta">
+            <span>
+              {isPusd
+                ? null
+                : rateTo && quote
+                  ? toCurrencyFixed(new USwapNumber(quote.expectedBuyAmount).mul(rateTo).toCurrency('$', { trimTrailingZeros: false }))
+                  : t('receiveAmount')}
+            </span>
+            <div className="flex items-center gap-2">
+              {priceImpact && (
+                <Tooltip content={tSwap('confirm.priceImpact')}>
+                  <span>
+                    <PriceImpact priceImpact={priceImpact} />
+                  </span>
+                </Tooltip>
+              )}
+              <SwapQuoteTimer quote={quote} isLoading={isLoading} refetch={refetch} />
+            </div>
+          </div>
+        </section>
       </div>
-      <output className="bridge-amount" aria-label={t('receiveAmount')} aria-live="polite" aria-busy={busy}>
-        {busy ? <span className="bridge-muted animate-pulse">···</span> : (output ?? '')}
-      </output>
-      <div className="bridge-input-meta">
-        <span>
-          {isPusd
-            ? null
-            : rateTo && quote
-              ? toCurrencyFixed(new USwapNumber(quote.expectedBuyAmount).mul(rateTo).toCurrency('$', { trimTrailingZeros: false }))
-              : t('receiveAmount')}
-        </span>
-        <div className="flex items-center gap-2">
-          {priceImpact && (
-            <Tooltip content={tSwap('confirm.priceImpact')}>
-              <span>
-                <PriceImpact priceImpact={priceImpact} />
-              </span>
-            </Tooltip>
-          )}
-          <SwapQuoteTimer quote={quote} isLoading={isLoading} refetch={refetch} />
-        </div>
+      <div className="bridge-input-switcher__slot bridge-input-switcher__picker-slot" aria-hidden={!selecting} inert={!selecting}>
+        <BridgeAssetPicker side="to" open={selecting} onClose={close} />
       </div>
-    </section>
+    </BridgeInputSwitcher>
   )
 }

@@ -6,7 +6,7 @@ import { useLocale, useTranslations } from 'next-intl'
 import { useBanner } from '@/hooks/use-banner'
 import { bannerCopy, bannerIcon } from '@/lib/banner'
 
-// Published from the affiliate admin and polled at runtime — see docs/banner.md.
+// Published from the affiliate admin and polled at runtime.
 const STORAGE_KEY = 'announcement-dismissed'
 
 export function AnnouncementBanner() {

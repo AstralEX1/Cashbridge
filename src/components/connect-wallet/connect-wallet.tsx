@@ -19,6 +19,8 @@ interface ConnectWalletProps {
   chain?: Chain
 }
 
+const WALLETS_WITH_LOGO_BOUNCE = new Set(['metamask', 'trustwallet', 'rabby', 'okx'])
+
 export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProps) => {
   const t = useTranslations('wallet')
   const [selectedWallet, setSelectedWallet] = useState<WalletParams | undefined>(undefined)
@@ -91,7 +93,8 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
           role={isClickable ? 'button' : undefined}
           tabIndex={isClickable ? 0 : undefined}
           aria-label={wallet.label}
-          className={cn('mb-1 flex items-center space-x-3 rounded-2xl border border-transparent p-3', {
+          data-wallet-logo-bounce={WALLETS_WITH_LOGO_BOUNCE.has(wallet.key) ? '' : undefined}
+          className={cn('mb-1 flex items-center space-x-3 rounded-2xl border border-transparent p-3 transition-colors duration-[250ms] ease-out', {
             'border-border-btn-modal-hover': isSelected,
             'opacity-25': !isHighlighted,
             'hover:bg-sub-container-modal/50 cursor-pointer': isClickable,
@@ -105,7 +108,7 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
             }
           }}
         >
-          <WalletIcon walletKey={wallet.key} width={32} height={32} />
+          <WalletIcon walletKey={wallet.key} width={32} height={32} className="wallet-choice-icon shrink-0" />
           <div className="flex-1">
             <div className="text-txt-high-contrast font-medium">{wallet.label}</div>
             <div className="text-xs">

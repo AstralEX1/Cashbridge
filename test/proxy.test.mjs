@@ -7,6 +7,7 @@ import { NextRequest } from 'next/server.js'
 
 const KEY = 'sentinel-key-do-not-ship-7f3a'
 const seen = []
+const upstreamStatuses = []
 const upstream = createServer((req, res) => {
   let body = ''
   req.on('data', c => (body += c))
@@ -14,6 +15,7 @@ const upstream = createServer((req, res) => {
     seen.push({ method: req.method, url: req.url, headers: req.headers, body })
     res.setHeader('content-type', 'application/json')
     res.setHeader('x-echo-key', String(req.headers['x-api-key'])) // a careless upstream
+    res.statusCode = upstreamStatuses.shift() ?? 200
     res.end(JSON.stringify({ ok: true, path: req.url }))
   })
 })
@@ -48,6 +50,22 @@ test('an allowed call reaches the upstream with the key; the response carries no
   assert.ok(!text.includes(KEY))
   assert.equal(res.headers.get('x-echo-key'), null)
   for (const [, v] of res.headers) assert.ok(!v.includes(KEY))
+})
+
+test('a quote retries one transient gateway response before returning it to the browser', async () => {
+  seen.length = 0
+  upstreamStatuses.push(502, 200)
+  const res = await call('POST', ['v1', 'quote'], { body: JSON.stringify({ sellAsset: 'ETH.ETH', buyAsset: 'BCH.BCH' }) })
+  assert.equal(res.status, 200)
+  assert.equal(seen.length, 2)
+})
+
+test('a persistent quote gateway failure is returned after one retry', async () => {
+  seen.length = 0
+  upstreamStatuses.push(502, 502)
+  const res = await call('POST', ['v1', 'quote'], { body: JSON.stringify({ sellAsset: 'ETH.ETH', buyAsset: 'BCH.BCH' }) })
+  assert.equal(res.status, 502)
+  assert.equal(seen.length, 2)
 })
 
 test('only allowlisted query parameters are forwarded', async () => {

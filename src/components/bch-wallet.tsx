@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useWizardConnect, WizardConnectQRDialog } from '@wizardconnect/react'
 import type { DappConnectionManager } from '@wizardconnect/dapp'
 import { AppConfig } from '@/config'
@@ -9,12 +9,13 @@ import { useActiveBridge } from '@/store/transaction-store'
 
 // The user's own BCH wallet, connected over WizardConnect. It receives the first leg's BCH and
 // signs the second leg. The public binding (key, path, index, addresses) is remembered in
-// localStorage. The relay session is also remembered in this browser until disconnection.
+// localStorage. The relay session stays remembered until the user disconnects or pairs again.
 // A restored connection is still checked to be the same key.
 
 const RECEIVE_INDEX = 0
 const STORAGE_KEY = 'tc-bch-binding'
 const SESSION_KEY = 'tc-bch-wizardconnect'
+const SESSION_BACKUP_KEY = `${SESSION_KEY}-reconnect`
 // A restored session waits for the wallet app to come back online; after this the user is offered
 // a fresh QR pairing instead of an endless spinner.
 const RECONNECT_PATIENCE_MS = 15_000
@@ -70,6 +71,55 @@ export const browserSessionStorage = {
   }
 }
 
+// WizardConnect clears its stored credentials after a remote disconnect. Preserve one copy so a
+// network handoff can resume the same pairing; explicit disconnect and re-pair remove both copies.
+const wizardConnectStorage = {
+  getItem: (key: string) => {
+    const saved = browserSessionStorage.getItem(key)
+    if (saved || key !== SESSION_KEY) return saved
+    try {
+      const backup = window.localStorage.getItem(SESSION_BACKUP_KEY)
+      if (backup) {
+        browserSessionStorage.setItem(key, backup)
+        window.localStorage.removeItem(SESSION_BACKUP_KEY)
+      }
+      return backup
+    } catch {
+      return null
+    }
+  },
+  setItem: (key: string, value: string) => {
+    browserSessionStorage.setItem(key, value)
+    if (key === SESSION_KEY) {
+      try {
+        window.localStorage.removeItem(SESSION_BACKUP_KEY)
+      } catch {
+        // The active session is already saved.
+      }
+    }
+  },
+  removeItem: (key: string) => {
+    if (key === SESSION_KEY) {
+      try {
+        const saved = browserSessionStorage.getItem(key)
+        if (saved) window.localStorage.setItem(SESSION_BACKUP_KEY, saved)
+      } catch {
+        // The session can still be restored from the primary storage if available.
+      }
+    }
+    browserSessionStorage.removeItem(key)
+  }
+}
+
+const clearWizardConnectSession = () => {
+  browserSessionStorage.removeItem(SESSION_KEY)
+  try {
+    window.localStorage.removeItem(SESSION_BACKUP_KEY)
+  } catch {
+    // Storage unavailable.
+  }
+}
+
 interface SavedBinding {
   binding: BchBinding
   walletName?: string
@@ -120,7 +170,39 @@ interface BchWalletContextValue {
 const BchWalletContext = createContext<BchWalletContextValue | undefined>(undefined)
 
 export function BchWalletProvider({ children }: { children: ReactNode }) {
-  const wc = useWizardConnect({ dappName: AppConfig.appName, persistSession: true, sessionKey: SESSION_KEY, storage: browserSessionStorage })
+  const [sessionGeneration, setSessionGeneration] = useState(0)
+  const restoreAttempted = useRef(false)
+  const onConnected = useCallback(() => {
+    restoreAttempted.current = false
+  }, [])
+  const onRemoteDisconnect = useCallback(() => {
+    // shortcut: retry once per successful session; persistent failures need a fresh QR pairing.
+    if (restoreAttempted.current) return
+    restoreAttempted.current = true
+    setSessionGeneration(generation => generation + 1)
+  }, [])
+
+  return (
+    <BchWalletSession
+      key={sessionGeneration}
+      onConnected={onConnected}
+      onRemoteDisconnect={onRemoteDisconnect}
+    >
+      {children}
+    </BchWalletSession>
+  )
+}
+
+function BchWalletSession({
+  children,
+  onConnected,
+  onRemoteDisconnect
+}: {
+  children: ReactNode
+  onConnected: () => void
+  onRemoteDisconnect: () => void
+}) {
+  const wc = useWizardConnect({ dappName: AppConfig.appName, persistSession: true, sessionKey: SESSION_KEY, storage: wizardConnectStorage })
   const activeBridge = useActiveBridge()
   const [saved, setSaved] = useState<SavedBinding | undefined>()
   const [derived, setDerived] = useState<BchBinding | undefined>()
@@ -197,8 +279,22 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
   }, [activeBridge])
 
   const connect = useCallback(() => {
+    if (wc.state === 'disconnected') clearWizardConnectSession()
     wc.connect()
   }, [wc])
+
+  const disconnect = useCallback(async () => {
+    try {
+      await wc.disconnect()
+    } finally {
+      clearWizardConnectSession()
+    }
+  }, [wc.disconnect])
+
+  useEffect(() => {
+    if (wc.state === 'connected') onConnected()
+    if (wc.state === 'disconnected' && wizardConnectStorage.getItem(SESSION_KEY)) onRemoteDisconnect()
+  }, [wc.state, onConnected, onRemoteDisconnect])
 
   // Resuming a stored session shows no QR (the hook only exposes one for a new pairing) and stays
   // 'connecting' until the wallet answers, which it does only while its app is open.
@@ -216,8 +312,8 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
   const [pairPending, setPairPending] = useState(false)
   const pairAgain = useCallback(() => {
     setPairPending(true)
-    void wc.disconnect()
-  }, [wc])
+    void disconnect()
+  }, [disconnect])
   useEffect(() => {
     if (!pairPending || wc.state !== 'idle') return
     setPairPending(false)
@@ -238,7 +334,7 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
       reconnectStalled,
       connect,
       pairAgain,
-      disconnect: wc.disconnect,
+      disconnect,
       forget
     }),
     [
@@ -246,7 +342,7 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
       wc.walletName,
       wc.manager,
       wc.error,
-      wc.disconnect,
+      disconnect,
       saved,
       binding,
       expected,
@@ -266,7 +362,7 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
       {wc.uri && wc.qrUri && (
         <WizardConnectQRDialog
           show={wc.state === 'connecting'}
-          onClose={() => wc.disconnect()}
+          onClose={() => disconnect()}
           uri={wc.uri}
           qrUri={wc.qrUri}
           title="Connect your BCH wallet"

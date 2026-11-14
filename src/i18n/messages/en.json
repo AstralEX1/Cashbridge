@@ -707,7 +707,6 @@
       "empty": "No matching supported tokens on this chain.",
       "assetsUnavailable": "Could not load supported assets. Refresh to try again.",
       "route": "Route details",
-      "wallets": "Manage wallets",
       "selectedDestination": "Destination: {asset} on Bitcoin Cash."
     },
     "estimate": {

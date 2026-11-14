@@ -1,15 +1,12 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowDown, Wallet } from 'lucide-react'
+import { ArrowDown } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { AssetValue } from '@tcswap/core'
 import { BridgeConfig } from '@/config'
 import { Asset } from '@/components/swap/asset'
 import { TransactionHistoryButton } from '@/components/header/transaction-history-button'
-import { GenericButton } from '@/components/generic-button'
-import { useDialog } from '@/components/global-dialog'
-import { WalletSidebar } from '@/components/wallet-sidebar/wallet-sidebar'
 import { SwapButton } from '@/components/swap/swap-button'
 import { BchWalletStatus, BridgeOperationPanel } from '@/components/swap/pusd-swap'
 import { SwapHaltBanner } from '@/components/swap/swap-halt-banner'
@@ -41,7 +38,6 @@ export const Swap = () => {
   useEffect(() => {
     if (progressReadyId) setProgressId(progressReadyId)
   }, [progressReadyId])
-  const { openDialog } = useDialog()
   const setAssetFrom = useSetAssetFrom()
   const setAssetTo = useSetAssetTo()
   const isPrivateSend = useIsPrivateSend()
@@ -100,7 +96,6 @@ export const Swap = () => {
       </div>
       <div className="bridge-tools mb-3 flex items-center justify-end">
         <div className="flex items-center gap-2">
-          <GenericButton size="small" aria-label={tBridge('wallets')} icon={<Wallet size={18} />} onClick={() => openDialog(WalletSidebar, {})} />
           <TransactionHistoryButton />
           <SwapSettings />
         </div>

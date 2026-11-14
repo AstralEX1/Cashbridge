@@ -76,28 +76,30 @@ export const BridgeWalletBadge = ({ side }: { side: 'from' | 'to' }) => {
       <span className="bridge-wallet-dot" aria-hidden="true" />
       <span title={address}>{shortBridgeAddress(address)}</span>
       <div className="bridge-wallet-actions">
-        <Tooltip content={t('copy')}>
-          <button type="button" aria-label={t('copy')} onClick={copy}>
-            {copied ? <Check size={16} /> : <Copy size={16} />}
-          </button>
-        </Tooltip>
-        <Tooltip content={t('explorer')}>
-          <a aria-label={t('explorer')} href={getExplorerAddressUrl({ chain, address })} target="_blank" rel="noopener noreferrer">
-            <ExternalLink size={16} />
-          </a>
-        </Tooltip>
-        <Tooltip content={t('disconnect')}>
-          <button
-            type="button"
-            aria-label={t('disconnect')}
-            onClick={() => {
-              if (side === 'from' && account) disconnectSource(account.provider)
-              else if (side === 'to') void bch.disconnect()
-            }}
-          >
-            <X size={17} />
-          </button>
-        </Tooltip>
+        <div className="bridge-wallet-actions-inner">
+          <Tooltip content={t('copy')}>
+            <button type="button" aria-label={t('copy')} onClick={copy}>
+              {copied ? <Check size={16} /> : <Copy size={16} />}
+            </button>
+          </Tooltip>
+          <Tooltip content={t('explorer')}>
+            <a aria-label={t('explorer')} href={getExplorerAddressUrl({ chain, address })} target="_blank" rel="noopener noreferrer">
+              <ExternalLink size={16} />
+            </a>
+          </Tooltip>
+          <Tooltip content={t('disconnect')}>
+            <button
+              type="button"
+              aria-label={t('disconnect')}
+              onClick={() => {
+                if (side === 'from' && account) disconnectSource(account.provider)
+                else if (side === 'to') void bch.disconnect()
+              }}
+            >
+              <X size={17} />
+            </button>
+          </Tooltip>
+        </div>
       </div>
     </div>
   )

@@ -1,3 +1,19 @@
+@property --bridge-select-scale {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 1;
+}
+@property --bridge-select-gap {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 4px;
+}
+@property --bridge-select-alpha {
+  syntax: '<percentage>';
+  inherits: true;
+  initial-value: 5%;
+}
+
 .bridge-page {
   min-height: 100vh;
   padding: 32px 16px 64px;
@@ -6,6 +22,17 @@
 }
 
 .bridge-widget {
+  /* Allbridge's elastic.out(1.2, 0.4), sampled for native CSS transitions. */
+  --bridge-select-ease: linear(
+    0, 0.27417, 0.54163, 0.78648, 0.99738, 1.16738, 1.2935, 1.37618,
+    1.41856, 1.42577, 1.40418, 1.36081, 1.30267, 1.23639, 1.16781, 1.10179,
+    1.04208, 0.9913, 0.95096, 0.92164, 0.90306, 0.89434, 0.89412, 0.90074,
+    0.91247, 0.92753, 0.94433, 0.96143, 0.97769, 0.99221, 1.00441, 1.01395,
+    1.02073, 1.02486, 1.02658, 1.02626, 1.02432, 1.02118, 1.0173, 1.01306,
+    1.0088, 1.00481, 1.00129, 0.99837, 0.99612, 0.99456, 0.99365, 0.99333,
+    0.9935, 0.99406, 0.99489, 0.99588, 0.99695, 0.99801, 0.99898, 0.99984,
+    1.00053, 1.00106, 1.00142, 1.00161, 1.00167, 1.0016, 1.00145, 1.00123, 1
+  );
   --modal: #f8fdff;
   --swap-bloc: #f8fdff;
   --blade: #dce6e8;
@@ -60,6 +87,50 @@
   box-shadow: 0 16px 70px #00000012;
   color-scheme: light;
 }
+.bridge-input-switcher {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 0fr);
+  overflow: clip;
+  overflow-clip-margin: 12px;
+  transition: height 620ms ease-in-out;
+}
+.bridge-input-switcher[data-selecting='true'] {
+  grid-template-rows: minmax(0, 0fr) minmax(0, 1fr);
+  transition-duration: 520ms;
+  transition-timing-function: linear(
+    0,
+    0.876 6%,
+    0.897 9%,
+    0.909 12%,
+    0.922 15%,
+    0.932 18%,
+    0.953 22%,
+    0.959 27%,
+    0.969 30%,
+    0.981 36%,
+    0.987 39%,
+    0.987 42%,
+    0.994 45%,
+    1.003 49%,
+    1.003 65%,
+    1.006 76%,
+    1.003 80%,
+    1.003 90%,
+    1 100%
+  );
+}
+.bridge-input-switcher__slot {
+  min-height: 0;
+  overflow: clip;
+  overflow-clip-margin: 12px;
+}
+.bridge-input-switcher__slot[aria-hidden='true'] {
+  visibility: hidden;
+  pointer-events: none;
+}
+.bridge-input-switcher__picker-slot[aria-hidden='true'] {
+  transition: visibility 0s linear 520ms;
+}
 .bridge-input {
   min-width: 0;
 }
@@ -78,8 +149,9 @@
   font-weight: 500;
   cursor: pointer;
   transition:
-    background 0.15s,
-    color 0.15s;
+    background-color 0.25s,
+    color 0.25s,
+    box-shadow 0.25s;
 }
 .bridge-pill:hover {
   background: #dce8e4;
@@ -101,10 +173,70 @@
   outline: 2px solid #0ac18e;
   outline-offset: 4px;
 }
-.bridge-asset-button {
+.bridge-pill.bridge-asset-button {
+  --bridge-select-scale: 1;
+  --bridge-select-gap: 4px;
+  --bridge-select-alpha: 5%;
+  --bridge-select-shadow: transparent;
+  position: relative;
+  isolation: isolate;
   max-width: 100%;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-start;
+  gap: var(--bridge-select-gap);
+  padding: 12px 8px;
+  background: transparent;
+  font-size: 14px;
+  line-height: 18px;
+  text-shadow: 0.2px 0 0 var(--bridge-select-shadow), -0.2px 0 0 var(--bridge-select-shadow);
+  user-select: none;
+  transition:
+    --bridge-select-scale 0.8s var(--bridge-select-ease),
+    --bridge-select-gap 0.8s var(--bridge-select-ease),
+    --bridge-select-alpha 0.8s var(--bridge-select-ease),
+    text-shadow 0.25s;
+}
+.bridge-asset-button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: color-mix(in oklch, currentColor var(--bridge-select-alpha), #f8fdff);
+  transform: scale(var(--bridge-select-scale));
+  transition: background-color 0.25s;
+}
+.bridge-asset-button:focus-visible,
+.bridge-asset-button:active {
+  --bridge-select-scale: 1.087;
+  --bridge-select-gap: 6px;
+  --bridge-select-alpha: 10%;
+  --bridge-select-shadow: #0f1820;
+}
+.bridge-asset-button:active {
+  --bridge-select-alpha: 15%;
+}
+.bridge-asset-icon {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+}
+.bridge-asset-icon .bridge-token-mark {
+  width: 22px;
+  height: 22px;
+}
+@media (hover: hover) {
+  .bridge-asset-button:hover {
+    --bridge-select-scale: 1.087;
+    --bridge-select-gap: 6px;
+    --bridge-select-alpha: 10%;
+    --bridge-select-shadow: #0f1820;
+  }
+  .bridge-asset-button:hover:active {
+    --bridge-select-alpha: 15%;
+  }
 }
 .bridge-amount {
   display: block;
@@ -203,7 +335,14 @@
   white-space: normal;
 }
 .bridge-picker {
-  min-height: 350px;
+  height: 442px;
+  overflow-y: auto;
+  opacity: 0;
+  transition: opacity 520ms ease-in;
+}
+.bridge-input-switcher[data-selecting='true'] .bridge-picker {
+  opacity: 1;
+  transition: opacity 420ms ease-out 40ms;
 }
 .bridge-picker-back {
   gap: 3px;
@@ -313,9 +452,6 @@
     font-size: 12px;
     padding: 10px;
   }
-  .bridge-picker {
-    min-height: 330px;
-  }
   .bridge-primary {
     font-size: 16px;
   }
@@ -362,15 +498,58 @@
   border-radius: 50%;
   background: #0ac18e;
 }
+/* Connected badge: the actions slide out of the pill on hover or focus. Animating a 0fr→1fr grid
+   track widens the pill to the actions' real width without measuring it in JS. */
+.bridge-wallet-badge {
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease;
+}
 .bridge-wallet-actions {
-  display: none;
+  display: grid;
+  grid-template-columns: 0fr;
+  margin-left: -6px;
+  opacity: 0;
+  transition:
+    grid-template-columns 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    margin-left 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms ease;
+}
+.bridge-wallet-actions-inner {
+  display: flex;
   align-items: center;
   gap: 7px;
-  margin-left: 4px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 2px 2px 2px 4px;
+  margin-block: -2px;
+}
+.bridge-wallet-actions-inner > * {
+  flex-shrink: 0;
+  opacity: 0;
+  transform: translateX(-6px);
+  transition:
+    opacity 180ms ease,
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .bridge-wallet-badge:hover .bridge-wallet-actions,
 .bridge-wallet-badge:focus-within .bridge-wallet-actions {
-  display: flex;
+  grid-template-columns: 1fr;
+  margin-left: 0;
+  opacity: 1;
+}
+.bridge-wallet-badge:hover .bridge-wallet-actions-inner > *,
+.bridge-wallet-badge:focus-within .bridge-wallet-actions-inner > * {
+  opacity: 1;
+  transform: none;
+}
+.bridge-wallet-badge:hover .bridge-wallet-actions-inner > :nth-child(2),
+.bridge-wallet-badge:focus-within .bridge-wallet-actions-inner > :nth-child(2) {
+  transition-delay: 40ms;
+}
+.bridge-wallet-badge:hover .bridge-wallet-actions-inner > :nth-child(3),
+.bridge-wallet-badge:focus-within .bridge-wallet-actions-inner > :nth-child(3) {
+  transition-delay: 80ms;
 }
 .bridge-wallet-actions button,
 .bridge-wallet-actions a {
@@ -639,13 +818,36 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .bridge-input-switcher,
+  .bridge-pill.bridge-asset-button,
+  .bridge-asset-button::before,
+  .bridge-input-switcher__slot[aria-hidden='true'],
+  .bridge-picker {
+    transition: none;
+  }
+  .bridge-input-switcher .bridge-picker {
+    animation: none !important;
+  }
   .bridge-progress-step[data-state='active'] .bridge-progress-bars i {
     animation: none;
   }
 }
 @media (hover: none) {
   .bridge-wallet-actions {
-    display: flex;
+    grid-template-columns: 1fr;
+    margin-left: 0;
+    opacity: 1;
+  }
+  .bridge-wallet-actions-inner > * {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bridge-wallet-badge,
+  .bridge-wallet-actions,
+  .bridge-wallet-actions-inner > * {
+    transition: none;
   }
 }
 @media (max-width: 400px) {

@@ -12,6 +12,7 @@ const DEFAULT_UPSTREAM = 'https://api.thorchain.org/v1'
 
 const UPSTREAM_TIMEOUT_MS = 20_000
 const MAX_BODY_BYTES = 16 * 1024
+const RETRYABLE_UPSTREAM_STATUSES = new Set([502, 503, 504])
 
 type Endpoint = { method: 'GET' | 'POST'; path: RegExp; query?: string[] }
 
@@ -93,14 +94,27 @@ async function forward(req: NextRequest, path: string[], method: 'GET' | 'POST')
   const upstreamBase = (process.env.THORCHAIN_API_URL || DEFAULT_UPSTREAM).replace(/\/$/, '')
   const url = `${upstreamBase}/${target.path}${target.query ? `?${target.query}` : ''}`
 
-  const upstream = await fetch(url, {
+  const fetchUpstream = () => fetch(url, {
     method,
     headers,
     body,
     cache: 'no-store',
     redirect: 'error',
     signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
-  }).catch(() => null)
+  })
+
+  let upstream = await fetchUpstream().catch(() => null)
+
+  // Quotes are read-only, so retry one explicit gateway failure before the SDK logs it as an error.
+  // A timed-out or unreachable upstream is not retried, keeping the request within its current bound.
+  if (method === 'POST' && target.path === 'quote' && upstream && RETRYABLE_UPSTREAM_STATUSES.has(upstream.status)) {
+    const firstResponse = upstream
+    const retry = await fetchUpstream().catch(() => null)
+    if (retry) {
+      await firstResponse.body?.cancel().catch(() => {})
+      upstream = retry
+    }
+  }
 
   if (!upstream) {
     return apiError(502, 'upstream_unreachable', 'THORChain aggregator is unreachable', 'The upstream API did not respond. Retry in a moment.')

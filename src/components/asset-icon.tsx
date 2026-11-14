@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Asset } from '@/components/swap/asset'
 import { cn } from '@/lib/utils'
 
-export function AssetIcon({ asset, className }: { asset: Asset | undefined; className?: string }) {
+export function AssetIcon({ asset, className, showNetworkIcons = true }: { asset: Asset | undefined; className?: string; showNetworkIcons?: boolean }) {
   const [loaded, setLoaded] = useState(false)
   const l1Chain = asset?.isSecuredAsset ? asset.identifier.split('-')[0] : asset?.chain
 
@@ -22,7 +22,7 @@ export function AssetIcon({ asset, className }: { asset: Asset | undefined; clas
               onError={() => setLoaded(false)}
             />
           )}
-          {l1Chain && !isNativeAsset(l1Chain, asset.ticker) && (
+          {showNetworkIcons && l1Chain && !isNativeAsset(l1Chain, asset.ticker) && (
             <Image
               className={cn('outline-swap-global bg-swap-global absolute -right-1 h-4 w-4 rounded-md', asset.isSecuredAsset ? '-top-1' : '-bottom-1')}
               src={`/networks/${l1Chain.toLowerCase()}.svg`}
@@ -31,7 +31,7 @@ export function AssetIcon({ asset, className }: { asset: Asset | undefined; clas
               height={16}
             />
           )}
-          {asset.isSecuredAsset && (
+          {showNetworkIcons && asset.isSecuredAsset && (
             <Image
               className="outline-swap-global bg-swap-global absolute -right-1 -bottom-1 h-4 w-4 rounded-md"
               src="/networks/thor.svg"
