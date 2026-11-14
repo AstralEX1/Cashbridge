@@ -90,9 +90,7 @@ export const Trezor = ({ wallet }: { wallet: WalletParams; onConnect: () => void
     setConnecting(true)
 
     connect(WalletOption.TREZOR, chains as Chain[], { derivationPath })
-      .catch(err => {
-        console.log(err)
-      })
+      .catch(() => {}) // The store reports connection errors.
       .finally(() => {
         setConnecting(false)
       })

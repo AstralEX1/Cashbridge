@@ -7,15 +7,16 @@ import { ALL_CHAINS, WalletParams } from '@/components/connect-wallet/config'
 import { GenericButton } from '@/components/generic-button'
 import { useWallets } from '@/hooks/use-wallets'
 
-export const BrowserWallet = ({ wallet, chains, onConnect }: { wallet: WalletParams; chains: (Chain | string)[]; onConnect: () => void }) => {
+export const BrowserWallet = ({ wallet, chains, chain, onConnect }: { wallet: WalletParams; chains: (Chain | string)[]; chain?: Chain; onConnect: () => void }) => {
   const t = useTranslations('wallet')
   const availableChains: (Chain | string)[] = wallet.supportedChains.filter(c => ALL_CHAINS.includes(c))
 
   const [connecting, setConnecting] = useState(false)
-  const [selectedChains, setSelectedChains] = useState<(Chain | string)[]>(availableChains)
+  const [selectedChains, setSelectedChains] = useState<(Chain | string)[]>(chain && availableChains.includes(chain) ? [chain] : availableChains)
   const { connect } = useWallets()
 
   const handleConnect = async () => {
+    if (connecting || !selectedChains.length) return
     setConnecting(true)
 
     connect(
@@ -25,9 +26,7 @@ export const BrowserWallet = ({ wallet, chains, onConnect }: { wallet: WalletPar
       .then(() => {
         onConnect()
       })
-      .catch(err => {
-        console.log(err.message)
-      })
+      .catch(() => {}) // The store reports the error; keep the dialog open for a retry.
       .finally(() => {
         setConnecting(false)
       })

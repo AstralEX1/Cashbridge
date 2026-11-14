@@ -4,12 +4,13 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const animatedButtonVariants = cva(
-  'inline-flex items-center justify-center gap-1.5 rounded-15 px-5 py-[26px] text-xl leading-[1.2] font-medium whitespace-nowrap shrink-0 cursor-pointer outline-none transition-colors duration-150 ease-out disabled:bg-btn-animated-inactive disabled:text-txt-btn-animated-inactive disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0',
+  'inline-flex items-center justify-center gap-1.5 rounded-15 px-5 py-[26px] text-xl leading-[1.2] font-medium whitespace-nowrap shrink-0 cursor-pointer outline-none transition-[background-color,color,box-shadow] duration-[250ms] disabled:bg-btn-animated-inactive disabled:text-txt-btn-animated-inactive disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0',
   {
     variants: {
       colorType: {
-        default: 'bg-btn-animated-default text-txt-btn-animated-default hover:bg-btn-animated-hover hover:text-txt-btn-animated-hover',
-        accent: 'bg-green-default text-txt-green-default hover:bg-green-hover hover:text-txt-green-hover'
+        default:
+          'bg-btn-animated-default text-txt-btn-animated-default hover:bg-[color-mix(in_oklch,var(--btn-animated-default)_90%,var(--txt-btn-animated-default))]',
+        accent: 'bg-green-default text-txt-green-default hover:bg-[color-mix(in_oklch,var(--green-default)_90%,var(--body))]'
       },
       loading: {
         true: '',

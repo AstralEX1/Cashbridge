@@ -22,8 +22,12 @@ export const CopyButton = ({ text, delay = 1000 }: CopyButtonProps) => {
   }
 
   return isCopied ? (
-    <Icon name="check" className="text-icon-btn-default size-5 cursor-pointer" />
+    <Icon name="check" className="text-icon-btn-default size-5" />
   ) : (
-    <Icon name="copy" className="text-icon-btn-default size-5 cursor-pointer" onClick={handleCopy} />
+    <Icon
+      name="copy"
+      className="text-icon-btn-default size-5 cursor-pointer opacity-80 transition-opacity duration-[250ms] hover:opacity-100"
+      onClick={handleCopy}
+    />
   )
 }
