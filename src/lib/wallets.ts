@@ -1,0 +1,279 @@
+import { Chain, getEIP6963Wallets, getMetaMaskProvider, USwap, WalletOption } from '@tcswap/core'
+import { EVMPlugin } from '@tcswap/plugins/evm'
+import { HoudiniPlugin } from '@tcswap/plugins/houdini'
+import { SolanaPlugin } from '@tcswap/plugins/solana'
+import { MayachainPlugin, ThorchainPlugin } from '@tcswap/plugins/thorchain'
+import { braveWallet, getBraveEVMProvider, getBraveSolanaProvider, watchBraveAccounts } from '@tcswap/wallets/brave'
+import { evmWallet } from '@tcswap/wallets/evm-extensions'
+import { exodusWallet } from '@tcswap/wallets/exodus'
+import { keplrWallet } from '@tcswap/wallets/keplr'
+import { keystoreWallet } from '@tcswap/wallets/keystore'
+import { ledgerWallet } from '@tcswap/wallets/ledger'
+import { okxWallet } from '@tcswap/wallets/okx'
+import { phantomWallet } from '@tcswap/wallets/phantom'
+import { trezorWallet } from '@tcswap/wallets/trezor'
+import { tronlinkWallet } from '@/lib/tronlink'
+import { vultisigWallet } from '@tcswap/wallets/vultisig'
+import { AppConfig } from '@/config'
+import { useWalletStore } from '@/store/wallets-store'
+import { BTC_PURPOSE_ADDRESS_TYPE, btcAddressType } from '@/lib/swap-helpers'
+
+const defaultPlugins = {
+  ...EVMPlugin,
+  ...HoudiniPlugin,
+  ...MayachainPlugin,
+  ...ThorchainPlugin,
+  ...SolanaPlugin
+}
+
+const defaultWallets = {
+  ...braveWallet,
+  ...evmWallet,
+  ...exodusWallet,
+  ...keplrWallet,
+  ...keystoreWallet,
+  ...ledgerWallet,
+  ...okxWallet,
+  ...phantomWallet,
+  ...trezorWallet,
+  ...tronlinkWallet,
+  ...vultisigWallet
+}
+
+function createUSwap(config: Parameters<typeof USwap>[0] = {}) {
+  return USwap({
+    ...config,
+    plugins: defaultPlugins,
+    wallets: defaultWallets,
+    getActiveWallet: () => useWalletStore.getState().selected?.provider
+  })
+}
+
+let instance: ReturnType<typeof createUSwap> | undefined = undefined
+let apiKeyOverride: string | undefined = undefined
+
+export function setUSwapApiKey(apiKey: string) {
+  apiKeyOverride = apiKey
+}
+
+// The Blockchair API key stays on the server, so the UTXO toolbox talks to our
+// own proxy (src/app/api/blockchair) instead of api.blockchair.com. The SDK's
+// request client builds a `new URL(...)`, so this has to be absolute.
+export function blockchairProxyUrl() {
+  const origin = typeof window === 'undefined' ? AppConfig.baseUrl : window.location.origin
+  return `${origin}/api/blockchair`
+}
+
+// Solana has no free endpoint a browser can use: api.mainnet-beta.solana.com 403s anything sending
+// an `Origin` header, and publicnode blocks the token-account call half of a balance needs. So the
+// toolbox talks to our own proxy (src/app/api/solana) instead, the same arrangement Blockchair has.
+function solanaProxyUrl() {
+  const origin = typeof window === 'undefined' ? AppConfig.baseUrl : window.location.origin
+  return `${origin}/api/solana`
+}
+
+// Trezor Connect requires a manifest (contact email + app URL) before it will open its popup.
+const trezorManifest = {
+  email: AppConfig.supportEmail,
+  appUrl: AppConfig.baseUrl,
+  appName: AppConfig.appName
+}
+
+export function getUSwap() {
+  if (instance) return instance
+
+  instance = createUSwap({
+    config: {
+      apiKeys: {
+        uSwap: apiKeyOverride || process.env.NEXT_PUBLIC_USWAP_API_KEY,
+        blockchair: 'sto' // fake key to just avoid logs like: No Blockchair API key found
+      },
+      rpcUrls: {
+        [Chain.Ethereum]: ['https://ethereum-rpc.publicnode.com', 'https://eth.llamarpc.com'],
+        [Chain.Solana]: [solanaProxyUrl()]
+      },
+      integrations: {
+        trezor: trezorManifest
+      },
+      envs: {
+        apiUrl: process.env.NEXT_PUBLIC_USWAP_API_URL,
+        blockchairApiUrl: blockchairProxyUrl(),
+        memolessApiUrl: process.env.NEXT_PUBLIC_MEMOLESS_API
+      }
+    }
+  })
+
+  return instance
+}
+
+export async function connectWallet(option: WalletOption, chains: Chain[], config?: any): Promise<boolean> {
+  const uSwap = getUSwap()
+  const connectEach = async (connect: (chain: Chain[]) => Promise<boolean>) => {
+    let successCount = 0
+    for (const chain of chains) {
+      try {
+        await connect([chain])
+        successCount++
+      } catch (error) {
+        console.warn(`Failed to connect to ${chain}:`, error)
+      }
+    }
+
+    return successCount > 0
+  }
+
+  switch (option) {
+    case WalletOption.METAMASK:
+      const metamask = getMetaMaskProvider()
+      if (!metamask) throw new Error('MetaMask not found. Install or enable the MetaMask extension.')
+      return connectEach(c => uSwap.connectEVMWallet(c, WalletOption.METAMASK, metamask))
+    case WalletOption.PHANTOM:
+      return connectEach(c => uSwap.connectPhantom(c))
+    case WalletOption.TRUSTWALLET_WEB:
+      const trust = getEIP6963Wallets().providers.find(p => p.info.name === 'Trust Wallet')
+      return connectEach(c => uSwap.connectEVMWallet(c, WalletOption.TRUSTWALLET_WEB, trust?.provider))
+    case WalletOption.RABBY:
+      return connectEach(c => uSwap.connectEVMWallet(c, WalletOption.RABBY))
+    case WalletOption.BRAVE:
+      assertBraveAccounts(chains)
+      braveConnects++
+      try {
+        return await connectEach(c => uSwap.connectBrave(c))
+      } finally {
+        braveConnects--
+      }
+    case WalletOption.KEPLR:
+      return connectEach(c => uSwap.connectKeplr(c))
+    case WalletOption.OKX:
+    case WalletOption.OKX_MOBILE:
+      return connectEach(c => uSwap.connectOkx(c))
+    case WalletOption.VULTISIG:
+      return connectEach(c => uSwap.connectVultisig(c))
+    case WalletOption.TRONLINK:
+      return connectEach(c => uSwap.connectTronLink(c))
+    case WalletOption.EXODUS:
+      return uSwap.connectExodus(chains)
+    case WalletOption.KEYSTORE:
+      return uSwap.connectKeystore(chains, config?.phrase, config?.derivationPath)
+    case WalletOption.LEDGER:
+      return connectEach(c => uSwap.connectLedger(c, config?.derivationPath))
+    case WalletOption.TREZOR:
+      return connectEach(c => uSwap.connectTrezor(c, config?.derivationPath))
+    default: {
+      throw new Error(`Unsupported wallet option: ${option}`)
+    }
+  }
+}
+
+// Brave can hold only one of its two accounts; name the missing one, since `connectEach` swallows the SDK's error.
+function assertBraveAccounts(chains: Chain[]) {
+  if (chains.includes(Chain.Solana) && !getBraveSolanaProvider()) {
+    throw new Error('Brave Wallet has no Solana account available. Create or enable one in Brave Wallet, or deselect Solana.')
+  }
+  if (chains.some(c => c !== Chain.Solana) && !getBraveEVMProvider()) {
+    throw new Error('Brave Wallet has no Ethereum account available. Create or enable one in Brave Wallet, or deselect the EVM chains.')
+  }
+}
+
+// Brave signs with its current account, not the connected one, so reload on a switch (as TronLink does).
+// Watched while a Brave account is connected; events during a connect are the grant itself.
+let braveConnects = 0
+let unwatchBrave: (() => void) | undefined
+
+export function syncBraveAccountWatch(accounts: { provider: WalletOption }[]) {
+  const connected = accounts.some(a => a.provider === WalletOption.BRAVE)
+
+  if (connected && !unwatchBrave) unwatchBrave = watchBraveAccounts(onBraveAccountChange)
+  if (!connected && unwatchBrave) {
+    unwatchBrave()
+    unwatchBrave = undefined
+  }
+}
+
+// A switch only matters on a side the user connected; `undefined` comes from Solana, EVM addresses are 0x.
+function onBraveAccountChange(address: string | undefined) {
+  if (braveConnects > 0) return
+
+  const isSolana = !address?.startsWith('0x')
+  const connected = useWalletStore.getState().accounts.filter(a => a.provider === WalletOption.BRAVE && (a.network === Chain.Solana) === isSolana)
+  if (connected.length === 0) return
+
+  const known = address !== undefined && connected.some(a => a.address.toLowerCase() === address.toLowerCase())
+  if (!known) window.location.reload()
+}
+
+export async function getAccounts(
+  option: WalletOption,
+  chains: Chain[],
+  config?: any
+): Promise<{ address: string; network: Chain; provider: WalletOption; derivationPath?: number[] }[]> {
+  const uSwap = getUSwap()
+
+  const connected = await connectWallet(option, chains, config)
+  if (!connected) return []
+
+  return chains
+    .map(chain => {
+      // Scoped to this provider rather than `getAddress(chain)`, which answers from the chain slot —
+      // last connect wins. When one chain of a multi-chain connect fails, that files the wallet
+      // already on it under this provider: MetaMask's Ethereum address in an Exodus row, which then
+      // reads an empty balance and cannot sign, since every path here resolves the wallet by provider.
+      const raw = uSwap.getWallet(option, chain)?.address
+      const address = Array.isArray(raw) ? raw[0] : raw
+      if (!address) return null
+      const mismatch = btcPathMismatch(chain, address, config?.derivationPath)
+      if (mismatch) {
+        uSwap.disconnectChain(chain)
+        throw new Error(mismatch)
+      }
+      return { address, network: chain, provider: option, ...(config?.derivationPath ? { derivationPath: config.derivationPath } : {}) }
+    })
+    .filter(acc => acc !== null)
+}
+
+// A device asked for a BIP-86 path has to answer with a Taproot (bc1p…) address. Ledger
+// firmware that predates Taproot instead derives a Native SegWit address from the Taproot
+// key: a valid-looking bc1q… address holding none of the user's coins. Fail loudly rather
+// than connect an account whose balance will always read zero.
+function btcPathMismatch(chain: Chain, address: string, derivationPath?: number[]): string | null {
+  if (chain !== Chain.Bitcoin || !derivationPath) return null
+
+  const expected = BTC_PURPOSE_ADDRESS_TYPE[derivationPath[0]]
+  const actual = btcAddressType(address)
+
+  if (!expected || !actual || expected === actual) return null
+
+  return (
+    `Your wallet returned a ${BTC_ADDRESS_TYPE_LABEL[actual]} address for the ${BTC_ADDRESS_TYPE_LABEL[expected]} derivation path. ` +
+    `Update your device's Bitcoin app to the latest version, or connect using ${BTC_ADDRESS_TYPE_LABEL[actual]} instead.`
+  )
+}
+
+const BTC_ADDRESS_TYPE_LABEL = {
+  taproot: 'Taproot',
+  nativeSegwit: 'Native SegWit',
+  nestedSegwit: 'Nested SegWit',
+  legacy: 'Legacy'
+} as const
+
+export const supportedChains = {
+  [WalletOption.BRAVE]: braveWallet.connectBrave.supportedChains,
+  [WalletOption.COINBASE_WEB]: evmWallet.connectEVMWallet.supportedChains,
+  [WalletOption.EIP6963]: evmWallet.connectEVMWallet.supportedChains,
+  [WalletOption.EXODUS]: exodusWallet.connectExodus.supportedChains,
+  [WalletOption.KEPLR]: keplrWallet.connectKeplr.supportedChains,
+  [WalletOption.KEYSTORE]: keystoreWallet.connectKeystore.supportedChains,
+  [WalletOption.LEAP]: keplrWallet.connectKeplr.supportedChains,
+  [WalletOption.LEDGER]: ledgerWallet.connectLedger.supportedChains,
+  [WalletOption.LEDGER_LIVE]: ledgerWallet.connectLedger.supportedChains,
+  [WalletOption.METAMASK]: evmWallet.connectEVMWallet.supportedChains,
+  [WalletOption.RABBY]: evmWallet.connectEVMWallet.supportedChains,
+  [WalletOption.OKX]: okxWallet.connectOkx.supportedChains,
+  [WalletOption.OKX_MOBILE]: evmWallet.connectEVMWallet.supportedChains,
+  [WalletOption.PHANTOM]: phantomWallet.connectPhantom.supportedChains,
+  [WalletOption.TREZOR]: trezorWallet.connectTrezor.supportedChains,
+  [WalletOption.TRONLINK]: tronlinkWallet.connectTronLink.supportedChains,
+  [WalletOption.TRUSTWALLET_WEB]: evmWallet.connectEVMWallet.supportedChains,
+  [WalletOption.VULTISIG]: vultisigWallet.connectVultisig.supportedChains,
+  [WalletOption.WALLET_SELECTOR]: [Chain.Near]
+} satisfies Partial<Record<WalletOption, Chain[]>>
