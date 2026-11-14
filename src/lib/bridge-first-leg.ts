@@ -11,6 +11,14 @@ export const withLock = async <T,>(name: string, fn: () => Promise<T>): Promise<
   return navigator.locks.request(name, { ifAvailable: true }, async (lock: Lock | null) => (lock ? fn() : undefined))
 }
 
+const recordSafely = (write: () => void) => {
+  try {
+    write()
+  } catch (error) {
+    console.error('Failed to record the bridge operation in history:', error)
+  }
+}
+
 export class BridgeBlocked extends Error {}
 // The source wallet declined to sign: no transaction exists, so the operation's record is dropped.
 export class FirstLegRejected extends Error {}
@@ -54,10 +62,9 @@ export const startBridgeFirstLeg = async ({
       }
     })
 
+    let hash: string
     try {
-      const hash = await execute()
-      updateBridge(uid, () => ({ stage: 'first_leg_pending', hash }))
-      return hash
+      hash = await execute()
     } catch (error) {
       // A declined signature cannot have sent anything. Any other wallet error might have (a lost
       // answer after broadcasting), so that operation stays as 'unknown' for the user to resolve.
@@ -65,11 +72,15 @@ export const startBridgeFirstLeg = async ({
         removeTransaction(uid)
         throw new FirstLegRejected('Transaction cancelled in wallet', { cause: error })
       }
-      updateBridge(uid, () => ({ stage: 'first_leg_unknown', error: error instanceof Error ? error.message : 'Wallet error' }))
+      recordSafely(() => updateBridge(uid, () => ({ stage: 'first_leg_unknown', error: error instanceof Error ? error.message : 'Wallet error' })))
       throw error
     }
+
+    // The swap is broadcast. A history write that fails now (storage full, private mode) must not
+    // read as a failed swap: that would invite a second broadcast of the same funds.
+    recordSafely(() => updateBridge(uid, () => ({ stage: 'first_leg_pending', hash })))
+    return hash
   })
   if (result === undefined) throw new BridgeBlocked('Another tab is starting a bridge operation')
   return result
 }
-

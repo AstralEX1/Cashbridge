@@ -114,14 +114,20 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
     })
 
     const toastId = toast.loading(t('toast.submittingTransaction'))
-    broadcast
-      .then(() => {
+    broadcast.then(
+      () => {
+        // A hash exists: the swap is sent. Nothing after this point may hand Confirm back, so a
+        // failure tidying the form is logged, never routed to the submission-error path below.
         toast.success(t('toast.transactionSubmitted'), { id: toastId })
-        setAmountFrom('')
-        refetchBalance()
+        try {
+          setAmountFrom('')
+          refetchBalance()
+        } catch (error) {
+          console.error('Failed to reset the swap form after broadcast:', error)
+        }
         onOpenChange(false)
-      })
-      .catch((err: unknown) => {
+      },
+      (err: unknown) => {
         setSubmitting(false)
         // Declined in the wallet: nothing was sent and nothing was recorded. Back to the form.
         if (err instanceof FirstLegRejected) {
@@ -134,7 +140,8 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
         toast.error(readableError(err, t('toast.errorSubmitting')), { id: toastId })
         // A recorded operation now has its own progress screen; this one must not stay on top of it.
         if (!(err instanceof BridgeBlocked)) onOpenChange(false)
-      })
+      }
+    )
   }
 
   return (

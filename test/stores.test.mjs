@@ -86,6 +86,37 @@ test('a source swap the wallet declines leaves no operation behind; any other wa
   await restore([])
 })
 
+test('once the swap has a hash, a failed history write still reports it sent, never failed', async () => {
+  const { startBridgeFirstLeg } = await import('../src/lib/bridge-first-leg.ts')
+  const base = { provider: 'THORCHAIN', chainId: '8453', timestamp: new Date(), assetFrom: {}, assetTo: {}, amountFrom: '0.001', amountTo: '0.007', addressTo: binding.cashAddress }
+  await restore([])
+
+  let broadcasts = 0
+  const setItem = globalThis.localStorage.setItem
+  try {
+    const hash = await startBridgeFirstLeg({
+      base,
+      binding,
+      execute: async () => {
+        broadcasts++
+        // Storage fills up while the wallet is broadcasting.
+        globalThis.localStorage.setItem = () => {
+          throw new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+        }
+        return '0xabc'
+      }
+    })
+    assert.equal(hash, '0xabc')
+  } finally {
+    globalThis.localStorage.setItem = setItem
+  }
+  assert.equal(broadcasts, 1)
+  // The in-memory record still carries the hash, so the operation blocks a second bridge.
+  assert.equal(transactionStore.getState().transactions[0].bridge.stage, 'first_leg_pending')
+  assert.ok(getActiveBridge())
+  await restore([])
+})
+
 test('wallet rejections are recognised in the shapes wallets and ethers report them', async () => {
   const { isUserRejection } = await import('../src/lib/errors.ts')
   assert.equal(isUserRejection({ code: 4001, message: 'User rejected the request.' }), true)
