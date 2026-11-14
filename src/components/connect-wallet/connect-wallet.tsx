@@ -1,6 +1,6 @@
-import Image from 'next/image'
 import { useMemo, useState } from 'react'
-import { Chain, WalletOption } from '@tcswap/core'
+import { Chain } from '@tcswap/core'
+import { Check, ChevronLeft, LoaderCircle } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { Credenza, CredenzaContent, CredenzaHeader, CredenzaTitle } from '@/components/ui/credenza'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -9,9 +9,10 @@ import { ALL_CHAINS, chainLabel, COMING_SOON_CHAINS, isWalletAvailable, WalletPa
 import { Ledger } from '@/components/connect-wallet/ledger'
 import { Trezor } from '@/components/connect-wallet/trezor'
 import { WalletIcon } from '@/components/wallet-icon'
-import { Icon } from '@/components/icons'
 import { useWallets } from '@/hooks/use-wallets'
-import { cn, truncate } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+
+const WALLETS_WITH_LOGO_BOUNCE = new Set(['metamask', 'trustwallet', 'rabby', 'okx'])
 
 interface ConnectWalletProps {
   isOpen: boolean
@@ -19,211 +20,134 @@ interface ConnectWalletProps {
   chain?: Chain
 }
 
-const WALLETS_WITH_LOGO_BOUNCE = new Set(['metamask', 'trustwallet', 'rabby', 'okx'])
-
+// One list, as in Allbridge: wallets that can sign on the requested chain, installed ones first
+// with a "Detected" mark. With a chain given, a browser wallet connects on click; hardware wallets
+// and the chain-less entry (wallet sidebar) open a second step for the derivation path or chains.
 export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProps) => {
   const t = useTranslations('wallet')
-  const [selectedWallet, setSelectedWallet] = useState<WalletParams | undefined>(undefined)
-  const [selectedChain, setSelectedChain] = useState<Chain | undefined>(chain)
-  const { accounts, select } = useWallets()
+  const [selectedWallet, setSelectedWallet] = useState<WalletParams>()
+  const [connecting, setConnecting] = useState<string>()
+  const { accounts, select, connect } = useWallets()
 
-  const chains = useMemo(
-    () =>
-      [...ALL_CHAINS, ...COMING_SOON_CHAINS].sort((a, b) => {
-        return chainLabel(a)?.localeCompare(chainLabel(b))
-      }),
-    []
-  )
+  const chains = useMemo(() => [...ALL_CHAINS, ...COMING_SOON_CHAINS].sort((a, b) => chainLabel(a)?.localeCompare(chainLabel(b))), [])
 
   const wallets = useMemo(() => {
-    const installed: WalletParams[] = []
-    const others: WalletParams[] = []
+    const usable = WALLETS.filter(wallet => !chain || wallet.supportedChains.includes(chain))
+    const rank = (wallet: WalletParams) => (wallet.type === WalletType.hardware ? 2 : isWalletAvailable(wallet.option) ? 0 : 1)
+    return usable.sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label))
+  }, [chain])
 
-    WALLETS.forEach(wallet => {
-      if (isWalletAvailable(wallet.option)) {
-        installed.push(wallet)
-      } else {
-        others.push(wallet)
-      }
-    })
+  const close = () => onOpenChange(false)
 
-    const sortByLabel = (a: WalletParams, b: WalletParams) => a.label.localeCompare(b.label)
-
-    installed.sort(sortByLabel)
-    others.sort(sortByLabel)
-
-    return [...installed, ...others]
-  }, [])
-
-  const onSelectWallet = (wallet: WalletParams) => {
-    setSelectedWallet(prev => (prev === wallet ? undefined : wallet))
-  }
-
-  const onSelectChain = (chain: Chain) => {
-    setSelectedChain(prev => (prev === chain ? undefined : chain))
-  }
-
-  const isWalletHighlighted = (walletOption: WalletOption) => {
-    if (!selectedChain) return true
-
-    const wallet = WALLETS.find(w => w.option === walletOption)
-    return wallet && wallet.supportedChains.includes(selectedChain)
-  }
-
-  const walletList = (wallets: WalletParams[]) => {
-    return wallets.map((wallet, index) => {
-      const connected = accounts.find(account => account.provider === wallet.option && (!selectedChain || account.network === selectedChain))
-      const isInstalled = isWalletAvailable(wallet.option)
-      const isSelected = wallet === selectedWallet
-      const isHighlighted = isWalletHighlighted(wallet.option)
-      const isClickable = isInstalled && isHighlighted
-      const chooseWallet = () => {
-        if (!isClickable) return
-        if (connected && wallet.type === WalletType.browser) {
-          select(connected)
-          onOpenChange(false)
-          return
-        }
-        onSelectWallet(wallet)
-      }
-
-      return (
-        <div
-          key={index}
-          role={isClickable ? 'button' : undefined}
-          tabIndex={isClickable ? 0 : undefined}
-          aria-label={wallet.label}
-          data-wallet-logo-bounce={WALLETS_WITH_LOGO_BOUNCE.has(wallet.key) ? '' : undefined}
-          className={cn('mb-1 flex items-center space-x-3 rounded-2xl border border-transparent p-3 transition-colors duration-[250ms] ease-out', {
-            'border-border-btn-modal-hover': isSelected,
-            'opacity-25': !isHighlighted,
-            'hover:bg-sub-container-modal/50 cursor-pointer': isClickable,
-            'mb-4 md:mb-8': index === wallets.length - 1
-          })}
-          onClick={chooseWallet}
-          onKeyDown={event => {
-            if (isClickable && (event.key === 'Enter' || event.key === ' ')) {
-              event.preventDefault()
-              chooseWallet()
-            }
-          }}
-        >
-          <WalletIcon walletKey={wallet.key} width={32} height={32} className="wallet-choice-icon shrink-0" />
-          <div className="flex-1">
-            <div className="text-txt-high-contrast font-medium">{wallet.label}</div>
-            <div className="text-xs">
-              {isInstalled ? (
-                connected ? (
-                  <>
-                    <span className="text-green-contrast">{t('connectedOn', { chain: chainLabel(connected.network) })}</span>
-                    <div className="text-txt-label-small mt-1" title={connected.address}>
-                      {truncate(connected.address)}
-                    </div>
-                  </>
-                ) : (
-                  <span>{t('disconnected')}</span>
-                )
-              ) : (
-                <a href={wallet.link} className="text-jacob" rel="noopener noreferrer" target="_blank">
-                  {t('install')}
-                </a>
-              )}
-            </div>
-          </div>
-        </div>
-      )
-    })
+  const chooseWallet = (wallet: WalletParams) => {
+    if (connecting) return
+    const connected = accounts.find(account => account.provider === wallet.option && (!chain || account.network === chain))
+    if (connected && wallet.type === WalletType.browser) {
+      select(connected)
+      close()
+      return
+    }
+    if (wallet.type === WalletType.browser && chain) {
+      setConnecting(wallet.key)
+      connect(wallet.option, [chain])
+        .then(close)
+        .catch(() => {}) // The store reports the error; keep the list open for a retry.
+        .finally(() => setConnecting(undefined))
+      return
+    }
+    setSelectedWallet(wallet)
   }
 
   const renderSelectedWallet = (wallet: WalletParams) => {
-    const onConnect = () => {
-      onOpenChange(false)
-    }
-
-    if (wallet.type === WalletType.browser) {
-      return <BrowserWallet key={wallet.key} wallet={wallet} chains={chains} chain={selectedChain} onConnect={onConnect} />
-    }
-
-    if (wallet.key === 'ledger') {
-      return <Ledger key={wallet.key} wallet={wallet} onConnect={onConnect} />
-    }
-
-    if (wallet.key === 'trezor') {
-      return <Trezor key={wallet.key} wallet={wallet} onConnect={onConnect} />
-    }
-
+    if (wallet.type === WalletType.browser) return <BrowserWallet key={wallet.key} wallet={wallet} chains={chains} chain={chain} onConnect={close} />
+    if (wallet.key === 'ledger') return <Ledger key={wallet.key} wallet={wallet} onConnect={close} />
+    if (wallet.key === 'trezor') return <Trezor key={wallet.key} wallet={wallet} onConnect={close} />
     return null
   }
 
+  const renderRow = (wallet: WalletParams) => {
+    const isBrowser = wallet.type === WalletType.browser
+    const isInstalled = !isBrowser || !!isWalletAvailable(wallet.option)
+    const connected = accounts.some(account => account.provider === wallet.option && (!chain || account.network === chain))
+    const isConnecting = connecting === wallet.key
+    const bounce = WALLETS_WITH_LOGO_BOUNCE.has(wallet.key) ? '' : undefined
+    const content = (
+      <>
+        <WalletIcon walletKey={wallet.key} width={32} height={32} alt="" className="connect-wallet-icon wallet-choice-icon" />
+        <span className="connect-wallet-name">{wallet.label}</span>
+        {isConnecting ? (
+          <LoaderCircle size={20} className="connect-wallet-status animate-spin" aria-label={t('connecting')} />
+        ) : connected ? (
+          <span className="connect-wallet-status connect-wallet-connected">{t('connected')}</span>
+        ) : isBrowser && isInstalled ? (
+          <span className="connect-wallet-status">
+            <span className="connect-wallet-check" aria-hidden="true">
+              <Check size={14} strokeWidth={3} />
+            </span>
+            {t('detected')}
+          </span>
+        ) : !isInstalled ? (
+          <span className="connect-wallet-status connect-wallet-install">{t('install')}</span>
+        ) : null}
+      </>
+    )
+
+    if (!isInstalled) {
+      return (
+        <li key={wallet.key}>
+          <a className="connect-wallet-row" data-wallet-logo-bounce={bounce} href={wallet.link} target="_blank" rel="noopener noreferrer">
+            {content}
+          </a>
+        </li>
+      )
+    }
+
+    return (
+      <li key={wallet.key}>
+        <button
+          type="button"
+          className={cn('connect-wallet-row', { 'is-busy': !!connecting && !isConnecting })}
+          data-wallet-logo-bounce={bounce}
+          aria-busy={isConnecting}
+          disabled={!!connecting}
+          onClick={() => chooseWallet(wallet)}
+        >
+          {content}
+        </button>
+      </li>
+    )
+  }
+
   return (
-    <Credenza open={isOpen} onOpenChange={onOpenChange}>
-      <CredenzaContent className="flex h-auto max-h-5/6 flex-col">
+    <Credenza
+      open={isOpen}
+      onOpenChange={open => {
+        if (!open) setSelectedWallet(undefined)
+        onOpenChange(open)
+      }}
+    >
+      <CredenzaContent className="connect-wallet flex h-auto max-h-5/6 flex-col md:max-w-[460px]">
         <CredenzaHeader>
-          <CredenzaTitle>{t('connectWallet')}</CredenzaTitle>
+          <CredenzaTitle className="connect-wallet-title">
+            {selectedWallet && (
+              <button type="button" className="connect-wallet-back" aria-label={t('back')} onClick={() => setSelectedWallet(undefined)}>
+                <ChevronLeft size={22} />
+              </button>
+            )}
+            {selectedWallet ? selectedWallet.label : t('connectWallet')}
+            {chain && !selectedWallet && <img src={`/networks/${chain.toLowerCase()}.svg`} width={22} height={22} alt={chainLabel(chain)} title={chainLabel(chain)} />}
+          </CredenzaTitle>
         </CredenzaHeader>
 
-        <div className="flex min-h-0 flex-col md:flex-row">
-          <ScrollArea
-            className={cn('flex min-h-0 flex-1 md:mb-0 md:w-2/5 md:flex-none md:border-r md:pr-8 md:pl-8', {
-              'hidden md:flex': selectedWallet
-            })}
-            classNameViewport="flex-1 h-auto"
-          >
-            <div className="mx-4 block gap-2 md:mx-0 md:block md:w-full">{walletList(wallets)}</div>
+        {selectedWallet ? (
+          <div key={selectedWallet.key} className="connect-wallet-step flex min-h-0 min-w-0 flex-1 flex-col">
+            {renderSelectedWallet(selectedWallet)}
+          </div>
+        ) : (
+          <ScrollArea className="connect-wallet-step flex min-h-0 flex-1" classNameViewport="flex-1 h-auto">
+            <ul className="connect-wallet-list">{wallets.map(renderRow)}</ul>
           </ScrollArea>
-
-          {selectedWallet && (
-            <div className="mb-2 flex cursor-pointer items-center gap-4 px-4 pb-4 md:hidden" onClick={() => setSelectedWallet(undefined)}>
-              <Icon name="arrow-m-left" className="text-txt-label-small size-6" />
-              <div className="flex gap-2">
-                <WalletIcon walletKey={selectedWallet.key} width={20} height={20} />
-                <span className="text-txt-label-small text-sm font-medium">{selectedWallet.label}</span>
-              </div>
-            </div>
-          )}
-
-          {selectedWallet ? (
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col">{renderSelectedWallet(selectedWallet)}</div>
-          ) : (
-            <div className="hidden flex-1 flex-col md:flex">
-              <div className="text-txt-label-small mb-3 px-8 text-base font-semibold">{t('chains')}</div>
-
-              <div className="hidden min-h-0 flex-1 md:flex">
-                <ScrollArea className="flex px-8" classNameViewport="flex-1 h-auto">
-                  <div
-                    className="grid flex-1 grid-flow-col gap-2 pb-4 md:pb-8"
-                    style={{
-                      gridTemplateRows: `repeat(${Math.ceil(chains.length / 2)}, minmax(0, 1fr))`,
-                      gridTemplateColumns: 'repeat(2, 1fr)'
-                    }}
-                  >
-                    {chains.map(chain => {
-                      const isSelected = selectedChain === chain
-                      const isComingSoon = COMING_SOON_CHAINS.includes(chain)
-
-                      return (
-                        <div
-                          key={chain}
-                          className={cn('flex items-center gap-3 rounded-2xl border-1 border-transparent px-4 py-3', {
-                            'border-border-btn-modal-hover': isSelected,
-                            'hover:bg-sub-container-modal/50 cursor-pointer': !isComingSoon
-                          })}
-                          onClick={() => !isComingSoon && onSelectChain(chain as Chain)}
-                        >
-                          <Image src={`/networks/${chain.toLowerCase()}.svg`} alt={chain} width="24" height="24" />
-                          <div className="text-sm">{chainLabel(chain)}</div>
-                          {isComingSoon && (
-                            <div className="text-gray border-gray rounded-full border px-1.5 text-[10px] font-semibold">{t('soon')}</div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </ScrollArea>
-              </div>
-            </div>
-          )}
-        </div>
+        )}
       </CredenzaContent>
     </Credenza>
   )

@@ -4,6 +4,7 @@ import { Chain, WalletOption } from '@tcswap/core'
 
 export const controls = {
   getAccounts: async () => [],
+  hasAuthorizedAccount: async () => undefined,
   wallets: new Map(),
   disconnected: [],
   account: undefined,
@@ -20,6 +21,7 @@ export const controls = {
 }
 
 export const getAccounts = (...args) => controls.getAccounts(...args)
+export const hasAuthorizedAccount = (...args) => controls.hasAuthorizedAccount(...args)
 export const getUSwap = () => ({
   getWallet: (provider, chain) => controls.wallets.get(`${provider}:${chain}`),
   getWalletByChain: chain => [...controls.wallets.values()].find(wallet => wallet.chain === chain),

@@ -1,4 +1,4 @@
-import { Chain, getEIP6963Wallets, getMetaMaskProvider, USwap, WalletOption } from '@tcswap/core'
+import { Chain, EVMChain, EVMChains, getEIP6963Provider, getEIP6963Wallets, getMetaMaskProvider, RABBY_RDNS, USwap, WalletOption } from '@tcswap/core'
 import { EVMPlugin } from '@tcswap/plugins/evm'
 import { HoudiniPlugin } from '@tcswap/plugins/houdini'
 import { SolanaPlugin } from '@tcswap/plugins/solana'
@@ -193,6 +193,59 @@ function onBraveAccountChange(address: string | undefined) {
 
   const known = address !== undefined && connected.some(a => a.address.toLowerCase() === address.toLowerCase())
   if (!known) window.location.reload()
+}
+
+type AccountsProvider = { request: (args: { method: string }) => Promise<unknown> }
+
+// The EVM provider a browser wallet injects, found the way its connector finds it.
+function restoreProvider(option: WalletOption): AccountsProvider | undefined {
+  const w = window as unknown as Record<string, any>
+  switch (option) {
+    case WalletOption.METAMASK:
+      return getMetaMaskProvider()
+    case WalletOption.RABBY:
+      return getEIP6963Provider(RABBY_RDNS) ?? (w.ethereum?.isRabby ? w.ethereum : undefined)
+    case WalletOption.TRUSTWALLET_WEB:
+      return getEIP6963Wallets().providers.find(p => p.info.name === 'Trust Wallet')?.provider ?? w.trustwallet
+    case WalletOption.BRAVE:
+      return getBraveEVMProvider()
+    case WalletOption.OKX:
+      return w.okxwallet
+    case WalletOption.EXODUS:
+      return w.exodus?.ethereum ?? (w.ethereum?.isExodus ? w.ethereum : undefined)
+  }
+}
+
+const RESTORE_CHECKED = new Set<WalletOption>([
+  WalletOption.METAMASK,
+  WalletOption.RABBY,
+  WalletOption.TRUSTWALLET_WEB,
+  WalletOption.BRAVE,
+  WalletOption.OKX,
+  WalletOption.EXODUS
+])
+const RESTORE_PROVIDER_WAIT_MS = 1_000
+
+// Like wagmi's reconnect: ask a saved EVM browser wallet for its accounts without a prompt. `undefined`
+// means no silent check applies (not an EVM browser wallet), so restore as usual; `false` means the
+// wallet is locked, unauthorized or not injected yet, so skip the restore and keep it saved.
+export async function hasAuthorizedAccount(option: WalletOption, chains: Chain[]): Promise<boolean | undefined> {
+  if (!RESTORE_CHECKED.has(option) || !chains.some(chain => EVMChains.includes(chain as EVMChain))) return undefined
+
+  // Extensions inject or announce shortly after load (Rabby over EIP-6963), so allow a moment.
+  let provider = restoreProvider(option)
+  for (let waited = 0; !provider && waited < RESTORE_PROVIDER_WAIT_MS; waited += 100) {
+    await new Promise(resolve => setTimeout(resolve, 100))
+    provider = restoreProvider(option)
+  }
+  if (!provider) return false
+
+  try {
+    const accounts = await provider.request({ method: 'eth_accounts' })
+    return Array.isArray(accounts) && accounts.length > 0
+  } catch {
+    return false
+  }
 }
 
 export async function getAccounts(

@@ -19,14 +19,22 @@ export function readWalletLink(): WalletLink[] {
   }
 }
 
-// Group accounts by provider into the shared cookie, or clear it when empty.
-export function writeWalletLink(accounts: Array<{ provider: WalletOption; network: Chain; derivationPath?: number[] }>): void {
+// Group accounts by provider into the shared cookie, or clear it when empty. `kept` are saved entries
+// not (fully) restored this visit; their chains stay linked alongside the connected accounts.
+export function writeWalletLink(
+  accounts: Array<{ provider: WalletOption; network: Chain; derivationPath?: number[] }>,
+  kept: WalletLink[] = []
+): void {
   const byProvider = new Map<WalletOption, { chains: Set<Chain>; paths: Partial<Record<Chain, number[]>> }>()
-  for (const { provider, network, derivationPath } of accounts) {
+  const add = (provider: WalletOption, network: Chain, derivationPath?: number[]) => {
     const entry = byProvider.get(provider) ?? { chains: new Set<Chain>(), paths: {} }
     entry.chains.add(network)
-    if (derivationPath) entry.paths[network] = derivationPath
+    if (derivationPath && !entry.paths[network]) entry.paths[network] = derivationPath
     byProvider.set(provider, entry)
+  }
+  for (const { provider, network, derivationPath } of accounts) add(provider, network, derivationPath)
+  for (const { provider, chains, paths } of kept) {
+    for (const chain of chains) add(provider, chain, paths?.[chain])
   }
 
   if (byProvider.size === 0) {

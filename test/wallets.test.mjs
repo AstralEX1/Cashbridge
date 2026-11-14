@@ -27,7 +27,7 @@ globalThis.document = {
 }
 
 const { useWalletStore, connectedAccount } = await import('../src/store/wallets-store.ts')
-const { browserSessionStorage } = await import('../src/components/bch-wallet.tsx')
+const { SESSION_KEY, clearBchSession, migrateLegacyBchSession } = await import('../src/components/bch-wallet.tsx')
 const { BridgeWalletBadge } = await import('../src/components/swap/bridge-wallet-badge.tsx')
 const { SwapBalance } = await import('../src/components/swap/swap-balance.tsx')
 const { useBalance } = await import('../src/hooks/use-balance.ts')
@@ -56,6 +56,7 @@ const findElement = (node, predicate) => {
 beforeEach(() => {
   local.clear(); tab.clear(); cookies.clear()
   controls.getAccounts = async () => []
+  controls.hasAuthorizedAccount = async () => undefined
   controls.wallets.clear()
   controls.disconnected = []
   controls.account = undefined
@@ -97,23 +98,30 @@ test('selecting an already connected Rabby account exits legacy no-wallet mode w
   const base = account('0x2222222222222222222222222222222222222222', Chain.Base, WalletOption.RABBY)
   useWalletStore.setState({ accounts: [base], selected: base, externalWalletMode: true })
   controls.walletState = useWalletStore.getState()
+  let reconnected = false
+  controls.getAccounts = async () => { reconnected = true; return [] }
   let closed = false
   const { tree, html } = render(ConnectWallet, { isOpen: true, chain: Chain.Base, onOpenChange: open => { closed = !open } })
-  assert.match(html, /Connected on Base/)
-  assert.match(html, /2222/)
-  const row = findElement(tree, element => element.props?.['aria-label'] === 'Rabby Wallet')
-  assert.equal(row.props.role, 'button')
+  assert.match(html, /Rabby Wallet<\/span><span class="connect-wallet-status connect-wallet-connected">connected</)
+  const row = findElement(tree, element => element.type === 'button' && element.props?.className?.includes('connect-wallet-row'))
+  assert.equal(row.props['aria-busy'], false)
   row.props.onClick()
   assert.equal(closed, true)
+  assert.equal(reconnected, false)
   assert.equal(useWalletStore.getState().externalWalletMode, false)
   assert.deepEqual(connectedAccount(useWalletStore.getState()), base)
 })
 
 test('Rabby connected on Base is not reported as connected on Bitcoin', () => {
   controls.walletState = { accounts: [account(undefined, Chain.Base, WalletOption.RABBY)], select() {} }
-  const { html } = render(ConnectWallet, { isOpen: true, chain: Chain.Bitcoin, onOpenChange() {} })
-  assert.doesNotMatch(html, /Connected on/)
-  assert.match(html, /disconnected/)
+  // Rabby has no Bitcoin account, so the Bitcoin dialog neither offers it nor shows anything connected.
+  const bitcoin = render(ConnectWallet, { isOpen: true, chain: Chain.Bitcoin, onOpenChange() {} }).html
+  assert.doesNotMatch(bitcoin, /connect-wallet-connected/)
+  assert.doesNotMatch(bitcoin, /Rabby Wallet/)
+  // On another chain it does support, the Base account does not count either: it is only detected.
+  const ethereum = render(ConnectWallet, { isOpen: true, chain: Chain.Ethereum, onOpenChange() {} }).html
+  assert.doesNotMatch(ethereum, /connect-wallet-connected/)
+  assert.match(ethereum, /Rabby Wallet<\/span><span class="connect-wallet-status">.*detected</)
 })
 
 test('disconnect clears the selected address and ignores an older in-flight connection', async () => {
@@ -170,26 +178,118 @@ test('a failed session restore finishes hydration without claiming the saved add
   assert.equal(connectedAccount(useWalletStore.getState()), undefined)
 })
 
-test('BCH session storage persists by default, migrates an old tab session, and clears both copies', () => {
-  browserSessionStorage.setItem('test-session', 'fixture-session')
-  assert.equal(local.get('test-session'), 'fixture-session')
-  assert.equal(tab.get('test-session'), 'fixture-session')
-  browserSessionStorage.removeItem('test-session')
-  assert.equal(browserSessionStorage.getItem('test-session'), null)
-  tab.set('test-session', 'old-tab-session')
-  assert.equal(browserSessionStorage.getItem('test-session'), 'old-tab-session')
-  assert.equal(local.get('test-session'), 'old-tab-session')
+const savedLink = () => JSON.parse(decodeURIComponent(cookies.get('tc-wallet-link') ?? '%5B%5D'))
+
+test('a failed restore keeps the saved wallet until it is explicitly disconnected', async () => {
+  useWalletStore.setState({ hasHydrated: false })
+  const link = [{ provider: WalletOption.METAMASK, chains: [Chain.Ethereum, Chain.Base] }]
+  cookies.set('tc-wallet-link', encodeURIComponent(JSON.stringify(link)))
+  controls.getAccounts = async () => { throw new Error('Wallet unavailable') }
+  await useWalletStore.persist.rehydrate()
+  await flush()
+  assert.equal(useWalletStore.getState().hasHydrated, true)
+  assert.deepEqual(savedLink(), link)
+
+  useWalletStore.getState().disconnect(WalletOption.METAMASK)
+  assert.equal(cookies.has('tc-wallet-link'), false)
 })
 
-test('BCH session storage still works for the tab if browser persistence is blocked', () => {
+test('a partial restore keeps the chains that did not come back, and a newer connect replaces the entry', async () => {
+  useWalletStore.setState({ hasHydrated: false })
+  cookies.set('tc-wallet-link', encodeURIComponent(JSON.stringify([{ provider: WalletOption.METAMASK, chains: [Chain.Ethereum, Chain.Base] }])))
+  const ethereum = account()
+  controls.getAccounts = async () => [ethereum]
+  await useWalletStore.persist.rehydrate()
+  await flush()
+  assert.deepEqual(useWalletStore.getState().accounts, [ethereum])
+  assert.deepEqual(savedLink(), [{ provider: WalletOption.METAMASK, chains: [Chain.Ethereum, Chain.Base] }])
+
+  await useWalletStore.getState().connect(WalletOption.METAMASK, [Chain.Ethereum])
+  assert.deepEqual(savedLink(), [{ provider: WalletOption.METAMASK, chains: [Chain.Ethereum] }])
+})
+
+test('a locked or unauthorized wallet (empty eth_accounts) is not reconnected on load and stays saved', async () => {
+  useWalletStore.setState({ hasHydrated: false })
+  const link = [{ provider: WalletOption.RABBY, chains: [Chain.Base] }]
+  cookies.set('tc-wallet-link', encodeURIComponent(JSON.stringify(link)))
+  const checked = []
+  controls.hasAuthorizedAccount = async (provider, chains) => { checked.push([provider, chains]); return false }
+  let connectCalls = 0
+  controls.getAccounts = async () => { connectCalls++; return [] }
+  await useWalletStore.persist.rehydrate()
+  await flush()
+  assert.deepEqual(checked, [[WalletOption.RABBY, [Chain.Base]]])
+  assert.equal(connectCalls, 0)
+  assert.equal(useWalletStore.getState().hasHydrated, true)
+  assert.deepEqual(useWalletStore.getState().accounts, [])
+  assert.deepEqual(savedLink(), link)
+})
+
+test('an authorized wallet (eth_accounts has an account) restores through the normal connect path', async () => {
+  useWalletStore.setState({ hasHydrated: false })
+  const restored = account('0x3333333333333333333333333333333333333333', Chain.Base, WalletOption.RABBY)
+  cookies.set('tc-wallet-link', encodeURIComponent(JSON.stringify([{ provider: WalletOption.RABBY, chains: [Chain.Base] }])))
+  controls.hasAuthorizedAccount = async () => true
+  controls.getAccounts = async () => [restored]
+  await useWalletStore.persist.rehydrate()
+  await flush()
+  assert.deepEqual(useWalletStore.getState().accounts, [restored])
+  assert.deepEqual(savedLink(), [{ provider: WalletOption.RABBY, chains: [Chain.Base] }])
+})
+
+test('the BCH session lives under the WizardConnect default key in localStorage and clears on disconnect', () => {
+  assert.equal(SESSION_KEY, 'wizardconnect-session')
+  local.set(SESSION_KEY, 'fixture-session')
+  clearBchSession()
+  assert.equal(local.has(SESSION_KEY), false)
+})
+
+test('an old BCH session moves to the default key, from either storage, and every old copy is dropped', () => {
+  local.set('tc-bch-wizardconnect', 'old-session')
+  local.set('tc-bch-wizardconnect-reconnect', 'ended-session')
+  tab.set('tc-bch-wizardconnect', 'old-tab-session')
+  migrateLegacyBchSession()
+  assert.equal(local.get(SESSION_KEY), 'old-session')
+  for (const key of ['tc-bch-wizardconnect', 'tc-bch-wizardconnect-reconnect']) {
+    assert.equal(local.has(key), false)
+    assert.equal(tab.has(key), false)
+  }
+
+  local.delete(SESSION_KEY)
+  tab.set('tc-bch-wizardconnect', 'old-tab-session')
+  migrateLegacyBchSession()
+  assert.equal(local.get(SESSION_KEY), 'old-tab-session')
+  assert.equal(tab.has('tc-bch-wizardconnect'), false)
+  local.delete(SESSION_KEY)
+})
+
+test('a session the wallet ended is not resurrected from the old backup copy', () => {
+  local.set('tc-bch-wizardconnect-reconnect', 'ended-session')
+  migrateLegacyBchSession()
+  assert.equal(local.has(SESSION_KEY), false)
+  assert.equal(local.has('tc-bch-wizardconnect-reconnect'), false)
+})
+
+test('an existing default session is kept over an old copy', () => {
+  local.set(SESSION_KEY, 'current-session')
+  local.set('tc-bch-wizardconnect', 'old-session')
+  migrateLegacyBchSession()
+  assert.equal(local.get(SESSION_KEY), 'current-session')
+  assert.equal(local.has('tc-bch-wizardconnect'), false)
+  local.delete(SESSION_KEY)
+})
+
+test('BCH session migration and clearing do not throw when storage is blocked', () => {
   const saved = window.localStorage
   window.localStorage = { getItem() { throw new Error('Storage blocked') }, setItem() { throw new Error('Storage blocked') }, removeItem() { throw new Error('Storage blocked') } }
   try {
-    browserSessionStorage.setItem('test-session', 'fixture-session')
-    assert.equal(browserSessionStorage.getItem('test-session'), 'fixture-session')
-    browserSessionStorage.removeItem('test-session')
-    assert.equal(tab.has('test-session'), false)
-  } finally { window.localStorage = saved }
+    tab.set('tc-bch-wizardconnect', 'old-tab-session')
+    assert.doesNotThrow(() => migrateLegacyBchSession())
+    assert.doesNotThrow(() => clearBchSession())
+  } finally {
+    window.localStorage = saved
+    tab.clear()
+  }
 })
 
 test('the source badge shows a connect action while disconnected and a short address with actions after connection', () => {

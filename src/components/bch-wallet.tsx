@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useWizardConnect, WizardConnectQRDialog } from '@wizardconnect/react'
 import type { DappConnectionManager } from '@wizardconnect/dapp'
 import { AppConfig } from '@/config'
@@ -9,112 +9,41 @@ import { useActiveBridge } from '@/store/transaction-store'
 
 // The user's own BCH wallet, connected over WizardConnect. It receives the first leg's BCH and
 // signs the second leg. The public binding (key, path, index, addresses) is remembered in
-// localStorage. The relay session stays remembered until the user disconnects or pairs again.
+// localStorage. The relay session stays remembered until the user or the wallet disconnects.
 // A restored connection is still checked to be the same key.
 
 const RECEIVE_INDEX = 0
 const STORAGE_KEY = 'tc-bch-binding'
-const SESSION_KEY = 'tc-bch-wizardconnect'
-const SESSION_BACKUP_KEY = `${SESSION_KEY}-reconnect`
+// WizardConnect's default: useWizardConnect saves the relay session here in localStorage and
+// resumes it on page load (loadSession + existingCredentials), as its docs describe.
+export const SESSION_KEY = 'wizardconnect-session'
+// Where this app kept the session before it used the library default. The "-reconnect" copy only
+// outlived a session the wallet had ended, so it is dropped rather than restored.
+const LEGACY_SESSION_KEY = 'tc-bch-wizardconnect'
+const LEGACY_BACKUP_KEY = `${LEGACY_SESSION_KEY}-reconnect`
 // A restored session waits for the wallet app to come back online; after this the user is offered
 // a fresh QR pairing instead of an endless spinner.
 const RECONNECT_PATIENCE_MS = 15_000
 
-// The SDK's opaque relay session stays in the browser, never in our backend. Remembering it
-// permits reconnection; signing still requires approval in the wallet.
-export const browserSessionStorage = {
-  getItem: (key: string) => {
+// Moves a session saved under the old keys to the library's key, then drops the old copies so one
+// key is the only source of truth. Runs before the hook reads the session on mount.
+export const migrateLegacyBchSession = () => {
+  for (const area of ['localStorage', 'sessionStorage'] as const) {
     try {
-      const saved = window.localStorage.getItem(key)
-      if (saved) return saved
+      const storage = window[area]
+      const saved = storage.getItem(LEGACY_SESSION_KEY)
+      if (saved && !window.localStorage.getItem(SESSION_KEY)) window.localStorage.setItem(SESSION_KEY, saved)
+      storage.removeItem(LEGACY_SESSION_KEY)
+      storage.removeItem(LEGACY_BACKUP_KEY)
     } catch {
-      // Fall back to the current tab.
-    }
-    try {
-      const saved = window.sessionStorage.getItem(key)
-      // Carry an existing tab-only connection over to the persistent browser session.
-      if (saved) {
-        try {
-          window.localStorage.setItem(key, saved)
-        } catch {
-          // The tab's copy can still resume on reload.
-        }
-      }
-      return saved
-    } catch {
-      return null
-    }
-  },
-  setItem: (key: string, value: string) => {
-    try {
-      window.sessionStorage.setItem(key, value)
-    } catch {
-      // Storage unavailable (private mode, quota): the session is simply not restored.
-    }
-    try {
-      window.localStorage.setItem(key, value)
-    } catch {
-      // The tab's copy can still resume on reload.
-    }
-  },
-  removeItem: (key: string) => {
-    try {
-      window.localStorage.removeItem(key)
-    } catch {
-      // Storage unavailable.
-    }
-    try {
-      window.sessionStorage.removeItem(key)
-    } catch {
-      // Nothing was stored.
+      // Storage unavailable: there is nothing to restore.
     }
   }
 }
 
-// WizardConnect clears its stored credentials after a remote disconnect. Preserve one copy so a
-// network handoff can resume the same pairing; explicit disconnect and re-pair remove both copies.
-const wizardConnectStorage = {
-  getItem: (key: string) => {
-    const saved = browserSessionStorage.getItem(key)
-    if (saved || key !== SESSION_KEY) return saved
-    try {
-      const backup = window.localStorage.getItem(SESSION_BACKUP_KEY)
-      if (backup) {
-        browserSessionStorage.setItem(key, backup)
-        window.localStorage.removeItem(SESSION_BACKUP_KEY)
-      }
-      return backup
-    } catch {
-      return null
-    }
-  },
-  setItem: (key: string, value: string) => {
-    browserSessionStorage.setItem(key, value)
-    if (key === SESSION_KEY) {
-      try {
-        window.localStorage.removeItem(SESSION_BACKUP_KEY)
-      } catch {
-        // The active session is already saved.
-      }
-    }
-  },
-  removeItem: (key: string) => {
-    if (key === SESSION_KEY) {
-      try {
-        const saved = browserSessionStorage.getItem(key)
-        if (saved) window.localStorage.setItem(SESSION_BACKUP_KEY, saved)
-      } catch {
-        // The session can still be restored from the primary storage if available.
-      }
-    }
-    browserSessionStorage.removeItem(key)
-  }
-}
-
-const clearWizardConnectSession = () => {
-  browserSessionStorage.removeItem(SESSION_KEY)
+export const clearBchSession = () => {
   try {
-    window.localStorage.removeItem(SESSION_BACKUP_KEY)
+    window.localStorage.removeItem(SESSION_KEY)
   } catch {
     // Storage unavailable.
   }
@@ -170,39 +99,9 @@ interface BchWalletContextValue {
 const BchWalletContext = createContext<BchWalletContextValue | undefined>(undefined)
 
 export function BchWalletProvider({ children }: { children: ReactNode }) {
-  const [sessionGeneration, setSessionGeneration] = useState(0)
-  const restoreAttempted = useRef(false)
-  const onConnected = useCallback(() => {
-    restoreAttempted.current = false
-  }, [])
-  const onRemoteDisconnect = useCallback(() => {
-    // shortcut: retry once per successful session; persistent failures need a fresh QR pairing.
-    if (restoreAttempted.current) return
-    restoreAttempted.current = true
-    setSessionGeneration(generation => generation + 1)
-  }, [])
-
-  return (
-    <BchWalletSession
-      key={sessionGeneration}
-      onConnected={onConnected}
-      onRemoteDisconnect={onRemoteDisconnect}
-    >
-      {children}
-    </BchWalletSession>
-  )
-}
-
-function BchWalletSession({
-  children,
-  onConnected,
-  onRemoteDisconnect
-}: {
-  children: ReactNode
-  onConnected: () => void
-  onRemoteDisconnect: () => void
-}) {
-  const wc = useWizardConnect({ dappName: AppConfig.appName, persistSession: true, sessionKey: SESSION_KEY, storage: wizardConnectStorage })
+  // Lazy state runs during this render, before the hook's mount effect reads the stored session.
+  useState(migrateLegacyBchSession)
+  const wc = useWizardConnect({ dappName: AppConfig.appName, persistSession: true, sessionKey: SESSION_KEY })
   const activeBridge = useActiveBridge()
   const [saved, setSaved] = useState<SavedBinding | undefined>()
   const [derived, setDerived] = useState<BchBinding | undefined>()
@@ -233,8 +132,35 @@ function BchWalletSession({
     }
   }, [wc.manager])
 
+  // The hook leaves 'reconnecting' only on a new wallet_ready, and the manager stops pinging when it
+  // enters it. Any relay socket drop (sleep, Wi-Fi, an idle relay) therefore stays 'reconnecting'
+  // while the wallet answers fine. So pings restart on each 'reconnecting', and any message from the
+  // wallet after it (a pong, a signature) counts as the wallet being reachable again.
+  const [liveness, setLiveness] = useState({ seq: 0, lost: 0, heard: 0 })
   useEffect(() => {
-    if (wc.state !== 'connected' || !wc.manager) {
+    const manager = wc.manager
+    if (!manager) return
+    const onLost = () => setLiveness(prev => ({ ...prev, seq: prev.seq + 1, lost: prev.seq + 1 }))
+    const onHeard = () => setLiveness(prev => ({ ...prev, seq: prev.seq + 1, heard: prev.seq + 1 }))
+    manager.on('reconnecting', onLost)
+    manager.on('messagereceived', onHeard)
+    return () => {
+      manager.off('reconnecting', onLost)
+      manager.off('messagereceived', onHeard)
+    }
+  }, [wc.manager])
+  useEffect(() => {
+    if (wc.state !== 'reconnecting' || !wc.manager) return
+    // Private in the typings: the manager's own keepalive, which pings only a discovered wallet and
+    // emits 'reconnecting' again after 75 s of silence.
+    ;(wc.manager as unknown as { startPingInterval?: () => void }).startPingInterval?.()
+  }, [wc.state, wc.manager, liveness.lost])
+  const state = wc.state === 'reconnecting' && liveness.heard > liveness.lost ? 'connected' : wc.state
+
+  // 'reconnecting' keeps the binding: the manager still holds the wallet's xpubs, and a phone wallet
+  // drops to it whenever its app is backgrounded (no pong for 75 s). Only signing needs it live.
+  useEffect(() => {
+    if ((wc.state !== 'connected' && wc.state !== 'reconnecting') || !wc.manager) {
       setDerived(undefined)
       setDeriveError(null)
       return
@@ -260,7 +186,13 @@ function BchWalletSession({
   }, [wc.state, wc.manager, wc.walletName, walletReady, expected?.addressIndex, expected?.path])
 
   const mismatch = !!derived && !!expected && derived.pubkey !== expected.pubkey
-  const binding = wc.state === 'connected' && derived && !mismatch ? derived : undefined
+  // While a stored session resumes after a reload (no QR, waiting for the wallet app to answer), the
+  // address last derived from this wallet stands in, so a closed wallet app does not read as
+  // disconnected. The live derivation replaces it, and the mismatch check still applies, once it answers.
+  const resuming = wc.state === 'connecting' && !wc.uri
+  const resumed = resuming && !derived && saved && (!expected || saved.binding.pubkey === expected.pubkey) ? saved.binding : undefined
+  const live = (wc.state === 'connected' || wc.state === 'reconnecting') && derived && !mismatch ? derived : undefined
+  const binding = live ?? resumed
 
   // Remember the last wallet connected (public data only). While an operation runs only its own
   // wallet derives a matching binding, so the remembered one cannot drift from it.
@@ -279,26 +211,26 @@ function BchWalletSession({
   }, [activeBridge])
 
   const connect = useCallback(() => {
-    if (wc.state === 'disconnected') clearWizardConnectSession()
+    if (wc.state === 'disconnected') clearBchSession()
     wc.connect()
   }, [wc])
 
+  // Documented order: clear the stored session, then the hook sends the wallet a disconnect and
+  // tears down the relay.
   const disconnect = useCallback(async () => {
-    try {
-      await wc.disconnect()
-    } finally {
-      clearWizardConnectSession()
-    }
+    clearBchSession()
+    await wc.disconnect()
   }, [wc.disconnect])
 
+  // The wallet ended the session: the hook already clears it; clearing here too keeps a
+  // wallet-ended session from resuming on reload whatever the library version does.
   useEffect(() => {
-    if (wc.state === 'connected') onConnected()
-    if (wc.state === 'disconnected' && wizardConnectStorage.getItem(SESSION_KEY)) onRemoteDisconnect()
-  }, [wc.state, onConnected, onRemoteDisconnect])
+    if (wc.state === 'disconnected') clearBchSession()
+  }, [wc.state])
 
   // Resuming a stored session shows no QR (the hook only exposes one for a new pairing) and stays
   // 'connecting' until the wallet answers, which it does only while its app is open.
-  const reconnecting = (wc.state === 'connecting' && !wc.uri) || wc.state === 'reconnecting'
+  const reconnecting = (wc.state === 'connecting' && !wc.uri) || state === 'reconnecting'
   const [reconnectStalled, setReconnectStalled] = useState(false)
   useEffect(() => {
     setReconnectStalled(false)
@@ -322,7 +254,7 @@ function BchWalletSession({
 
   const value = useMemo<BchWalletContextValue>(
     () => ({
-      state: wc.state,
+      state,
       walletName: wc.walletName ?? saved?.walletName ?? null,
       manager: wc.manager,
       binding,
@@ -338,7 +270,7 @@ function BchWalletSession({
       forget
     }),
     [
-      wc.state,
+      state,
       wc.walletName,
       wc.manager,
       wc.error,

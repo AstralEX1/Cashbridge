@@ -2,8 +2,8 @@ import { Chain, WalletOption } from '@tcswap/core'
 import { toast } from 'sonner'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { readWalletLink, writeWalletLink } from '@/store/wallets-store-cookie'
-import { getAccounts, getUSwap, supportedChains, syncBraveAccountWatch } from '@/lib/wallets'
+import { readWalletLink, type WalletLink, writeWalletLink } from '@/store/wallets-store-cookie'
+import { getAccounts, getUSwap, hasAuthorizedAccount, supportedChains, syncBraveAccountWatch } from '@/lib/wallets'
 
 export interface WalletAccount {
   address: string
@@ -27,6 +27,9 @@ interface WalletState {
 
 // A disconnect or newer connect invalidates older async replies, including session restoration.
 const connectionVersions = new Map<WalletOption, number>()
+// Saved wallets not (fully) restored this visit (locked, not injected yet, or a failed reconnect)
+// stay in the cookie until an explicit disconnect or a newer connect of that provider.
+const keptLinks = new Map<WalletOption, WalletLink>()
 const nextConnectionVersion = (wallet: WalletOption) => {
   const version = (connectionVersions.get(wallet) ?? 0) + 1
   connectionVersions.set(wallet, version)
@@ -60,6 +63,8 @@ export const useWalletStore = create<WalletState>()(
           if (!newAccounts.length) {
             throw new Error(`Failed to get addresses for ${wallet}`)
           }
+          // This connect is now the provider's entry.
+          keptLinks.delete(wallet)
 
           set(state => {
             const replacedChains = new Set(newAccounts.map(a => a.network))
@@ -86,6 +91,7 @@ export const useWalletStore = create<WalletState>()(
 
       disconnect: (wallet: WalletOption) => {
         nextConnectionVersion(wallet)
+        keptLinks.delete(wallet)
         const uSwap = getUSwap()
         // `disconnectChain` acts on whichever wallet holds the chain's slot, so skip chains another wallet holds.
         supportedChains[wallet as keyof typeof supportedChains]?.forEach(chain => {
@@ -120,8 +126,13 @@ export const useWalletStore = create<WalletState>()(
         }
 
         const versions = new Map(link.map(wallet => [wallet.provider, nextConnectionVersion(wallet.provider)]))
+        // Until its restore lands, every saved entry is kept.
+        for (const w of link) keptLinks.set(w.provider, w)
         // Chains with a stored derivation path reconnect one by one — hardware wallets share a single transport.
         const reconnect = async (w: (typeof link)[number]) => {
+          // Locked or not authorized: restore later, without a popup on page load.
+          if ((await hasAuthorizedAccount(w.provider, w.chains)) === false) return []
+
           const pathChains = w.chains.filter(chain => w.paths?.[chain])
           const defaultChains = w.chains.filter(chain => !w.paths?.[chain])
 
@@ -136,9 +147,15 @@ export const useWalletStore = create<WalletState>()(
 
         Promise.allSettled(link.map(reconnect))
           .then(res => {
-            const rehydrated = res.flatMap((result, index) =>
-              result.status === 'fulfilled' && connectionVersions.get(link[index].provider) === versions.get(link[index].provider) ? result.value : []
-            )
+            const rehydrated = res.flatMap((result, index) => {
+              const w = link[index]
+              // A disconnect or newer connect during the restore already settled this provider's entry.
+              if (connectionVersions.get(w.provider) !== versions.get(w.provider)) return []
+              const restored = result.status === 'fulfilled' ? result.value : []
+              // Fully restored entries are written from the accounts; partial or failed ones stay kept.
+              if (w.chains.every(chain => restored.some(a => a.network === chain))) keptLinks.delete(w.provider)
+              return restored
+            })
 
             // Accounts connected while rehydration was in flight win.
             useWalletStore.setState(state => {
@@ -161,5 +178,5 @@ export const useWalletStore = create<WalletState>()(
 useWalletStore.subscribe(state => {
   syncBraveAccountWatch(state.accounts)
   if (!state.hasHydrated) return
-  writeWalletLink(state.accounts)
+  writeWalletLink(state.accounts, [...keptLinks.values()])
 })
