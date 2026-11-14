@@ -7,14 +7,13 @@ import { braveWallet, getBraveEVMProvider, getBraveSolanaProvider, watchBraveAcc
 import { evmWallet } from '@tcswap/wallets/evm-extensions'
 import { exodusWallet } from '@tcswap/wallets/exodus'
 import { keplrWallet } from '@tcswap/wallets/keplr'
-import { keystoreWallet } from '@tcswap/wallets/keystore'
 import { ledgerWallet } from '@tcswap/wallets/ledger'
 import { okxWallet } from '@tcswap/wallets/okx'
 import { phantomWallet } from '@tcswap/wallets/phantom'
 import { trezorWallet } from '@tcswap/wallets/trezor'
 import { tronlinkWallet } from '@/lib/tronlink'
 import { vultisigWallet } from '@tcswap/wallets/vultisig'
-import { AppConfig } from '@/config'
+import { AppConfig, aggregatorApiUrl } from '@/config'
 import { useWalletStore } from '@/store/wallets-store'
 import { BTC_PURPOSE_ADDRESS_TYPE, btcAddressType } from '@/lib/swap-helpers'
 
@@ -31,7 +30,6 @@ const defaultWallets = {
   ...evmWallet,
   ...exodusWallet,
   ...keplrWallet,
-  ...keystoreWallet,
   ...ledgerWallet,
   ...okxWallet,
   ...phantomWallet,
@@ -50,11 +48,6 @@ function createUSwap(config: Parameters<typeof USwap>[0] = {}) {
 }
 
 let instance: ReturnType<typeof createUSwap> | undefined = undefined
-let apiKeyOverride: string | undefined = undefined
-
-export function setUSwapApiKey(apiKey: string) {
-  apiKeyOverride = apiKey
-}
 
 // The Blockchair API key stays on the server, so the UTXO toolbox talks to our
 // own proxy (src/app/api/blockchair) instead of api.blockchair.com. The SDK's
@@ -85,7 +78,6 @@ export function getUSwap() {
   instance = createUSwap({
     config: {
       apiKeys: {
-        uSwap: apiKeyOverride || process.env.NEXT_PUBLIC_USWAP_API_KEY,
         blockchair: 'sto' // fake key to just avoid logs like: No Blockchair API key found
       },
       rpcUrls: {
@@ -96,7 +88,7 @@ export function getUSwap() {
         trezor: trezorManifest
       },
       envs: {
-        apiUrl: process.env.NEXT_PUBLIC_USWAP_API_URL,
+        apiUrl: aggregatorApiUrl(),
         blockchairApiUrl: blockchairProxyUrl(),
         memolessApiUrl: process.env.NEXT_PUBLIC_MEMOLESS_API
       }
@@ -153,8 +145,9 @@ export async function connectWallet(option: WalletOption, chains: Chain[], confi
       return connectEach(c => uSwap.connectTronLink(c))
     case WalletOption.EXODUS:
       return uSwap.connectExodus(chains)
+    // Seed phrase and keystore-file import is disabled: the bridge never handles private keys.
     case WalletOption.KEYSTORE:
-      return uSwap.connectKeystore(chains, config?.phrase, config?.derivationPath)
+      throw new Error('Keystore and seed phrase import is disabled')
     case WalletOption.LEDGER:
       return connectEach(c => uSwap.connectLedger(c, config?.derivationPath))
     case WalletOption.TREZOR:
@@ -262,7 +255,6 @@ export const supportedChains = {
   [WalletOption.EIP6963]: evmWallet.connectEVMWallet.supportedChains,
   [WalletOption.EXODUS]: exodusWallet.connectExodus.supportedChains,
   [WalletOption.KEPLR]: keplrWallet.connectKeplr.supportedChains,
-  [WalletOption.KEYSTORE]: keystoreWallet.connectKeystore.supportedChains,
   [WalletOption.LEAP]: keplrWallet.connectKeplr.supportedChains,
   [WalletOption.LEDGER]: ledgerWallet.connectLedger.supportedChains,
   [WalletOption.LEDGER_LIVE]: ledgerWallet.connectLedger.supportedChains,

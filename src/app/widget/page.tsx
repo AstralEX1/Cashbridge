@@ -13,13 +13,12 @@ interface WidgetPageProps {
 
 export default async function WidgetPage({ searchParams }: WidgetPageProps) {
   const params = await searchParams
-  const apiKey = typeof params.apiKey === 'string' ? params.apiKey : undefined
   const theme = parseWidgetTheme(params.theme)
 
   return (
     <>
       {theme && <script dangerouslySetInnerHTML={{ __html: widgetThemeScript(theme) }} />}
-      <Widget apiKey={apiKey} theme={theme} />
+      <Widget theme={theme} />
     </>
   )
 }

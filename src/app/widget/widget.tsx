@@ -4,7 +4,6 @@ import { Suspense, useEffect } from 'react'
 import { useTheme } from 'next-themes'
 import { GlobalDialog } from '@/components/global-dialog'
 import { Swap } from '@/components/swap/swap'
-import { setUSwapApiKey } from '@/lib/wallets'
 import { WIDGET_MESSAGE_SOURCE, type WidgetTheme } from './theme'
 
 // Embedding sites toggle their own dark/light mode; widget.js mirrors it into the iframe,
@@ -33,9 +32,9 @@ function useHostTheme(initial?: WidgetTheme) {
   }, [setTheme])
 }
 
-export function Widget({ apiKey, theme }: { apiKey?: string; theme?: WidgetTheme }) {
-  if (apiKey) setUSwapApiKey(apiKey)
-
+// No `apiKey` parameter: an aggregator key in a URL would reach the browser, its history and any
+// embedding page. The key lives on the server (src/app/api/thorchain).
+export function Widget({ theme }: { theme?: WidgetTheme }) {
   useHostTheme(theme)
 
   return (

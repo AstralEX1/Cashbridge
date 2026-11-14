@@ -135,15 +135,8 @@ export const WALLETS: WalletParams[] = [
     option: WalletOption.TREZOR,
     link: 'https://trezor.io',
     supportedChains: supportedChains[WalletOption.TREZOR]
-  },
-  {
-    key: 'keystore',
-    type: WalletType.hardware,
-    label: 'Keystore',
-    option: WalletOption.KEYSTORE,
-    link: 'https://www.keystore.com',
-    supportedChains: supportedChains[WalletOption.KEYSTORE]
   }
+  // No keystore / seed phrase entry: the bridge never imports private keys.
 ]
 
 export const wallet = (option: WalletOption) => {
@@ -163,8 +156,7 @@ export const isWalletAvailable = (option: WalletOption) => {
     // Rabby's own announcement, since `window.ethereum` is MetaMask's unless Rabby is the default wallet.
     case WalletOption.RABBY: return getEIP6963Provider(RABBY_RDNS) || window?.ethereum?.isRabby
     case WalletOption.LEDGER:
-    case WalletOption.TREZOR:
-    case WalletOption.KEYSTORE: return true
+    case WalletOption.TREZOR: return true
 
     case WalletOption.BRAVE:
       return getBraveSolanaProvider() || getBraveEVMProvider()

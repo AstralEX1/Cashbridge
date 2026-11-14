@@ -4,14 +4,12 @@
  * <script src="https://swap.thorchain.org/widget.js"></script>
  * <script>
  *   ThorchainWidget.init({
- *     apiKey: "YOUR_API_KEY",       // required, issued on swap.thorchain.org/affiliate
  *     type: "floating",             // floating | static (default: static)
  *     container: "#swap",           // static only: selector or element to render into
  *     horizontalPosition: "right",  // floating only: left | right
  *     verticalPosition: "bottom",   // floating only: top | bottom
  *     sellAsset: "BTC.BTC",
- *     buyAsset: "ETH.ETH",
- *     private: true,                // open the PRIVATE tab (default: false)
+ *     // The buy side is always BCH.BCH (THORChain leg of the BCH -> PUSD bridge).
  *     previewText: "Swap crypto",   // floating only: button label
  *     theme: "auto"                 // auto | light | dark | system (default: auto)
  *   });
@@ -87,10 +85,8 @@
 
   function widgetUrl(options, theme) {
     var params = new URLSearchParams()
-    if (options.apiKey) params.set('apiKey', options.apiKey)
     if (options.sellAsset) params.set('from', options.sellAsset)
     if (options.buyAsset) params.set('to', options.buyAsset)
-    if (options.private === true) params.set('private', 'true')
     params.set('theme', theme)
     return origin + '/widget?' + params.toString()
   }
@@ -224,11 +220,6 @@
   window.ThorchainWidget = {
     init: function (options) {
       options = options || {}
-      if (!options.apiKey) {
-        console.error('[ThorchainWidget] apiKey is required')
-        return
-      }
-
       if (options.type === 'floating') {
         initFloating(options)
       } else {
