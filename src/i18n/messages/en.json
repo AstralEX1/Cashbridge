@@ -39,7 +39,7 @@
       "swap": "Swap",
       "limit": "Limit",
       "private": "Private",
-      "bridge": "Swap to PUSD"
+      "bridge": "Bridge"
     },
     "input": {
       "sell": "Sell",
@@ -49,7 +49,8 @@
       "clear": "Clear"
     },
     "balance": {
-      "label": "Balance:"
+      "label": "Balance:",
+      "useMax": "Use maximum available balance"
     },
     "button": {
       "limitNotSupported": "Limit Order Not Supported",
@@ -66,6 +67,7 @@
       "insufficientBalance": "Insufficient Balance",
       "approve": "Approve {ticker}",
       "bridgeActive": "Finish the current bridge operation first",
+      "viewBridge": "View bridge progress",
       "noPusdRoute": "No PUSD route right now",
       "connectBch": "Connect BCH wallet",
       "connectBoundBch": "Connect the BCH wallet bound to this operation"
@@ -555,6 +557,7 @@
     "soon": "Soon",
     "connectNamed": "Connect {name}",
     "connected": "Connected",
+    "connectedOn": "Connected on {chain}",
     "disconnected": "Disconnected",
     "install": "Install",
     "connectWallet": "Connect Wallet",
@@ -654,6 +657,59 @@
     }
   },
   "bridge": {
+    "progress": {
+      "transfer": "Transfer ID",
+      "processing": "Processing…",
+      "ready": "BCH delivered",
+      "estimating": "Estimating…",
+      "readyTitle": "Bridge complete",
+      "swapping": "Swap in progress…",
+      "finished": "Your operation has finished.",
+      "completeTitle": "Transfer complete!",
+      "completeDescription": "Your funds have successfully arrived.",
+      "firstDescription": "Send → receive BCH → swap to PUSD.",
+      "secondDescription": "Final step · Swap BCH to PUSD in your wallet.",
+      "nativeDescription": "Delivering BCH to your wallet.",
+      "threeTransactions": "Three transactions: send, receive BCH, swap to PUSD",
+      "bridgeTransactions": "Send, then receive BCH",
+      "firstStep": "Bridge ({step})",
+      "secondStep": "Swap (2/2)",
+      "sourceTx": "Send Tx",
+      "receiveTx": "Receive Tx",
+      "swapTx": "Swap Tx",
+      "copy": "Copy transaction ID",
+      "copied": "Transaction ID copied",
+      "copyFailed": "Could not copy the transaction ID.",
+      "explorer": "View transaction in explorer",
+      "elapsed": "Total elapsed time",
+      "newTransfer": "New transfer",
+      "swapButton": "Swap (2/2)",
+      "reconnectBch": "Close this window and reconnect your BCH wallet using the main button.",
+      "retry": "Retry quote",
+      "done": "Done"
+    },
+    "form": {
+      "heading": "Bridge to Bitcoin Cash",
+      "from": "Bridge from",
+      "to": "Bridge to",
+      "chains": "Chains",
+      "tokens": "Tokens",
+      "search": "Search",
+      "selectSource": "Select chain and token",
+      "sendAmount": "Amount to send",
+      "receiveAmount": "Estimated amount to receive",
+      "indicative": "Estimated PUSD · separately signed on BCH",
+      "unavailable": "This token has no supported route in this bridge.",
+      "unavailableShort": "Unavailable",
+      "destinationNote": "Bitcoin Cash only. RES and NIGGA are unavailable in this bridge.",
+      "halted": "Trading is temporarily halted for this asset.",
+      "loading": "Loading supported assets…",
+      "empty": "No matching supported tokens on this chain.",
+      "assetsUnavailable": "Could not load supported assets. Refresh to try again.",
+      "route": "Route details",
+      "wallets": "Manage wallets",
+      "selectedDestination": "Destination: {asset} on Bitcoin Cash."
+    },
     "estimate": {
       "step1": "Step 1 · THORChain swap to BCH",
       "step2": "Step 2 · Cauldron swap BCH to PUSD",
@@ -664,8 +720,16 @@
       "disclaimer": "Indicative only. Nothing is reserved: the PUSD swap is quoted again on the BCH you actually receive, and needs a second approval in your BCH wallet. You can keep the BCH instead."
     },
     "wallet": {
-      "title": "BCH wallet (receives BCH, signs the PUSD swap)",
+      "title": "BCH wallet",
+      "source": "Source wallet",
+      "destination": "BCH wallet",
+      "copy": "Copy address",
+      "copyFailed": "Could not copy the address.",
+      "explorer": "View in explorer",
       "connect": "Connect",
+      "connectSource": "Connect wallet",
+      "connectDestination": "Connect BCH wallet",
+      "connecting": "Connecting…",
       "disconnect": "Disconnect",
       "expected": "Bound address: {address}. Reconnect the same wallet to continue.",
       "remembered": "Last connected: {address}. Connect it again, or any other BCH wallet.",

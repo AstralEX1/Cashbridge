@@ -97,11 +97,13 @@ export interface SecondLeg {
 export interface BridgeOperation {
   id: string
   stage: BridgeStage
+  // Absent on older operations, which always continued to PUSD.
+  destinationAsset?: 'BCH' | 'PUSD'
   binding: BchBinding
   walletName?: string
   // Indicative BCH (sats) from the first-leg quote; never used as receipt evidence.
   quotedBchSats?: string
-  firstLeg: { result: FirstLegResult; trackerStatus?: string }
+  firstLeg: { result: FirstLegResult; trackerStatus?: string; readyAt?: number; timingUpdatedAt?: number }
   outbound?: { txid: string; amountSats: string }[]
   refunds?: BridgeRefund[]
   received?: VerifiedOutput[]
@@ -186,7 +188,21 @@ export const transactionStore = create<TransactionStore>()(
               // A bridge operation keeps the tracker's answer as first-leg detail only: the
               // tracker's `completed` and planned amounts say nothing about the BCH actually received.
               if (item.kind !== 'send' && item.bridge) {
-                return { ...item, details: data, bridge: { ...item.bridge, firstLeg: { ...item.bridge.firstLeg, trackerStatus: data.status } } }
+                const total = data.transient?.estimatedTimeToComplete
+                const observation = data.transient?.estimates?.outboundObservation
+                // The second leg can use BCH before its outbound block confirmation. This is
+                // display-only timing; receipt and spendability are verified independently.
+                const timing =
+                  typeof total === 'number' && Number.isFinite(total) &&
+                  typeof observation === 'number' && Number.isFinite(observation) &&
+                  observation >= 0 && total >= observation
+                    ? { readyAt: Date.now() + (total - observation) * 1000, timingUpdatedAt: Date.now() }
+                    : {}
+                return {
+                  ...item,
+                  details: data,
+                  bridge: { ...item.bridge, firstLeg: { ...item.bridge.firstLeg, ...timing, trackerStatus: data.status } }
+                }
               }
 
               const tx = {

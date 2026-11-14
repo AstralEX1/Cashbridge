@@ -16,7 +16,7 @@ import { estimateTransactionFee } from '@tcswap/toolboxes/cosmos'
 import { getProvider } from '@tcswap/toolboxes/evm'
 import { Contract } from 'ethers'
 import { useAssetFrom } from '@/hooks/use-swap'
-import { useWallets } from '@/hooks/use-wallets'
+import { useConnectedAccount } from '@/hooks/use-wallets'
 import { getAssetBalance, getThorBankBalances } from '@/lib/api'
 import { thorBalanceKey } from '@/lib/swap-helpers'
 import { getUSwap } from '@/lib/wallets'
@@ -34,7 +34,7 @@ type UseBalance = {
 export const useBalance = (): UseBalance => {
   const uSwap = getUSwap()
   const assetFrom = useAssetFrom()
-  const { selected } = useWallets()
+  const selected = useConnectedAccount(assetFrom?.chain)
   const queryClient = useQueryClient()
 
   const {
@@ -43,7 +43,7 @@ export const useBalance = (): UseBalance => {
     isLoading,
     error
   } = useQuery({
-    queryKey: ['balance', assetFrom?.identifier, selected?.provider],
+    queryKey: ['balance', assetFrom?.identifier, selected?.provider, selected?.network, selected?.address],
     queryFn: async () => {
       if (!selected || !assetFrom) {
         return null
@@ -165,7 +165,7 @@ export const useBalance = (): UseBalance => {
   })
 
   return {
-    balance,
+    balance: selected ? balance : null,
     refetch,
     isLoading,
     error

@@ -9,8 +9,8 @@ import { useActiveBridge } from '@/store/transaction-store'
 
 // The user's own BCH wallet, connected over WizardConnect. It receives the first leg's BCH and
 // signs the second leg. The public binding (key, path, index, addresses) is remembered in
-// localStorage, the relay session only for the life of the tab (tabSessionStorage). A restored
-// connection is still checked to be the same key.
+// localStorage. The relay session is also remembered in this browser until disconnection.
+// A restored connection is still checked to be the same key.
 
 const RECEIVE_INDEX = 0
 const STORAGE_KEY = 'tc-bch-binding'
@@ -19,14 +19,27 @@ const SESSION_KEY = 'tc-bch-wizardconnect'
 // a fresh QR pairing instead of an endless spinner.
 const RECONNECT_PATIENCE_MS = 15_000
 
-// The WizardConnect relay session (its private key and secret) is kept in sessionStorage only, as
-// the user chose: a page reload reconnects without a new QR scan, closing the tab ends it, and it
-// never reaches localStorage. Holding it lets this page send the wallet signing requests, which
-// the wallet still asks the user to approve.
-const tabSessionStorage = {
+// The SDK's opaque relay session stays in the browser, never in our backend. Remembering it
+// permits reconnection; signing still requires approval in the wallet.
+export const browserSessionStorage = {
   getItem: (key: string) => {
     try {
-      return window.sessionStorage.getItem(key)
+      const saved = window.localStorage.getItem(key)
+      if (saved) return saved
+    } catch {
+      // Fall back to the current tab.
+    }
+    try {
+      const saved = window.sessionStorage.getItem(key)
+      // Carry an existing tab-only connection over to the persistent browser session.
+      if (saved) {
+        try {
+          window.localStorage.setItem(key, saved)
+        } catch {
+          // The tab's copy can still resume on reload.
+        }
+      }
+      return saved
     } catch {
       return null
     }
@@ -37,8 +50,18 @@ const tabSessionStorage = {
     } catch {
       // Storage unavailable (private mode, quota): the session is simply not restored.
     }
+    try {
+      window.localStorage.setItem(key, value)
+    } catch {
+      // The tab's copy can still resume on reload.
+    }
   },
   removeItem: (key: string) => {
+    try {
+      window.localStorage.removeItem(key)
+    } catch {
+      // Storage unavailable.
+    }
     try {
       window.sessionStorage.removeItem(key)
     } catch {
@@ -97,7 +120,7 @@ interface BchWalletContextValue {
 const BchWalletContext = createContext<BchWalletContextValue | undefined>(undefined)
 
 export function BchWalletProvider({ children }: { children: ReactNode }) {
-  const wc = useWizardConnect({ dappName: AppConfig.appName, persistSession: true, sessionKey: SESSION_KEY, storage: tabSessionStorage })
+  const wc = useWizardConnect({ dappName: AppConfig.appName, persistSession: true, sessionKey: SESSION_KEY, storage: browserSessionStorage })
   const activeBridge = useActiveBridge()
   const [saved, setSaved] = useState<SavedBinding | undefined>()
   const [derived, setDerived] = useState<BchBinding | undefined>()
@@ -131,6 +154,7 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (wc.state !== 'connected' || !wc.manager) {
       setDerived(undefined)
+      setDeriveError(null)
       return
     }
     try {
@@ -154,7 +178,7 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
   }, [wc.state, wc.manager, wc.walletName, walletReady, expected?.addressIndex, expected?.path])
 
   const mismatch = !!derived && !!expected && derived.pubkey !== expected.pubkey
-  const binding = derived && !mismatch ? derived : undefined
+  const binding = wc.state === 'connected' && derived && !mismatch ? derived : undefined
 
   // Remember the last wallet connected (public data only). While an operation runs only its own
   // wallet derives a matching binding, so the remembered one cannot drift from it.

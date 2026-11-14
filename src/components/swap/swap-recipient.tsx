@@ -42,10 +42,11 @@ import { useBchWallet } from '@/components/bch-wallet'
 
 interface SwapRecipientProps {
   provider: ProviderName
+  autoPrepare?: boolean
   onFetchQuote: (quote: QuoteResponseRoute & { destinationMemo?: string }) => void
 }
 
-export const SwapRecipient = ({ provider, onFetchQuote }: SwapRecipientProps) => {
+export const SwapRecipient = ({ provider, onFetchQuote, autoPrepare = false }: SwapRecipientProps) => {
   const t = useTranslations('swap')
   const isMobile = useIsMobile()
   const assetFrom = useAssetFrom()
@@ -139,10 +140,11 @@ export const SwapRecipient = ({ provider, onFetchQuote }: SwapRecipientProps) =>
       refundAddress: refundRequired ? refundAddress : provider === 'MAYACHAIN' ? undefined : selectedAccount?.address,
       dry: !(depositOrder || selectedAccount),
       slippage: isLimitSwap ? 0 : (slippage ?? 99),
-      providers: [provider],
+      providers: [provider]
     })
       .then(quotes => {
         let quote = quotes[0]
+        if (!quote) throw new Error(t('button.noValidQuotes'))
 
         // For THORChain limit orders, modify the memo to use limit order format
         if (isLimitSwap && isThorchain) {
@@ -175,11 +177,11 @@ export const SwapRecipient = ({ provider, onFetchQuote }: SwapRecipientProps) =>
   // A replacement for a cancelled limit order already knows its destination, so it skips this step:
   // the quote is fetched on mount and the dialog opens straight on the confirm screen.
   useEffect(() => {
-    if (!replacementOrder?.consumed || autoFetched.current || !buttonEnabled) return
+    if ((!autoPrepare && !replacementOrder?.consumed) || autoFetched.current || !buttonEnabled) return
     autoFetched.current = true
     fetchQuote()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [replacementOrder?.consumed, buttonEnabled])
+  }, [replacementOrder?.consumed, buttonEnabled, autoPrepare])
 
   const addressInput = (
     field: 'refund' | 'destination',
@@ -278,10 +280,10 @@ export const SwapRecipient = ({ provider, onFetchQuote }: SwapRecipientProps) =>
       size="large"
       className="w-full"
       onClick={fetchQuote}
-      disabled={!buttonEnabled || (!isHoudini && !warningChecked) || (isLTC && !warningCheckedLTC)}
+      disabled={!buttonEnabled || (!autoPrepare && ((!isHoudini && !warningChecked) || (isLTC && !warningCheckedLTC)))}
     >
       {quoting && <LoaderCircle size={20} className="animate-spin" />}
-      <span>{quoting ? t('recipient.preparingSwap') : t('recipient.next')}</span>
+      <span>{quoting ? t('recipient.preparingSwap') : autoPrepare ? t('button.send') : t('recipient.next')}</span>
     </GenericButton>
   )
 
@@ -332,7 +334,7 @@ export const SwapRecipient = ({ provider, onFetchQuote }: SwapRecipientProps) =>
               )}
             </div>
 
-            {!isHoudini && (
+            {!autoPrepare && !isHoudini && (
               <SwapAddressWarning
                 checked={warningChecked}
                 onCheckedChange={setWarningChecked}
@@ -341,7 +343,7 @@ export const SwapRecipient = ({ provider, onFetchQuote }: SwapRecipientProps) =>
               />
             )}
 
-            {isLTC && (
+            {!autoPrepare && isLTC && (
               <SwapAddressWarning
                 checked={warningCheckedLTC}
                 onCheckedChange={setWarningCheckedLTC}

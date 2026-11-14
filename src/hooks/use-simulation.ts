@@ -4,7 +4,7 @@ import { type EVMChain } from '@tcswap/helpers'
 import { useBalance } from '@/hooks/use-balance'
 import { useQuote } from '@/hooks/use-quote'
 import { useAssetFrom, useSwap } from '@/hooks/use-swap'
-import { useWallets } from '@/hooks/use-wallets'
+import { useConnectedAccount } from '@/hooks/use-wallets'
 import { getUSwap } from '@/lib/wallets'
 
 type UseSimulation = {
@@ -20,7 +20,7 @@ type UseSimulation = {
 export const useSimulation = (): UseSimulation => {
   const uSwap = getUSwap()
   const assetFrom = useAssetFrom()
-  const { selected } = useWallets()
+  const selected = useConnectedAccount(assetFrom?.chain)
   const { valueFrom } = useSwap()
   const { quote } = useQuote()
   const { balance } = useBalance()
@@ -30,7 +30,7 @@ export const useSimulation = (): UseSimulation => {
     isLoading,
     error
   } = useQuery({
-    queryKey: ['simulation', quote],
+    queryKey: ['simulation', quote, selected?.provider, selected?.network, selected?.address],
     queryFn: async () => {
       if (!quote || !selected || !assetFrom) {
         return null

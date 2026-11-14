@@ -17,14 +17,16 @@ import { useIsLimitSwapPaused, useIsMemolessHalted, useMimir } from '@/hooks/use
 import { useQuote } from '@/hooks/use-quote'
 import { useSimulation } from '@/hooks/use-simulation'
 import { useAssetFrom, useAssetTo, useSwap } from '@/hooks/use-swap'
-import { useExternalWalletMode, useSelectedAccount, useSetExternalWalletMode } from '@/hooks/use-wallets'
+import { useConnectedAccount, useExternalWalletMode, useSetExternalWalletMode } from '@/hooks/use-wallets'
 import { readableError } from '@/lib/errors'
 import { isDepositOnlyPrivateSell, isMayaProvider, isPrivateSend, isTaprootAddress, waitForAllowance } from '@/lib/swap-helpers'
 import { getUSwap } from '@/lib/wallets'
 import { useIsLimitSwap, useLimitSwapBuyAmount } from '@/store/limit-swap-store'
 import { useIsPrivateSwap, usePrivateSwapAcknowledged } from '@/store/private-swap-store'
+import { useSwapStore } from '@/store/swap-store'
 
 interface SwapButtonProps {
+  onShowBridge: () => void
   instantSwapSupported: boolean
   instantSwapAvailable: boolean
 }
@@ -36,13 +38,13 @@ interface ButtonState {
   onClick?: () => void
 }
 
-export const SwapButton = ({ instantSwapSupported, instantSwapAvailable }: SwapButtonProps) => {
+export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowBridge }: SwapButtonProps) => {
   const t = useTranslations('swap')
   const tWallet = useTranslations('wallet')
   const assetFrom = useAssetFrom()
   const assetTo = useAssetTo()
   const uSwap = getUSwap()
-  const selectedAccount = useSelectedAccount()
+  const selectedAccount = useConnectedAccount(assetFrom?.chain)
   const isLimitSwap = useIsLimitSwap()
   const limitSwapBuyAmount = useLimitSwapBuyAmount()
   const isPrivateSwap = useIsPrivateSwap()
@@ -62,12 +64,13 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable }: SwapB
     ? t('button.enterLimitOrder')
     : isPrivateSend(isPrivateSwap, assetFrom, assetTo)
       ? t('button.send')
-      : t('button.swap')
+      : t('button.send')
 
   const [isApproving, setIsApproving] = useState(false)
   const activeBridge = useActiveBridge()
   const pusdEstimate = usePusdEstimate()
   const bchWallet = useBchWallet()
+  const destinationAsset = useSwapStore(state => state.destinationAsset)
 
   const { openDialog } = useDialog()
 
@@ -77,6 +80,15 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable }: SwapB
 
   const onInstantSwap = (quote: QuoteResponseRoute) => {
     openDialog(InstantSwapDialog, { provider: quote.providers[0] })
+  }
+
+  const connectSource = () => {
+    if (!assetFrom) return
+    if (externalWalletMode) {
+      if (!isMemolessHalted) toast.warning(tWallet('externalWalletAssetUnsupported'))
+      setExternalWalletMode(false)
+    }
+    openDialog(ConnectWallet, { chain: assetFrom.chain })
   }
 
   const onApprove = async () => {
@@ -122,6 +134,19 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable }: SwapB
   }
 
   const getState = (): ButtonState => {
+    if (!bchWallet.binding) {
+      const connecting = bchWallet.state === 'connecting' || bchWallet.state === 'reconnecting'
+      return {
+        text: bchWallet.mismatch ? t('button.connectBoundBch') : t('button.connectBch'),
+        spinner: connecting && !bchWallet.reconnectStalled,
+        accent: true,
+        onClick: bchWallet.reconnectStalled || bchWallet.mismatch || bchWallet.state === 'connected' ? bchWallet.pairAgain : connecting ? undefined : bchWallet.connect
+      }
+    }
+    if (assetFrom && !selectedAccount && !instantSwapSupported) {
+      return { text: t('button.connectWallet', { chain: chainLabel(assetFrom.chain) }), spinner: false, accent: true, onClick: connectSource }
+    }
+    if (activeBridge) return { text: t('button.viewBridge'), spinner: false, accent: true, onClick: onShowBridge }
     if (isLimitSwap && isLimitSwapDisabled) {
       return { text: isMayaChain ? t('button.limitNotSupported') : t('button.temporarilyUnavailable'), spinner: false, accent: false }
     }
@@ -139,19 +164,11 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable }: SwapB
       return { text: t('button.enterLimitPrice'), spinner: false, accent: false }
     }
 
-    // Bridge gates: one operation at a time, a PUSD route to aim for, and the user's BCH wallet
-    // connected (it is the first leg's destination) before the source wallet is asked to sign.
-    if (activeBridge) return { text: t('button.bridgeActive'), spinner: false, accent: false }
-    if (pusdEstimate.isLoading) return { text: t('button.quoting'), spinner: true, accent: false }
-    if (pusdEstimate.pusd === undefined || pusdEstimate.pusd <= 0n) return { text: t('button.noPusdRoute'), spinner: false, accent: false }
-    if (!bchWallet.binding) {
-      return {
-        text: bchWallet.mismatch ? t('button.connectBoundBch') : t('button.connectBch'),
-        spinner: bchWallet.state === 'connecting' && !bchWallet.reconnectStalled,
-        accent: false,
-        // A resumed session the wallet has not answered can be replaced by a new QR pairing.
-        onClick: bchWallet.reconnectStalled ? bchWallet.pairAgain : bchWallet.state === 'connecting' ? undefined : bchWallet.connect
-      }
+    // Native BCH needs only the THORChain route; PUSD also needs an indicative Cauldron route.
+    if (destinationAsset === 'PUSD') {
+      if (pusdEstimate.isLoading) return { text: t('button.quoting'), spinner: true, accent: false }
+      if (pusdEstimate.error || pusdEstimate.pusd === undefined || pusdEstimate.pusd <= 0n)
+        return { text: t('button.noPusdRoute'), spinner: false, accent: false }
     }
 
     if (isDepositOnlyPrivateSell(isPrivateSwap, assetFrom.chain)) {
@@ -171,13 +188,7 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable }: SwapB
           text: t('button.connectWallet', { chain: chainLabel(assetFrom.chain) }),
           spinner: false,
           accent: false,
-          onClick: () => {
-            if (externalWalletMode) {
-              if (!isMemolessHalted) toast.warning(tWallet('externalWalletAssetUnsupported'))
-              setExternalWalletMode(false)
-            }
-            openDialog(ConnectWallet, { chain: assetFrom.chain })
-          }
+          onClick: connectSource
         }
       }
     }
@@ -223,7 +234,7 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable }: SwapB
     <AnimatedButton
       aria-label={state.text || t('button.enterAmount')}
       colorType={state.accent ? 'accent' : 'default'}
-      className="w-full"
+      className="bridge-primary w-full"
       onClick={state.onClick}
       disabled={!state.onClick}
       loading={state.spinner}

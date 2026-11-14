@@ -5,6 +5,7 @@ import { BridgeConfig } from '@/config'
 import { useLimitSwapStore } from '@/store/limit-swap-store'
 
 const INITIAL_AMOUNT_FROM = 1
+export type BridgeDestination = 'BCH' | 'PUSD'
 
 // The bridge's first leg always buys native BCH: no other buy asset is accepted, and BCH itself
 // cannot be sold into it.
@@ -25,6 +26,8 @@ export const INITIAL_CUSTOM_INTERVAL = 0
 export const INITIAL_CUSTOM_QUANTITY = 0
 
 interface SwapState {
+  destinationAsset: BridgeDestination
+  setDestinationAsset: (asset: BridgeDestination) => void
   assetFrom?: Asset
   assetTo?: Asset
   amountFrom: string
@@ -47,6 +50,10 @@ interface SwapState {
 export const useSwapStore = create<SwapState>()(
   persist(
     (set, get) => ({
+      destinationAsset: 'PUSD',
+      setDestinationAsset: destinationAsset => {
+        if (destinationAsset === 'BCH' || destinationAsset === 'PUSD') set({ destinationAsset })
+      },
       slippage: INITIAL_SLIPPAGE,
       customInterval: INITIAL_CUSTOM_INTERVAL,
       customQuantity: INITIAL_CUSTOM_QUANTITY,
@@ -85,12 +92,14 @@ export const useSwapStore = create<SwapState>()(
         const state = { ...current, ...(persisted as Partial<SwapState>) }
         if (!isBridgeSellAsset(state.assetFrom)) state.assetFrom = undefined
         if (!isBridgeBuyAsset(state.assetTo)) state.assetTo = undefined
+        if (state.destinationAsset !== 'BCH' && state.destinationAsset !== 'PUSD') state.destinationAsset = 'PUSD'
         return state
       },
       onRehydrateStorage: () => state => {
         state?.setHasHydrated(true)
       },
       partialize: state => ({
+        destinationAsset: state.destinationAsset,
         slippage: state.slippage,
         feeWarning: state.feeWarning,
         assetFrom: state.assetFrom,

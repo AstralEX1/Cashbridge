@@ -25,6 +25,19 @@ interface WalletState {
   setExternalWalletMode: (enabled: boolean) => void
 }
 
+// A disconnect or newer connect invalidates older async replies, including session restoration.
+const connectionVersions = new Map<WalletOption, number>()
+const nextConnectionVersion = (wallet: WalletOption) => {
+  const version = (connectionVersions.get(wallet) ?? 0) + 1
+  connectionVersions.set(wallet, version)
+  return version
+}
+
+export const connectedAccount = (state: Pick<WalletState, 'accounts' | 'selected'>) =>
+  state.accounts.find(
+    account => account.provider === state.selected?.provider && account.network === state.selected?.network && account.address === state.selected?.address
+  )
+
 export const useWalletStore = create<WalletState>()(
   persist(
     (set, get) => ({
@@ -35,12 +48,15 @@ export const useWalletStore = create<WalletState>()(
       externalWalletMode: false,
 
       select: (account?: WalletAccount) => {
-        set({ selected: account })
+        // A chosen source wallet overrides a saved deposit-only preference.
+        set({ selected: account, ...(account ? { externalWalletMode: false } : {}) })
       },
 
       connect: async (wallet: WalletOption, chains: Chain[], config?: any) => {
+        const version = nextConnectionVersion(wallet)
         try {
           const newAccounts = await getAccounts(wallet, chains, config)
+          if (connectionVersions.get(wallet) !== version) return
           if (!newAccounts.length) {
             throw new Error(`Failed to get addresses for ${wallet}`)
           }
@@ -52,11 +68,15 @@ export const useWalletStore = create<WalletState>()(
 
             return {
               accounts,
+              selected: newAccounts.find(account => account.network === state.selected?.network) ?? state.selected ?? newAccounts[0],
+              externalWalletMode: false,
               connectedWallets: Array.from(new Set([...state.connectedWallets, wallet]))
             }
           })
         } catch (err: any) {
+          if (connectionVersions.get(wallet) !== version) return
           toast.error(err.message)
+          throw err
         }
       },
 
@@ -65,6 +85,7 @@ export const useWalletStore = create<WalletState>()(
       },
 
       disconnect: (wallet: WalletOption) => {
+        nextConnectionVersion(wallet)
         const uSwap = getUSwap()
         // `disconnectChain` acts on whichever wallet holds the chain's slot, so skip chains another wallet holds.
         supportedChains[wallet as keyof typeof supportedChains]?.forEach(chain => {
@@ -77,6 +98,7 @@ export const useWalletStore = create<WalletState>()(
 
           return {
             accounts,
+            selected: state.selected?.provider === wallet ? accounts.find(account => account.network === state.selected?.network) : state.selected,
             connectedWallets: wallets
           }
         })
@@ -90,15 +112,14 @@ export const useWalletStore = create<WalletState>()(
         selected: state.selected,
         externalWalletMode: state.externalWalletMode
       }),
-      onRehydrateStorage: () => async (_state, error) => {
-        if (error) console.log(error)
-
+      onRehydrateStorage: () => () => {
         const link = readWalletLink()
         if (link.length === 0) {
           useWalletStore.setState({ accounts: [], connectedWallets: [], selected: undefined, hasHydrated: true })
           return
         }
 
+        const versions = new Map(link.map(wallet => [wallet.provider, nextConnectionVersion(wallet.provider)]))
         // Chains with a stored derivation path reconnect one by one — hardware wallets share a single transport.
         const reconnect = async (w: (typeof link)[number]) => {
           const pathChains = w.chains.filter(chain => w.paths?.[chain])
@@ -115,7 +136,9 @@ export const useWalletStore = create<WalletState>()(
 
         Promise.allSettled(link.map(reconnect))
           .then(res => {
-            const rehydrated = res.reduce((a: WalletAccount[], v) => (v.status === 'fulfilled' ? [...v.value, ...a] : a), [])
+            const rehydrated = res.flatMap((result, index) =>
+              result.status === 'fulfilled' && connectionVersions.get(link[index].provider) === versions.get(link[index].provider) ? result.value : []
+            )
 
             // Accounts connected while rehydration was in flight win.
             useWalletStore.setState(state => {

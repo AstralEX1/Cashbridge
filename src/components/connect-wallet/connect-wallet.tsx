@@ -11,7 +11,7 @@ import { Trezor } from '@/components/connect-wallet/trezor'
 import { WalletIcon } from '@/components/wallet-icon'
 import { Icon } from '@/components/icons'
 import { useWallets } from '@/hooks/use-wallets'
-import { cn } from '@/lib/utils'
+import { cn, truncate } from '@/lib/utils'
 
 interface ConnectWalletProps {
   isOpen: boolean
@@ -23,7 +23,7 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
   const t = useTranslations('wallet')
   const [selectedWallet, setSelectedWallet] = useState<WalletParams | undefined>(undefined)
   const [selectedChain, setSelectedChain] = useState<Chain | undefined>(chain)
-  const { connectedWallets } = useWallets()
+  const { accounts, select } = useWallets()
 
   const chains = useMemo(
     () =>
@@ -55,7 +55,6 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
 
   const onSelectWallet = (wallet: WalletParams) => {
     setSelectedWallet(prev => (prev === wallet ? undefined : wallet))
-    setSelectedChain(undefined)
   }
 
   const onSelectChain = (chain: Chain) => {
@@ -71,25 +70,39 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
 
   const walletList = (wallets: WalletParams[]) => {
     return wallets.map((wallet, index) => {
-      const isConnected = connectedWallets.find(w => w === wallet.option)
+      const connected = accounts.find(account => account.provider === wallet.option && (!selectedChain || account.network === selectedChain))
       const isInstalled = isWalletAvailable(wallet.option)
       const isSelected = wallet === selectedWallet
       const isHighlighted = isWalletHighlighted(wallet.option)
-      const isClickable =
-        isInstalled && isHighlighted && (!isConnected || wallet.option === WalletOption.LEDGER || wallet.option === WalletOption.TREZOR)
+      const isClickable = isInstalled && isHighlighted
+      const chooseWallet = () => {
+        if (!isClickable) return
+        if (connected && wallet.type === WalletType.browser) {
+          select(connected)
+          onOpenChange(false)
+          return
+        }
+        onSelectWallet(wallet)
+      }
 
       return (
         <div
           key={index}
+          role={isClickable ? 'button' : undefined}
+          tabIndex={isClickable ? 0 : undefined}
+          aria-label={wallet.label}
           className={cn('mb-1 flex items-center space-x-3 rounded-2xl border border-transparent p-3', {
             'border-border-btn-modal-hover': isSelected,
             'opacity-25': !isHighlighted,
             'hover:bg-sub-container-modal/50 cursor-pointer': isClickable,
             'mb-4 md:mb-8': index === wallets.length - 1
           })}
-          onClick={() => {
-            if (!isClickable) return
-            onSelectWallet(wallet)
+          onClick={chooseWallet}
+          onKeyDown={event => {
+            if (isClickable && (event.key === 'Enter' || event.key === ' ')) {
+              event.preventDefault()
+              chooseWallet()
+            }
           }}
         >
           <WalletIcon walletKey={wallet.key} width={32} height={32} />
@@ -97,8 +110,13 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
             <div className="text-txt-high-contrast font-medium">{wallet.label}</div>
             <div className="text-xs">
               {isInstalled ? (
-                isConnected ? (
-                  <span className="text-green-contrast">{t('connected')}</span>
+                connected ? (
+                  <>
+                    <span className="text-green-contrast">{t('connectedOn', { chain: chainLabel(connected.network) })}</span>
+                    <div className="text-txt-label-small mt-1" title={connected.address}>
+                      {truncate(connected.address)}
+                    </div>
+                  </>
                 ) : (
                   <span>{t('disconnected')}</span>
                 )
@@ -120,7 +138,7 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
     }
 
     if (wallet.type === WalletType.browser) {
-      return <BrowserWallet key={wallet.key} wallet={wallet} chains={chains} onConnect={onConnect} />
+      return <BrowserWallet key={wallet.key} wallet={wallet} chains={chains} chain={selectedChain} onConnect={onConnect} />
     }
 
     if (wallet.key === 'ledger') {

@@ -23,6 +23,7 @@ import { useBchWallet } from '@/components/bch-wallet'
 import { startBridgeFirstLeg } from '@/components/swap/pusd-swap'
 import { useIsLimitSwap, useLimitSwapBuyAmount } from '@/store/limit-swap-store'
 import { useReplacementOrderStore, useSetReplacementOrder } from '@/store/replacement-order-store'
+import { useSwapStore } from '@/store/swap-store'
 
 interface SwapDialogProps {
   provider: ProviderName
@@ -32,6 +33,8 @@ interface SwapDialogProps {
 
 export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) => {
   const t = useTranslations('swap')
+  const tBridge = useTranslations('bridge')
+  const destinationAsset = useSwapStore(state => state.destinationAsset)
   const uSwap = getUSwap()
   const assetFrom = useAssetFrom()
   const assetTo = useAssetTo()
@@ -53,13 +56,17 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
 
   const [quote, setQuote] = useState<QuoteResponseRoute | undefined>(undefined)
   const [highPriceImpactAccepted, setHighPriceImpactAccepted] = useState(false)
+  const [selfCustodyAccepted, setSelfCustodyAccepted] = useState(false)
+  const [ltcWarningAccepted, setLtcWarningAccepted] = useState(false)
 
   const priceImpact = resolvePriceImpact(quote, rateFrom, rateTo)
   const requiresHighPriceImpactAcceptance = !isLimitSwap && !!priceImpact && priceImpact.gt(2)
-  const confirmBlocked = requiresHighPriceImpactAcceptance && !highPriceImpactAccepted
+  const requiresLtcWarning = assetFrom?.ticker === 'LTC'
+  const confirmBlocked =
+    !selfCustodyAccepted || (requiresLtcWarning && !ltcWarningAccepted) || (requiresHighPriceImpactAcceptance && !highPriceImpactAccepted)
 
   const onConfirm = () => {
-    if (!quote || !assetFrom || !assetTo) return
+    if (!quote || !assetFrom || !assetTo || confirmBlocked || submitting) return
 
     setSubmitting(true)
 
@@ -89,6 +96,7 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
       binding,
       walletName: bchWalletName ?? undefined,
       quotedBchSats,
+      destinationAsset,
       base: {
         provider: provider,
         chainId: getChainConfig(assetFrom.chain).chainId,
@@ -130,6 +138,24 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
             <SwapConfirm quote={quote} priceImpact={priceImpact} />
 
             <div className="space-y-3 p-4 pt-2 md:p-8 md:pt-2">
+              <div className="text-txt-label-small text-sm">
+                {tBridge('form.selectedDestination', { asset: destinationAsset })}
+                {destinationAsset === 'PUSD' && <p className="mt-1 text-xs">{tBridge('estimate.disclaimer')}</p>}
+              </div>
+              <SwapAddressWarning
+                checked={selfCustodyAccepted}
+                onCheckedChange={setSelfCustodyAccepted}
+                text={t('warning.selfCustody')}
+                textAccent={t('warning.lossOfFunds')}
+              />
+              {requiresLtcWarning && (
+                <SwapAddressWarning
+                  checked={ltcWarningAccepted}
+                  onCheckedChange={setLtcWarningAccepted}
+                  text={t('warning.ltcMweb')}
+                  textAccent={t('warning.lossOfFunds')}
+                />
+              )}
               {requiresHighPriceImpactAcceptance && (
                 <SwapAddressWarning
                   checked={highPriceImpactAccepted}
@@ -137,13 +163,23 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
                   text={isHoudiniProvider(provider) ? t('warning.highPriceImpactPrivate') : t('warning.highPriceImpact')}
                 />
               )}
-              <GenericButton colorType="3" size="large" className="w-full" onClick={() => onConfirm()} disabled={!quote || submitting || confirmBlocked}>
-                {submitting ? <LoaderCircle size={20} className="animate-spin" /> : <span>{isLimitSwap ? t('confirm.buttonLimit') : t('confirm.button')}</span>}
+              <GenericButton
+                colorType="3"
+                size="large"
+                className="w-full"
+                onClick={() => onConfirm()}
+                disabled={!quote || submitting || confirmBlocked}
+              >
+                {submitting ? (
+                  <LoaderCircle size={20} className="animate-spin" />
+                ) : (
+                  <span>{isLimitSwap ? t('confirm.buttonLimit') : t('button.send')}</span>
+                )}
               </GenericButton>
             </div>
           </>
         ) : (
-          <SwapRecipient provider={provider} onFetchQuote={quote => setQuote(quote)} />
+          <SwapRecipient provider={provider} autoPrepare onFetchQuote={quote => setQuote(quote)} />
         )}
       </CredenzaContent>
     </Credenza>

@@ -1,12 +1,13 @@
 import { useTranslations } from 'next-intl'
-import { Loader } from 'lucide-react'
+import { Coins, Loader } from 'lucide-react'
 import { DecimalText } from '@/components/decimal/decimal-text'
+import { Tooltip } from '@/components/tooltip'
 import { useBalance } from '@/hooks/use-balance'
-import { useAssetFrom } from '@/hooks/use-swap'
+import { useSwap } from '@/hooks/use-swap'
 
 export const SwapBalance = () => {
   const t = useTranslations('swap')
-  const assetFrom = useAssetFrom()
+  const { setValueFrom } = useSwap()
   const { balance, isLoading: isBalanceLoading } = useBalance()
 
   const renderBalance = () => {
@@ -15,7 +16,7 @@ export const SwapBalance = () => {
     }
 
     if (balance) {
-      return <DecimalText amount={balance.spendable.toSignificant()} symbol={assetFrom?.ticker} />
+      return <DecimalText amount={balance.spendable.toSignificant()} />
     }
 
     return null
@@ -26,9 +27,17 @@ export const SwapBalance = () => {
   if (!balanceContent) return null
 
   return (
-    <div className="text-txt-label-small flex gap-1 text-[10px]">
-      <span>{t('balance.label')}</span>
-      {balanceContent}
-    </div>
+    <Tooltip content={t('balance.useMax')}>
+      <button
+        type="button"
+        className="bridge-max-balance"
+        aria-label={t('balance.useMax')}
+        disabled={isBalanceLoading || !balance || balance.spendable.eqValue(0)}
+        onClick={() => balance && setValueFrom(balance.spendable)}
+      >
+        <Coins size={15} aria-hidden="true" />
+        {balanceContent}
+      </button>
+    </Tooltip>
   )
 }

@@ -1,14 +1,17 @@
 'use client'
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowDown, Wallet } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { AssetValue } from '@tcswap/core'
 import { BridgeConfig } from '@/config'
 import { Asset } from '@/components/swap/asset'
-import { SwapAddressFrom } from '@/components/swap/swap-address-from'
+import { TransactionHistoryButton } from '@/components/header/transaction-history-button'
+import { GenericButton } from '@/components/generic-button'
+import { useDialog } from '@/components/global-dialog'
+import { WalletSidebar } from '@/components/wallet-sidebar/wallet-sidebar'
 import { SwapButton } from '@/components/swap/swap-button'
-import { BchWalletStatus, BridgeOperationPanel, PusdEstimate } from '@/components/swap/pusd-swap'
-import { SwapDetails } from '@/components/swap/swap-details'
+import { BchWalletStatus, BridgeOperationPanel } from '@/components/swap/pusd-swap'
 import { SwapHaltBanner } from '@/components/swap/swap-halt-banner'
 import { SwapInputFrom } from '@/components/swap/swap-input-from'
 import { SwapInputTo } from '@/components/swap/swap-input-to'
@@ -23,12 +26,22 @@ import { urlBuyAsset, useUrlParams } from '@/hooks/use-url-params'
 import { resolvePriceImpact } from '@/lib/swap-helpers'
 import { useIsPrivateSend } from '@/store/limit-swap-store'
 import { useSwapStore } from '@/store/swap-store'
+import { useActiveBridge } from '@/store/transaction-store'
+import './bridge.css'
 
 const DEFAULT_SELL = 'BTC.BTC'
 const DEFAULT_BUY = BridgeConfig.buyAsset
 
 export const Swap = () => {
-  const t = useTranslations('swap')
+  const tBridge = useTranslations('bridge.form')
+  const [picker, setPicker] = useState<'from' | 'to'>()
+  const activeBridge = useActiveBridge()
+  const [progressId, setProgressId] = useState<string>()
+  const progressReadyId = activeBridge && activeBridge.bridge.stage !== 'first_leg_signing' ? activeBridge.uid : undefined
+  useEffect(() => {
+    if (progressReadyId) setProgressId(progressReadyId)
+  }, [progressReadyId])
+  const { openDialog } = useDialog()
   const setAssetFrom = useSetAssetFrom()
   const setAssetTo = useSetAssetTo()
   const isPrivateSend = useIsPrivateSend()
@@ -81,36 +94,41 @@ export const Swap = () => {
   }, [quote, rateFrom, rateTo])
 
   return (
-    <div className="flex flex-col items-center justify-center px-4 pt-4 pb-4 md:pb-20">
-      <div className="w-full max-w-md">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="text-txt-contrast-1-default text-2xl font-medium">{t('tab.bridge')}</div>
-          <div className="flex items-center gap-4">
-            <SwapAddressFrom />
-            <SwapSettings />
-          </div>
-        </div>
-
-        {/* THORChain swap to native BCH, then a separately signed Cauldron swap to PUSD. No limit,
-            private, reverse or memoless entry points. */}
-        <div className="bg-modal rounded-20 relative space-y-1.25 border p-2.5">
-          <SwapInputFrom />
-          <SwapInputTo priceImpact={priceImpact} />
-          <PusdEstimate />
-          <BchWalletStatus />
-          <SwapButton instantSwapSupported={false} instantSwapAvailable={false} />
-        </div>
-
-        <BridgeOperationPanel />
-
-        {isHalted && !isPrivateTab && (
-          <div className="pt-2">
-            <SwapHaltBanner chains={haltedChains} />
-          </div>
-        )}
-
-        <SwapDetails />
+    <div className="bridge-widget mx-auto w-full max-w-[514px]">
+      <div className="bridge-heading">
+        <h1>{tBridge('heading')}</h1>
       </div>
+      <div className="bridge-tools mb-3 flex items-center justify-end">
+        <div className="flex items-center gap-2">
+          <GenericButton size="small" aria-label={tBridge('wallets')} icon={<Wallet size={18} />} onClick={() => openDialog(WalletSidebar, {})} />
+          <TransactionHistoryButton />
+          <SwapSettings />
+        </div>
+      </div>
+
+      {/* THORChain swap to native BCH, then a separately signed Cauldron swap to PUSD. No limit,
+            private, reverse or memoless entry points. */}
+      <div className="bridge-card">
+        <SwapInputFrom selecting={picker === 'from'} onSelectOpenChange={open => setPicker(open ? 'from' : undefined)} />
+        <div className="bridge-divider" aria-hidden="true">
+          <span />
+          <span className="bridge-direction">
+            <ArrowDown size={21} />
+          </span>
+          <span />
+        </div>
+        <SwapInputTo priceImpact={priceImpact} selecting={picker === 'to'} onSelectOpenChange={open => setPicker(open ? 'to' : undefined)} />
+      </div>
+      <SwapButton instantSwapSupported={false} instantSwapAvailable={false} onShowBridge={() => setProgressId(activeBridge?.uid)} />
+      <BchWalletStatus />
+
+      <BridgeOperationPanel uid={progressId} onClose={() => setProgressId(undefined)} />
+
+      {isHalted && !isPrivateTab && (
+        <div className="pt-2">
+          <SwapHaltBanner chains={haltedChains} />
+        </div>
+      )}
     </div>
   )
 }
