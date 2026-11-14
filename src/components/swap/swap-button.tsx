@@ -4,6 +4,9 @@ import { QuoteResponseRoute } from '@tcswap/helpers/api'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { AnimatedButton } from '@/components/animated-button'
+import { useBchWallet } from '@/components/bch-wallet'
+import { usePusdEstimate } from '@/components/swap/pusd-swap'
+import { useActiveBridge } from '@/store/transaction-store'
 import { chainLabel } from '@/components/connect-wallet/config'
 import { ConnectWallet } from '@/components/connect-wallet/connect-wallet'
 import { useDialog } from '@/components/global-dialog'
@@ -62,6 +65,9 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable }: SwapB
       : t('button.swap')
 
   const [isApproving, setIsApproving] = useState(false)
+  const activeBridge = useActiveBridge()
+  const pusdEstimate = usePusdEstimate()
+  const bchWallet = useBchWallet()
 
   const { openDialog } = useDialog()
 
@@ -107,6 +113,7 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable }: SwapB
 
       toast.success(t('toast.success'), { id: toastId })
     } catch (err) {
+      console.error('Approval failed', err)
       toast.error(readableError(err, t('toast.errorSubmitting')), { id: toastId })
     } finally {
       setIsApproving(false)
@@ -130,6 +137,21 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable }: SwapB
 
     if (isLimitSwap && limitSwapBuyAmount === '0') {
       return { text: t('button.enterLimitPrice'), spinner: false, accent: false }
+    }
+
+    // Bridge gates: one operation at a time, a PUSD route to aim for, and the user's BCH wallet
+    // connected (it is the first leg's destination) before the source wallet is asked to sign.
+    if (activeBridge) return { text: t('button.bridgeActive'), spinner: false, accent: false }
+    if (pusdEstimate.isLoading) return { text: t('button.quoting'), spinner: true, accent: false }
+    if (pusdEstimate.pusd === undefined || pusdEstimate.pusd <= 0n) return { text: t('button.noPusdRoute'), spinner: false, accent: false }
+    if (!bchWallet.binding) {
+      return {
+        text: bchWallet.mismatch ? t('button.connectBoundBch') : t('button.connectBch'),
+        spinner: bchWallet.state === 'connecting' && !bchWallet.reconnectStalled,
+        accent: false,
+        // A resumed session the wallet has not answered can be replaced by a new QR pairing.
+        onClick: bchWallet.reconnectStalled ? bchWallet.pairAgain : bchWallet.state === 'connecting' ? undefined : bchWallet.connect
+      }
     }
 
     if (isDepositOnlyPrivateSell(isPrivateSwap, assetFrom.chain)) {

@@ -38,6 +38,7 @@ import { useIsLimitSwapPaused, useLimitSwapMaxAge } from '@/hooks/use-mimir'
 import { useIsLimitSwap, useLimitSwapBuyAmount, useLimitSwapExpiry } from '@/store/limit-swap-store'
 import { useReplacementOrder } from '@/store/replacement-order-store'
 import { WalletAccount } from '@/store/wallets-store'
+import { useBchWallet } from '@/components/bch-wallet'
 
 interface SwapRecipientProps {
   provider: ProviderName
@@ -67,7 +68,11 @@ export const SwapRecipient = ({ provider, onFetchQuote }: SwapRecipientProps) =>
 
   // A replacement for a cancelled limit order keeps the destination the original order paid out to.
   const replacementOrder = useReplacementOrder()
-  const [destinationAddress, setDestinationAddress] = useState<string>(() => replacementOrder?.destination ?? '')
+  // The first leg always pays the user's connected BCH wallet; the address cannot be typed or pasted.
+  const { binding } = useBchWallet()
+  const destinationAddress = binding?.cashAddress ?? ''
+  const setDestinationAddress = (_: string) => {}
+  void replacementOrder
   const [refundAddress, setRefundAddress] = useState<string>('')
   const [destinationMemo, setDestinationMemo] = useState('')
   const [refundAsked, setRefundAsked] = useState(false)
@@ -135,8 +140,6 @@ export const SwapRecipient = ({ provider, onFetchQuote }: SwapRecipientProps) =>
       dry: !(depositOrder || selectedAccount),
       slippage: isLimitSwap ? 0 : (slippage ?? 99),
       providers: [provider],
-      ...(memo && { destinationMemo: memo }),
-      ...(supportsStreaming && !isLimitSwap && { streamingInterval: customInterval, streamingQuantity: customQuantity })
     })
       .then(quotes => {
         let quote = quotes[0]
@@ -301,15 +304,10 @@ export const SwapRecipient = ({ provider, onFetchQuote }: SwapRecipientProps) =>
 
               <div className="flex flex-col gap-3">
                 {refundRequired && <div className="text-txt-label-small text-sm font-semibold">{t('recipient.enterReceivingAddress')}</div>}
-                {addressInput(
-                  'destination',
-                  assetTo,
-                  destinationAddress,
-                  setDestinationAddress,
-                  destinationCheck,
-                  destinationName.isResolving || destinationCode.isChecking,
-                  options
-                )}
+                <div className="text-txt-label-small text-sm font-semibold">{t('recipient.bridgeDestination')}</div>
+                <div className="bg-input-modal-bg-active border-border-sub-container-modal-low rounded-xl border p-4 text-sm break-all">
+                  {destinationAddress || t('recipient.bridgeNoWallet')}
+                </div>
                 {isTaprootDestination && <div className="text-lucian text-xs font-semibold">{t('recipient.taprootNotSupported')}</div>}
                 {isDelegatedDestination && <div className="text-lucian text-xs font-semibold">{t('recipient.delegatedNotSupported')}</div>}
                 {destinationCode.isContract && <div className="text-lucian text-xs font-semibold">{t('recipient.contractNotSupported')}</div>}

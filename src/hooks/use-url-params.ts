@@ -3,12 +3,14 @@
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { Asset } from '@/components/swap/asset'
+import { BridgeConfig } from '@/config'
 import { useModeAssets } from '@/hooks/use-assets'
 import { useIsPrivateSwap, useSetIsPrivateSwap } from '@/store/private-swap-store'
 import { useSwapStore } from '@/store/swap-store'
 
 const DEFAULT_SELL = 'BTC.BTC'
-const DEFAULT_BUY = 'ETH.ETH'
+// The bridge buys native BCH whatever the URL names (see BridgeConfig).
+const DEFAULT_BUY = BridgeConfig.buyAsset
 const SELL = 'sell-'
 const BUY = '-buy-'
 
@@ -50,8 +52,7 @@ const readPair = (pathname: string, params: Pick<URLSearchParams, 'get'>) =>
 
 // The buy asset the address bar names. It is never rewritten to a same-asset (private send) pair,
 // so it still holds the last real buy asset when Send mode or the PRIVATE tab is left.
-export const urlBuyAsset = (assets: Asset[]) =>
-  resolveAsset(assets, readPair(window.location.pathname, new URLSearchParams(window.location.search)).buy, DEFAULT_BUY)
+export const urlBuyAsset = (assets: Asset[]) => resolveAsset(assets, DEFAULT_BUY, DEFAULT_BUY)
 
 export const useUrlParams = () => {
   const initialized = useRef(false)
@@ -77,9 +78,10 @@ export const useUrlParams = () => {
     }
     if (!assets?.length || !hasHydrated) return
 
-    const { sell, buy } = readPair(pathname, searchParams)
+    const { sell } = readPair(pathname, searchParams)
     const sellAsset = resolveAsset(assets, sell, DEFAULT_SELL)
-    const buyAsset = resolveAsset(assets, buy, DEFAULT_BUY)
+    // A crafted `-buy-` segment cannot pick another destination asset.
+    const buyAsset = resolveAsset(assets, DEFAULT_BUY, DEFAULT_BUY)
 
     if (sellAsset) setAssetFrom(sellAsset)
     if (buyAsset && buyAsset.identifier !== sellAsset?.identifier) setAssetTo(buyAsset)
@@ -110,8 +112,7 @@ export const useUrlParams = () => {
     if (assetFrom.identifier === assetTo.identifier) return
     const newPath = `/${SELL}${toSlug(assetFrom)}${BUY}${toSlug(assetTo)}`
     const params = new URLSearchParams(window.location.search)
-    if (isPrivateSwap) params.set('private', 'true')
-    else params.delete('private')
+    params.delete('private')
     const search = params.toString()
     const newUrl = search ? `${newPath}?${search}` : newPath
     if (window.location.pathname + window.location.search !== newUrl) {

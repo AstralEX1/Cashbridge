@@ -15,11 +15,14 @@ import { useSwapRates } from '@/hooks/use-rates'
 import { useAssetFrom, useAssetTo, useSwap } from '@/hooks/use-swap'
 import { readableError } from '@/lib/errors'
 import { isHoudiniProvider, resolvePriceImpact } from '@/lib/swap-helpers'
-import { generateId } from '@/lib/utils'
 import { getUSwap } from '@/lib/wallets'
+import { isBridgeRoute } from '@/lib/api'
+import { addressPaysScript } from '@/lib/bch'
+import { toBaseUnits } from '@/lib/bridge'
+import { useBchWallet } from '@/components/bch-wallet'
+import { startBridgeFirstLeg } from '@/components/swap/pusd-swap'
 import { useIsLimitSwap, useLimitSwapBuyAmount } from '@/store/limit-swap-store'
 import { useReplacementOrderStore, useSetReplacementOrder } from '@/store/replacement-order-store'
-import { useSetTransaction } from '@/store/transaction-store'
 
 interface SwapDialogProps {
   provider: ProviderName
@@ -35,7 +38,7 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
   const { valueFrom, setAmountFrom } = useSwap()
   const { refetch: refetchBalance } = useBalance()
   const [submitting, setSubmitting] = useState(false)
-  const setTransaction = useSetTransaction()
+  const { binding, walletName: bchWalletName } = useBchWallet()
   const setReplacementOrder = useSetReplacementOrder()
   const isLimitSwap = useIsLimitSwap()
   const limitSwapBuyAmount = useLimitSwapBuyAmount()
@@ -68,46 +71,46 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
     // are plain TRC20 transfers with no on-chain expiry, so dropping the field is safe.
     const route = assetFrom.chain === Chain.Tron && quote.expiration ? ({ ...quote, expiration: undefined } as QuoteResponseRoute) : quote
 
-    const broadcast = uSwap
-      .swap({
-        route: route as any,
-        feeOptionKey: FeeOption.Fast
-      })
-      .then((hash: string) => {
-        setTransaction({
-          uid: generateId(),
-          provider: provider,
-          chainId: getChainConfig(assetFrom.chain).chainId,
-          hash: hash,
-          timestamp: new Date(),
-          estimatedTime: quote.estimatedTime?.total,
-          assetFrom: assetFrom,
-          assetTo: assetTo,
-          // A Houdini order restates the deposit with the venue's own rounding, and the plugin
-          // sends exactly `route.sellAmount`; the history shows what was actually sent.
-          amountFrom: isHoudiniProvider(provider) ? quote.sellAmount : valueFrom.toSignificant(),
-          amountTo: new USwapNumber(quote.expectedBuyAmount).toSignificant(),
-          addressFrom: quote.sourceAddress,
-          addressTo: quote.destinationAddress || '',
-          addressDeposit: quote.inboundAddress,
-          status: 'pending',
-          limitSwapMemo: isLimitSwap ? quote.memo : undefined,
-          limitPrice:
-            isLimitSwap && limitSwapBuyAmount && !valueFrom.eq(0)
-              ? USwapNumber.fromBigInt(BigInt(limitSwapBuyAmount), 8).div(valueFrom).toSignificant()
-              : undefined,
-          providerSwapId: quote.meta?.houdini?.houdiniId
-        })
+    // The route must still be the bridge's: THORChain, buying BCH.BCH, paying the bound BCH wallet.
+    if (!binding || !isBridgeRoute(quote, { sellAsset: assetFrom.identifier, destinationAddress: binding.cashAddress }) || !addressPaysScript(quote.destinationAddress, binding.lockingBytecode)) {
+      setSubmitting(false)
+      toast.error(t('toast.bridgeRouteMismatch'))
+      return
+    }
 
+    let quotedBchSats: string | undefined
+    try {
+      quotedBchSats = toBaseUnits(quote.expectedBuyAmount, 8).toString()
+    } catch {
+      quotedBchSats = undefined
+    }
+
+    const broadcast = startBridgeFirstLeg({
+      binding,
+      walletName: bchWalletName ?? undefined,
+      quotedBchSats,
+      base: {
+        provider: provider,
+        chainId: getChainConfig(assetFrom.chain).chainId,
+        timestamp: new Date(),
+        estimatedTime: quote.estimatedTime?.total,
+        assetFrom: assetFrom,
+        assetTo: assetTo,
+        amountFrom: valueFrom.toSignificant(),
+        amountTo: new USwapNumber(quote.expectedBuyAmount).toSignificant(),
+        addressFrom: quote.sourceAddress,
+        addressTo: quote.destinationAddress || '',
+        addressDeposit: quote.inboundAddress
+      },
+      execute: () => uSwap.swap({ route: route as any, feeOptionKey: FeeOption.Fast }) as Promise<string>
+    })
+      .then(() => {
         setAmountFrom('')
         refetchBalance()
-        // A parked replacement for a cancelled limit order has now been placed.
-        setReplacementOrder(undefined)
-
         onOpenChange(false)
       })
       .catch((err: any) => {
-        console.log(err)
+        console.error('Bridge first leg failed', err)
         setSubmitting(false)
         throw err
       })

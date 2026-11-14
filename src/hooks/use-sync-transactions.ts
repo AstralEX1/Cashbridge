@@ -4,7 +4,7 @@ import { ProviderName } from '@tcswap/helpers'
 import { AxiosError } from 'axios'
 import { getTrack } from '@/lib/api'
 import { getTransferStatus, transferDropWindow } from '@/lib/transfer-status'
-import { SendTransaction, TxStatus, usePendingTransactions, useSetTransactionDetails, useSetTransactionStatus } from '@/store/transaction-store'
+import { SendTransaction, TxStatus, useSyncablePlainTransactions, useSetTransactionDetails, useSetTransactionStatus } from '@/store/transaction-store'
 
 // A send still unseen past its drop window becomes 'unknown' - but only after this many inconclusive
 // lookups, at most one per poll interval, so a single erroring or lagging node can't freeze a
@@ -47,7 +47,7 @@ const syncSend = async (tx: SendTransaction, setStatus: (uid: string, status: Tx
 }
 
 export const useSyncTransactions = () => {
-  const pendingTransactions = usePendingTransactions()
+  const pendingTransactions = useSyncablePlainTransactions()
   const setTransactionDetails = useSetTransactionDetails()
   const setTransactionStatus = useSetTransactionStatus()
 

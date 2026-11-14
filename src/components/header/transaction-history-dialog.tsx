@@ -38,6 +38,7 @@ export const TransactionHistoryDialog = ({ isOpen, onOpenChange }: HistoryDialog
   const [expandTx, setExpandTx] = useState<string | null>(null)
   const { openDialog } = useDialog()
   const t = useTranslations('tx')
+  const tBridge = useTranslations('bridge')
 
   const identifiers = useMemo(() => transactions.flatMap(t => [t.assetFrom.identifier, t.assetTo.identifier]), [transactions])
 
@@ -133,7 +134,13 @@ export const TransactionHistoryDialog = ({ isOpen, onOpenChange }: HistoryDialog
               const fromAddress: string | undefined = details?.fromAddress ?? tx.addressFrom
               const toAddress: string = details?.toAddress ?? tx.addressTo
               const statusKey = isLimitSwapOpen ? 'open' : isSend && status === 'completed' ? 'sent' : status
-              const statusTitle = t.has(`status.${statusKey}`) ? t(`status.${statusKey}`) : status.replace('_', ' ')
+              // A bridge operation reads by its own stage: the first leg finishing is not the end of it.
+              const bridgeStage = !isSend ? tx.bridge?.stage : undefined
+              const statusTitle = bridgeStage
+                ? tBridge(`stage.${bridgeStage}`)
+                : t.has(`status.${statusKey}`)
+                  ? t(`status.${statusKey}`)
+                  : status.replace('_', ' ')
 
               const showRemainingTime = status === 'pending' && tx.estimatedTime && !isLimitSwapOpen
               const limitPricePerUnit = tx.limitPrice ? new USwapNumber(tx.limitPrice) : null

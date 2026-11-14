@@ -11,6 +11,7 @@ import { AssetIcon } from '@/components/asset-icon'
 import { chainLabel } from '@/components/connect-wallet/config'
 import { Asset } from '@/components/swap/asset'
 import { useModeAssets } from '@/hooks/use-assets'
+import { isBridgeSellAsset } from '@/store/swap-store'
 import { useIsWidget } from '@/hooks/use-is-widget'
 import { useMemolessAssets } from '@/hooks/use-memoless-assets'
 import { useMimir } from '@/hooks/use-mimir'
@@ -63,7 +64,9 @@ export const SwapSelectAsset = ({ isOpen, onOpenChange, selected, onSelectAsset 
   const [searchQuery, setSearchQuery] = useState('')
   const [showSecuredAssets, setShowSecuredAssets] = useState(false)
 
-  const { assets } = useModeAssets()
+  // Only the bridge's sell side opens this picker: BCH is what it buys, so it is not offered.
+  const { assets: modeAssets } = useModeAssets()
+  const assets = useMemo(() => modeAssets?.filter(isBridgeSellAsset), [modeAssets])
   const { mimir, mayaMimir } = useMimir()
   const { assets: memolessAssets } = useMemolessAssets()
   const isPrivateSwap = useIsPrivateSwap()

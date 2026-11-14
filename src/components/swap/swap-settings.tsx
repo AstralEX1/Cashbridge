@@ -119,79 +119,8 @@ export const SwapSettings = () => {
             </div>
           </div>
 
-          <Separator />
-
-          <div className="flex flex-col gap-2">
-            <div className="flex justify-between text-sm font-semibold">
-              <div className="flex items-center gap-1">
-                <span>{t('settings.twapTitle')}</span>
-                <InfoTooltip>
-                  {t('settings.twapTooltip1')} <br /> <br />
-                  {t('settings.twapTooltip2')}
-                </InfoTooltip>
-              </div>
-            </div>
-            <span className="text-txt-label-small text-xs">{t('settings.twapDescription')}</span>
-          </div>
-
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold">
-                  <span className="me-1">{t('settings.numberOfSubSwaps')}</span>
-                  <InfoTooltip>{t('settings.numberOfSubSwapsTooltip')}</InfoTooltip>
-                </span>
-                <span className="text-xs font-semibold">{localCustomQuantity}</span>
-              </div>
-            </div>
-            <div className="w-full">
-              <Slider
-                max={numberOfTradesValues.length}
-                value={[quantityToSliderIndex(localCustomQuantity)]}
-                onValueChange={([index]) => setLocalCustomQuantity(sliderIndexToQuantity(index))}
-                classNameRange="bg-green-default"
-              />
-              <div className="text-txt-label-small mt-3 flex items-center justify-between text-[10px] font-semibold">
-                <span>0</span>
-                <span>{numberOfTradesValues[numberOfTradesValues.length - 1]}</span>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold">
-                  <span className="me-1">{t('settings.timeBetweenSubSwaps')}</span>
-                  <InfoTooltip>{t('settings.timeBetweenSubSwapsTooltip')}</InfoTooltip>
-                </span>
-                <span className="text-xs font-semibold">{t('settings.blocksCount', { count: localCustomInterval })}</span>
-              </div>
-              <Slider
-                max={3}
-                value={[localCustomInterval]}
-                onValueChange={([value]) => setLocalCustomInterval(value)}
-                classNameRange="bg-green-default"
-              />
-              <div className="text-txt-label-small mt-1 flex items-center justify-between text-center text-[10px] font-semibold">
-                <div className="flex flex-col">
-                  <span>{t('settings.blocksCount', { count: 0 })}</span>
-                  <span>{t('settings.rapidSwap')}</span>
-                </div>
-                <div className="flex flex-col">
-                  <span>{t('settings.blocksCount', { count: 1 })}</span>
-                  <span>{t('settings.seconds', { count: 6 })}</span>
-                </div>
-                <div className="flex flex-col">
-                  <span>{t('settings.blocksCount', { count: 2 })}</span>
-                  <span>{t('settings.seconds', { count: 12 })}</span>
-                </div>
-                <div className="flex flex-col">
-                  <span>{t('settings.blocksCount', { count: 3 })}</span>
-                  <span>{t('settings.seconds', { count: 18 })}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
+          {/* No streaming (TWAP) overrides: the bridge uses the aggregator's own streaming policy,
+              and an executable memo is never edited after quoting. */}
           <Separator />
 
           <div className="flex gap-6">

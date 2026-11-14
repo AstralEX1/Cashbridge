@@ -2,6 +2,8 @@
 // client-side for an attribution window and attached to quote requests so the
 // server can credit swaps to the link that brought the user in.
 
+import { aggregatorApiUrl } from '@/config'
+
 const STORAGE_KEY = 'tc:referral'
 const ATTRIBUTION_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
 const QUERY_PARAM = 'ref'
@@ -84,11 +86,8 @@ export async function captureReferral(): Promise<void> {
 
   write(code)
 
-  const base = process.env.NEXT_PUBLIC_USWAP_API_URL
-  if (!base) return
-
   try {
-    await fetch(`${base.replace(/\/$/, '')}/referral/${encodeURIComponent(code)}/visit`, {
+    await fetch(`${aggregatorApiUrl()}/referral/${encodeURIComponent(code)}/visit`, {
       method: 'POST',
       keepalive: true
     })

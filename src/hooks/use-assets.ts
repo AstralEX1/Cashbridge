@@ -45,7 +45,8 @@ export const useAssets = (): { assets?: Asset[]; isLoading: boolean } => {
   const { data, isLoading } = useQuery({
     queryKey: ['assets'],
     queryFn: async () => {
-      const providers: ProviderName[] = [...AppConfig.providers, AppConfig.privateProvider]
+      // The bridge lists THORChain's assets only; the private provider's list is never fetched.
+      const providers: ProviderName[] = [...AppConfig.providers]
       // The private provider's list is a separate product: if it is down or not yet synced the
       // SWAP tab must not go with it.
       const lists = await Promise.all(
@@ -81,6 +82,10 @@ export const useAssets = (): { assets?: Asset[]; isLoading: boolean } => {
 
         const isSecured = isSecuredAssetIdentifier(token.identifier)
         const isTrade = !isSecured && token.identifier.includes('~')
+
+        // Secured and trade assets live in THORChain accounts rather than on their own chains;
+        // the bridge is qualified for L1 sources only.
+        if (isSecured || isTrade) continue
 
         // The token list API returns TRON identifiers with the address segment uppercased
         // (e.g. TRON.USDT-TR7NHQJEKQ...), but Tron base58 addresses are case-sensitive and

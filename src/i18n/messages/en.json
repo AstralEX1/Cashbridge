@@ -38,7 +38,8 @@
     "tab": {
       "swap": "Swap",
       "limit": "Limit",
-      "private": "Private"
+      "private": "Private",
+      "bridge": "Swap to PUSD"
     },
     "input": {
       "sell": "Sell",
@@ -63,7 +64,11 @@
       "send": "Send",
       "connectWallet": "Connect {chain} Wallet",
       "insufficientBalance": "Insufficient Balance",
-      "approve": "Approve {ticker}"
+      "approve": "Approve {ticker}",
+      "bridgeActive": "Finish the current bridge operation first",
+      "noPusdRoute": "No PUSD route right now",
+      "connectBch": "Connect BCH wallet",
+      "connectBoundBch": "Connect the BCH wallet bound to this operation"
     },
     "halted": {
       "title": "Trading is Halted",
@@ -77,7 +82,8 @@
       "success": "Success",
       "errorSubmitting": "Error Submitting Transaction",
       "submittingTransaction": "Submitting Transaction",
-      "transactionSubmitted": "Transaction submitted"
+      "transactionSubmitted": "Transaction submitted",
+      "bridgeRouteMismatch": "This quote no longer matches the bridge (THORChain to your BCH address). Get a new quote."
     },
     "confirm": {
       "titleLimit": "Confirm Limit Order",
@@ -263,7 +269,9 @@
       "enterRefundAddress": "Enter refund address:",
       "enterReceivingAddress": "Enter receiving address:",
       "preparingSwap": "Preparing Swap",
-      "next": "Next"
+      "next": "Next",
+      "bridgeDestination": "BCH is sent to your connected BCH wallet",
+      "bridgeNoWallet": "Connect your BCH wallet first"
     },
     "selectAsset": {
       "title": "Select coin",
@@ -643,6 +651,88 @@
       "send": "Send {ticker}",
       "privateRoute": "Route {ticker} privately",
       "swap": "Swap {from} to {to}"
+    }
+  },
+  "bridge": {
+    "estimate": {
+      "step1": "Step 1 · THORChain swap to BCH",
+      "step2": "Step 2 · Cauldron swap BCH to PUSD",
+      "tooSmall": "This amount is too small to cover the PUSD swap fees.",
+      "pusdPrice": "At this rate one PUSD costs about ${price}.",
+      "offPeg": "At this rate one PUSD costs about ${price}, not $1: the Cauldron pools are pricing it away from its peg.",
+      "noRoute": "No PUSD route right now ({reason}).",
+      "disclaimer": "Indicative only. Nothing is reserved: the PUSD swap is quoted again on the BCH you actually receive, and needs a second approval in your BCH wallet. You can keep the BCH instead."
+    },
+    "wallet": {
+      "title": "BCH wallet (receives BCH, signs the PUSD swap)",
+      "connect": "Connect",
+      "disconnect": "Disconnect",
+      "expected": "Bound address: {address}. Reconnect the same wallet to continue.",
+      "remembered": "Last connected: {address}. Connect it again, or any other BCH wallet.",
+      "reconnecting": "Resuming the session with {name}. Open the wallet app to finish.",
+      "reconnectStalled": "{name} has not answered. Open the wallet app, or pair again with a new QR code.",
+      "pairAgain": "New QR",
+      "yourWallet": "your wallet",
+      "mismatch": "This wallet is not the one bound to the operation. Connect the wallet and account that own the bound address."
+    },
+    "stage": {
+      "first_leg_signing": "Waiting for your source wallet",
+      "first_leg_unknown": "Source transaction status unknown",
+      "first_leg_pending": "THORChain swap to BCH in progress",
+      "bch_unconfirmed": "BCH received, waiting for confirmation",
+      "bch_ready": "BCH received: ready for the PUSD swap",
+      "second_leg_signed": "PUSD swap signed",
+      "second_leg_unknown": "PUSD swap broadcast unconfirmed",
+      "second_leg_pending": "PUSD swap broadcast, waiting for confirmation",
+      "completed": "Completed: PUSD received",
+      "kept_bch": "Finished: you kept the BCH",
+      "refunded": "Refunded by THORChain",
+      "failed": "Stopped"
+    },
+    "panel": {
+      "sent": "Sent",
+      "bchAddress": "BCH address",
+      "sourceTx": "Source transaction",
+      "tracker": "Tracker",
+      "bchOutbound": "THORChain BCH outbound",
+      "received": "Verified BCH",
+      "receivedValue": "{amount} BCH · {confirmations} conf.",
+      "refund": "Refund",
+      "refundPending": "Refund pending"
+    },
+    "unknown": {
+      "explain": "The page lost your source wallet’s answer, so we can’t tell whether the swap was sent. Check the wallet’s history. Nothing will be re-sent automatically.",
+      "placeholder": "Source transaction hash",
+      "resume": "Track this transaction",
+      "notSent": "Nothing was sent",
+      "dismissed": "Closed: no source transaction was sent",
+      "badHash": "That is not a transaction hash.",
+      "notOurs": "THORChain does not show that transaction as a BCH swap to your bound address.",
+      "lookupFailed": "Could not look the transaction up. Try again shortly."
+    },
+    "second": {
+      "getQuote": "Get PUSD quote",
+      "sign": "Sign PUSD swap in BCH wallet",
+      "keepBch": "Keep BCH",
+      "sell": "You sell",
+      "receive": "You receive",
+      "minimum": "Minimum (enforced)",
+      "minerFee": "Network fee",
+      "returned": "BCH returned to you",
+      "category": "Token category",
+      "validFor": "Quote valid for {seconds}s",
+      "expired": "Quote expired. Get a new one.",
+      "spent": "The received BCH is no longer unspent.",
+      "tooSmall": "The received BCH is too little to cover the PUSD swap fees.",
+      "failed": "Could not prepare the PUSD swap.",
+      "movedOn": "This operation changed in another tab. Reload to see its state.",
+      "otherTab": "Another tab is authorizing this swap.",
+      "rejected": "The wallet did not sign the transaction.",
+      "connectBound": "Connect the BCH wallet that received the BCH to sign the PUSD swap.",
+      "txid": "PUSD swap transaction",
+      "confirmations": "Confirmations",
+      "unknownExplain": "We could not confirm the broadcast. It may still be in the network; we keep checking by its transaction id. Re-sending the same signed transaction is safe.",
+      "resend": "Re-send the same transaction"
     }
   }
 }

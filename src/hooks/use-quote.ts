@@ -56,18 +56,19 @@ export const useQuote = (): UseQuote => {
       if (valueFrom.eqValue(0)) return
       if (!assetFrom?.identifier || !assetTo?.identifier) return
 
-      // The PRIVATE tab quotes the private provider alone; streaming is a native-protocol option.
+      // The bridge quotes THORChain alone, to BCH.BCH, on the aggregator's own streaming policy.
       return getQuotes(
         {
           buyAsset: assetTo.identifier,
           sellAsset: assetFrom.identifier,
           sellAmount: valueFrom.toSignificant(),
           slippage: slippage ?? 99,
-          providers: isPrivateSwap ? [AppConfig.privateProvider] : AppConfig.providers,
-          ...(!isPrivateSwap && { streamingInterval: customInterval, streamingQuantity: customQuantity })
+          providers: AppConfig.providers
         },
         createAbortController(signal)
       ).then(quotes => {
+        if (quotes.length === 0) throw new Error('No THORChain route to BCH for this amount')
+
         if (AppConfig.id === 'thorchain' && !isPrivateSwap) {
           const thorchainQuote =
             quotes.find(q => q.providers[0] === ProviderName.THORCHAIN_STREAMING) || quotes.find(q => q.providers[0] === ProviderName.THORCHAIN)
