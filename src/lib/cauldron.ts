@@ -15,7 +15,7 @@ import { NATIVE_BCH_TOKEN_ID, PayoutAmountRuleType, SpendableCoinType } from '@c
 import { InsufficientFunds } from '@cashlab/common/exceptions.js'
 import { sourceOutputToRelay } from '@wizardconnect/core/hdwalletv1-serialize'
 import { BridgeConfig } from '@/config'
-import { checkOutpointsLive, decodeTx, normalizeTxid, RpcTimeoutError, txidOf } from '@/lib/bch'
+import { broadcastTransaction, checkOutpointsLive, decodeTx, normalizeTxid, RpcError, RpcTimeoutError, txidOf } from '@/lib/bch'
 
 // BCH -> PUSD on Cauldron: quotes and unsigned trade transactions built from the live PUSD pools.
 // Every transaction is checked here against what the user approved before it is shown for
@@ -51,6 +51,37 @@ export interface PusdQuote {
   // PUSD base units (2 decimals).
   output: bigint
   pools: number
+  // Satoshis of the sale kept by the pools as their liquidity provider fee.
+  tradeFeeSats: bigint
+  // PUSD base units the same sale would buy at the traded pools' current prices with no fee and no
+  // price impact. Display only, so a float: PUSD's 2 decimals would round small differences away.
+  spotOutput: number
+  // The miner fee a transaction for this trade pays, from a local build with a stand-in funding coin.
+  minerFeeSats?: bigint
+}
+
+// P2PKH of a zero key hash: only stands in for the wallet's script to size the trade transaction.
+const STAND_IN_SCRIPT = `76a914${'00'.repeat(20)}88ac`
+
+const quoteOf = (trade: TradeResult, requestedSats: bigint): PusdQuote => {
+  const spotOutput = trade.entries.reduce((sum, e) => sum + (Number(e.supply) * Number(e.pool.output.token.amount)) / Number(e.pool.output.amount), 0)
+  let minerFeeSats: bigint | undefined
+  try {
+    const funding = [{ txid: '00'.repeat(32), vout: 0, value: (trade.summary.supply + 100_000n).toString() }]
+    const build = tradeTransaction(trade, { funding, lockingBytecode: STAND_IN_SCRIPT, tokenAddress: '', cashAddress: '', sellSats: trade.summary.supply, minOutput: 0n })
+    minerFeeSats = BigInt(build.miner_fee_sats)
+  } catch {
+    // Only an estimate for display; the real build happens when the BCH arrives.
+  }
+  return {
+    sellSats: trade.summary.supply,
+    requestedSats,
+    output: trade.summary.demand,
+    pools: trade.entries.length,
+    tradeFeeSats: trade.summary.trade_fee,
+    spotOutput,
+    minerFeeSats
+  }
 }
 
 const fetchIndexedPools = async (): Promise<PoolV0[]> => {
@@ -136,8 +167,7 @@ const tradeOnLivePools = async (sellSats: bigint) => {
 }
 
 export const quotePusd = async (sellSats: bigint): Promise<PusdQuote> => {
-  const trade = await tradeOnLivePools(sellSats)
-  return { sellSats: trade.summary.supply, requestedSats: sellSats, output: trade.summary.demand, pools: trade.entries.length }
+  return quoteOf(await tradeOnLivePools(sellSats), sellSats)
 }
 
 export interface FundingOutput {
@@ -492,7 +522,8 @@ export class BroadcastRejected extends Error {}
 // The broadcast may or may not have reached the network; reconcile by txid before anything else.
 export class BroadcastUnknown extends Error {}
 
-export const broadcastPusdSwap = async (signedHex: string, txid: string) => {
+// Cauldron's broadcast service: the second route, used only when Fulcrum cannot be reached.
+const broadcastViaCauldron = async (signedHex: string, txid: string) => {
   let response: Response
   try {
     response = await fetch(BridgeConfig.cauldronBroadcastUrl, {
@@ -511,6 +542,35 @@ export const broadcastPusdSwap = async (signedHex: string, txid: string) => {
   }
   if (body?.error?.code === 'REJECTED') throw new BroadcastRejected(body.error.message || 'Rejected by the network')
   throw new BroadcastUnknown(body?.error?.message || `Broadcast service answered ${response.status}`)
+}
+
+// A node that already holds the transaction answers with one of these: the broadcast succeeded.
+const ALREADY_KNOWN = /already (in|known)|txn-already|already have transaction|transaction already in block chain/i
+
+// Broadcasts the signed second leg. Fulcrum first (the server the app already checks the chain
+// with); Cauldron's service only if Fulcrum cannot be reached. Re-sending the same bytes is safe:
+// it is one transaction, so it cannot pay twice.
+export const broadcastPusdSwap = async (
+  signedHex: string,
+  txid: string,
+  routes: { fulcrum: (hex: string) => Promise<string>; cauldron: (hex: string, txid: string) => Promise<string> } = {
+    fulcrum: broadcastTransaction,
+    cauldron: broadcastViaCauldron
+  }
+) => {
+  let answer: string | undefined
+  try {
+    answer = await routes.fulcrum(signedHex)
+  } catch (error) {
+    if (error instanceof RpcError) {
+      if (ALREADY_KNOWN.test(error.message)) return txid
+      throw new BroadcastRejected(error.message || 'Rejected by the network')
+    }
+    // Not delivered (no connection, timeout): try the second route with the same bytes.
+    return routes.cauldron(signedHex, txid)
+  }
+  if (normalizeTxid(String(answer)) !== txid) throw new BroadcastUnknown('The BCH server reported a different transaction id')
+  return txid
 }
 
 export { RpcTimeoutError }

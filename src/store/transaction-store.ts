@@ -103,11 +103,23 @@ export interface BridgeOperation {
   walletName?: string
   // Indicative BCH (sats) from the first-leg quote; never used as receipt evidence.
   quotedBchSats?: string
-  firstLeg: { result: FirstLegResult; trackerStatus?: string; readyAt?: number; timingUpdatedAt?: number }
+  // sourceConfirmations: the source transaction's depth on its own chain; receivedAt: when the BCH
+  // was first seen at the bound address (mempool included).
+  firstLeg: {
+    result: FirstLegResult
+    trackerStatus?: string
+    readyAt?: number
+    timingUpdatedAt?: number
+    sourceConfirmations?: number
+    receivedAt?: number
+  }
   outbound?: { txid: string; amountSats: string }[]
   refunds?: BridgeRefund[]
   received?: VerifiedOutput[]
   secondLeg?: SecondLeg
+  // Txids of earlier second-leg signatures (a rejected broadcast is re-quoted and re-signed): a spend
+  // of the received BCH by any of them is still this operation's swap.
+  priorSwapTxids?: string[]
   error?: string
   updatedAt: number
 }
@@ -149,6 +161,8 @@ interface TransactionStore {
   setTransaction: (tx: Transaction) => void
   setTransactionDetails: (uid: string, data: any) => void
   setTransactionStatus: (uid: string, status: TxStatus) => void
+  // Drops a record that never became a transaction (the wallet declined to sign it).
+  removeTransaction: (uid: string) => void
   updateBridge: (uid: string, update: (op: BridgeOperation, tx: SwapTransaction) => Partial<BridgeOperation> & Partial<Pick<SwapTransaction, 'hash' | 'addressFrom'>>) => void
 }
 
@@ -157,6 +171,8 @@ const sanitizeBridge = (op: BridgeOperation): BridgeOperation => {
   if (!isValidBinding(op.binding)) return { ...op, stage: isBridgeTerminal(op) ? op.stage : 'failed', error: 'Saved BCH address failed validation' }
   // Mid-signing when the page went away: the source wallet may have sent it.
   if (op.stage === 'first_leg_signing') return { ...op, stage: 'first_leg_unknown' }
+  // A completed operation carries no error (an older version could leave a stale one behind).
+  if (op.stage === 'completed' && op.error) return { ...op, error: undefined }
   return op
 }
 
@@ -230,9 +246,15 @@ export const transactionStore = create<TransactionStore>()(
             if (item.uid !== uid || item.kind === 'send' || !item.bridge) return item
             const { hash, addressFrom, ...patch } = update(item.bridge, item)
             const bridge = { ...item.bridge, ...patch, updatedAt: Date.now() }
+            // Completion clears any earlier error: it is the final word on the operation.
+            if (bridge.stage === 'completed') bridge.error = undefined
             return { ...item, ...(hash && { hash }), ...(addressFrom && { addressFrom }), bridge, status: bridgeTxStatus(bridge) }
           })
         }))
+      },
+
+      removeTransaction: uid => {
+        set(state => ({ transactions: state.transactions.filter(item => item.uid !== uid) }))
       },
 
       setTransactionStatus: (uid, status) => {

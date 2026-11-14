@@ -6,7 +6,8 @@ import { binToHex, decodeTransaction, encodeTransaction, hash160, hexToBin } fro
 import { addressPaysScript, bindingFromPubkey, checkOutbound, decodeTx, isValidBinding, opReturnText, txidOf } from '../src/lib/bch.ts'
 import { bestTrade, checkPoolCovenants, checkSigned, poolLockingBytecode, reviewBuild, sourcesOf, tradeTransaction } from '../src/lib/cauldron.ts'
 import { formatBaseUnits, inboundMatchesBinding, interpretMidgard, interpretTxStatus, minOutputFor, secondLegSellAmount, toBaseUnits } from '../src/lib/bridge.ts'
-import { assertBridgeQuoteRequest, isBridgeRoute } from '../src/lib/api.ts'
+import { assertBridgeQuoteRequest, getQuotes, isBridgeRoute } from '../src/lib/api.ts'
+import { BelowMinimumError, minimumFromProviderErrors, resolveQuoteError } from '../src/lib/errors.ts'
 import { BridgeConfig } from '../src/config.ts'
 import { inboundHash, otherKey, otherPubkey, OTHER_TOKEN, outboundTx, pubkey, PUSD, signBuild, swapBuild } from './fixtures/bridge-fixtures.mjs'
 
@@ -398,4 +399,170 @@ test('the pool covenant refuses a trade that takes more PUSD than the pool pays'
 test('a sale the funding cannot cover is reported as insufficient funds', () => {
   const { trade, localIntent } = localTrade()
   assert.throws(() => tradeTransaction(trade, { ...localIntent, funding: [{ ...localFunding[0], value: '500000' }] }), e => e.code === 'insufficient_funds')
+})
+
+const MIN_SWAP_404 = { providerErrors: [{ provider: 'THORCHAIN', error: 'amount less than min swap amount (recommended_min_amount_in: 36045): invalid request', errorCode: 'unknownApiError' }] }
+
+// Runs getQuotes against a stubbed proxy answer, recording what reached console.error.
+const quoteWith = async (status, body) => {
+  const fetchBefore = globalThis.fetch
+  const errorBefore = console.error
+  const logged = []
+  globalThis.fetch = async () => new Response(JSON.stringify(body), { status, statusText: status === 404 ? 'Not Found' : 'Bad Gateway', headers: { 'content-type': 'application/json' } })
+  console.error = (...args) => logged.push(args.join(' '))
+  try {
+    return { result: await getQuotes({ sellAsset: 'BASE.ETH', buyAsset: 'BCH.BCH', sellAmount: '0.0001', slippage: 3, providers: ['THORCHAIN'] }).catch(error => error), logged }
+  } finally {
+    globalThis.fetch = fetchBefore
+    console.error = errorBefore
+  }
+}
+
+test('the THORChain minimum is read from the provider error in asset units', () => {
+  assert.equal(minimumFromProviderErrors(MIN_SWAP_404), '0.00036045')
+  assert.equal(minimumFromProviderErrors({ providerErrors: [{ error: 'trading is halted' }] }), undefined)
+  assert.equal(minimumFromProviderErrors(null), undefined)
+})
+
+test('a quote under the minimum is a quiet BelowMinimumError carrying the minimum', async () => {
+  const { result, logged } = await quoteWith(404, MIN_SWAP_404)
+  assert.ok(result instanceof BelowMinimumError)
+  assert.equal(result.minimum, '0.00036045')
+  assert.deepEqual(logged, [])
+})
+
+test('any other quote failure is still a logged USwapError the quote error resolver understands', async () => {
+  const { result, logged } = await quoteWith(502, { providerErrors: [{ provider: 'THORCHAIN', error: 'pool not available' }] })
+  assert.equal(result.name, 'USwapError')
+  assert.equal(result.cause.status, 502)
+  assert.equal(resolveQuoteError(result).message, 'pool not available')
+  assert.equal(logged.length, 1)
+})
+
+test('the confirm summary for a PUSD destination: received PUSD, its USD value and an impact made of fees and pool impact', async () => {
+  const { bridgeSummary, PUSD_LEG_SECONDS } = await import('../src/lib/bridge-summary.ts')
+  // 0.001 ETH at $2,300 → 0.0073 BCH at $280; 0.0072 BCH sold to the pools for 2.00 PUSD (2.02 at spot).
+  const summary = bridgeSummary({
+    sent: 0.001,
+    sentUsd: 2.3,
+    bch: 0.0073,
+    bchUsd: 280,
+    thorFeeUsd: 0.2,
+    sourceGasUsd: 0.01,
+    thorSeconds: 600,
+    pusd: { output: 2.0, spotOutput: 2.02, sell: 0.0072, tradeFee: 0.0000216, minerFee: 0.000002 }
+  })
+  const pusdUsd = (0.0072 * 280) / 2.02
+  assert.equal(summary.received, 2.0)
+  assert.ok(Math.abs(summary.receivedUsd - 2 * pusdUsd) < 1e-9)
+  assert.equal(summary.seconds, 600 + PUSD_LEG_SECONDS)
+  assert.ok(Math.abs(summary.gasUsd - (0.01 + 0.000002 * 280)) < 1e-9)
+  assert.ok(summary.impactUsd < 0)
+  // Every dollar lost (except gas) is the THORChain fee, the Cauldron fee, or pool impact.
+  const parts = -0.2 - summary.cauldronFeeUsd + summary.poolImpactUsd
+  assert.ok(Math.abs(parts - summary.impactUsd) < 1e-9 || summary.poolImpactUsd === 0)
+  assert.ok(Math.abs(summary.impactPercent - (summary.impactUsd / 2.3) * 100) < 1e-9)
+})
+
+test('the confirm summary for plain BCH has no PUSD leg time, no Cauldron fee, and unknown prices stay unknown', async () => {
+  const { bridgeSummary } = await import('../src/lib/bridge-summary.ts')
+  const summary = bridgeSummary({ sent: 0.001, sentUsd: 2.3, bch: 0.0073, bchUsd: 280, thorFeeUsd: 0.2, thorSeconds: 600 })
+  assert.equal(summary.received, 0.0073)
+  assert.equal(summary.seconds, 600)
+  assert.equal(summary.cauldronFeeUsd, undefined)
+  assert.ok(Math.abs(summary.impactUsd - (0.0073 * 280 - 2.3)) < 1e-9)
+  const unpriced = bridgeSummary({ sent: 0.001, bch: 0.0073, thorSeconds: 0 })
+  assert.equal(unpriced.receivedUsd, undefined)
+  assert.equal(unpriced.impactPercent, undefined)
+  assert.equal(unpriced.seconds, undefined)
+})
+
+test('confirm figures are formatted as the design shows them', async () => {
+  const { formatUsd, formatPercent, formatMinutes, formatAmount } = await import('../src/lib/bridge-summary.ts')
+  assert.equal(formatUsd(2.314), '$2.31')
+  assert.equal(formatUsd(-0.28), '−$0.28')
+  assert.equal(formatUsd(0.004), '<$0.01')
+  assert.equal(formatPercent(-12.13), '−12.1%')
+  assert.equal(formatPercent(-0.44), '−0.44%')
+  assert.equal(formatMinutes(590), 10)
+  assert.equal(formatMinutes(10), 1)
+  assert.equal(formatAmount(2040.123), '2,040.12')
+  assert.equal(formatAmount(0.00729561234), '0.00729561')
+})
+
+test('the PUSD swap is broadcast through Fulcrum first and through Cauldron only when Fulcrum cannot be reached', async () => {
+  const { broadcastPusdSwap, BroadcastRejected } = await import('../src/lib/cauldron.ts')
+  const { RpcError } = await import('../src/lib/bch.ts')
+  const txid = 'ab'.repeat(32)
+  const calls = []
+  const routes = (fulcrum, cauldron = async () => { calls.push('cauldron'); return txid }) => ({
+    fulcrum: async hex => { calls.push('fulcrum'); return fulcrum(hex) },
+    cauldron
+  })
+
+  // Accepted by Fulcrum: Cauldron is never asked.
+  assert.equal(await broadcastPusdSwap('00', txid, routes(async () => txid)), txid)
+  assert.deepEqual(calls.splice(0), ['fulcrum'])
+
+  // Fulcrum unreachable: the same bytes go to Cauldron.
+  assert.equal(await broadcastPusdSwap('00', txid, routes(async () => { throw new Error('Could not connect to bch.imaginary.cash') })), txid)
+  assert.deepEqual(calls.splice(0), ['fulcrum', 'cauldron'])
+
+  // Already known to the node: success, nothing else is tried.
+  assert.equal(await broadcastPusdSwap('00', txid, routes(async () => { throw new RpcError('1', 'txn-already-known') })), txid)
+  assert.deepEqual(calls.splice(0), ['fulcrum'])
+
+  // Rejected by the node (e.g. a pool already spent): a rejection, not a retry elsewhere.
+  await assert.rejects(broadcastPusdSwap('00', txid, routes(async () => { throw new RpcError('1', 'the transaction was rejected by network rules. missing-inputs') })), BroadcastRejected)
+  assert.deepEqual(calls.splice(0), ['fulcrum'])
+})
+
+test('the chains decide the first leg: BCH seen at the bound address (0-conf) makes the PUSD swap ready', async () => {
+  const { firstLegFromChain } = await import('../src/lib/bridge-tracking.ts')
+  const op = { destinationAsset: 'PUSD', firstLeg: { result: 'pending' } }
+  const outputs = [{ txid: 'ab'.repeat(32), vout: 0, value: '4873362', confirmations: 0, unspent: true }]
+
+  // Only the source receipt so far: its depth is recorded, the stage stays.
+  const pending = firstLegFromChain(op, { source: { confirmations: 3, failed: false }, outbound: { kind: 'not_found' } })
+  assert.equal(pending.stage, undefined)
+  assert.equal(pending.firstLeg.sourceConfirmations, 3)
+
+  // The outbound in the mempool: ready at once, with the exact amount received.
+  const arrived = firstLegFromChain(op, { source: { confirmations: 5, failed: false }, outbound: { kind: 'ok', outputs, total: '4873362', confirmations: 0 } })
+  assert.equal(arrived.stage, 'bch_ready')
+  assert.deepEqual(arrived.received, outputs)
+  assert.equal(arrived.firstLeg.result, 'swapped')
+  assert.ok(arrived.firstLeg.receivedAt > 0)
+
+  // Plain BCH: arrival finishes the operation.
+  assert.equal(firstLegFromChain({ ...op, destinationAsset: 'BCH' }, { outbound: { kind: 'ok', outputs, total: '4873362', confirmations: 0 } }).stage, 'kept_bch')
+
+  // Already spent from the wallet before the swap: not offered for the PUSD swap.
+  const spent = firstLegFromChain(op, { outbound: { kind: 'ok', outputs: [{ ...outputs[0], unspent: false, confirmations: 1 }], total: '4873362', confirmations: 1 } })
+  assert.equal(spent.stage, 'bch_unconfirmed')
+  assert.match(spent.error, /already been spent/)
+
+  // A reverted source transaction ends the operation; nothing reached THORChain.
+  assert.equal(firstLegFromChain(op, { source: { confirmations: 2, failed: true } }).stage, 'failed')
+  // Nothing new: no update at all.
+  assert.equal(firstLegFromChain({ ...op, firstLeg: { result: 'pending', sourceConfirmations: 3 } }, { source: { confirmations: 3, failed: false } }), undefined)
+})
+
+test('step times count down against the quote, then show the time elapsed', async () => {
+  const { stepTime, formatStepTime } = await import('../src/lib/bridge-tracking.ts')
+  const start = 1_000_000
+  assert.deepEqual(formatStepTime(stepTime(start + 10_000, start, 150)), { key: 'minutes', value: 3 })
+  assert.deepEqual(formatStepTime(stepTime(start + 100_000, start, 150)), { key: 'seconds', value: 50 })
+  assert.deepEqual(formatStepTime(stepTime(start + 185_000, start, 150)), { key: 'elapsed', value: '3:05' })
+  assert.deepEqual(formatStepTime(stepTime(start + 65_000, start, undefined)), { key: 'elapsed', value: '1:05' })
+})
+
+test('the first leg is timed without a BCH block wait, which the 0-conf bridge does not need', async () => {
+  const { firstLegSeconds } = await import('../src/lib/bridge-summary.ts')
+  // The aggregator's Base → BCH estimate: 24 s inbound, 6 s swap, 600 s outbound (a BCH block).
+  assert.equal(firstLegSeconds({ inbound: 24, swap: 6, outbound: 600, total: 630 }), 24 + 6 + 90)
+  // A real THORChain outbound delay beyond the block wait still counts.
+  assert.equal(firstLegSeconds({ inbound: 24, swap: 6, outbound: 1800, total: 1830 }), 24 + 6 + 90 + 1200)
+  assert.equal(firstLegSeconds({ total: 630 }), 630)
+  assert.equal(firstLegSeconds(undefined), undefined)
 })

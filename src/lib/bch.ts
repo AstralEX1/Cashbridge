@@ -367,6 +367,34 @@ export const checkOutbound = (
   return { kind: 'ok', outputs, total: total.toString(), confirmations: Math.min(...outputs.map(o => o.confirmations)) }
 }
 
+// Watches the bound address itself: THORChain's outbound for `inboundHash` among its unspent
+// outputs (mempool included), found by the OUT:<inbound hash> memo and checked like any outbound.
+// Lets the BCH count as arrived without waiting for THORNode or the tracker to report it.
+export const findThorchainOutbound = (inboundHash: string, lockingBytecode: string): Promise<ReceiptCheck> =>
+  withElectrum(async client => {
+    const unspent = await fetchUnspent(client, lockingBytecode)
+    // Newest first: the outbound is the latest payment, unconfirmed ones (height 0) before any block.
+    const txids = [...new Set([...unspent.utxos].sort((a, b) => (a.height || Infinity) - (b.height || Infinity)).reverse().map(u => u.txid))]
+    for (const txid of txids.slice(0, 20)) {
+      const raw = await fetchRawTx(client, txid)
+      if (!raw) continue
+      const script = hexToBin(lockingBytecode)
+      const paid = raw.tx.outputs.reduce((sum, o) => (binsAreEqual(o.lockingBytecode, script) ? sum + o.valueSatoshis : sum), 0n)
+      const check = checkOutbound(raw, { inboundHash, lockingBytecode, expectedSats: paid }, unspent)
+      if (check.kind === 'ok') return check
+    }
+    return { kind: 'not_found' }
+  })
+
+// Which of `txids` the address's history holds (mempool included): a spend of its outputs by one of
+// these is this app's own transaction, whatever a single server says about the txid itself.
+export const historyIncludes = (lockingBytecode: string, txids: string[]) =>
+  withElectrum(async client => {
+    const history = await client.request<{ tx_hash: string }[]>('blockchain.scripthash.get_history', [scriptHash(lockingBytecode)])
+    const seen = new Set((Array.isArray(history) ? history : []).map(h => normalizeTxid(String(h.tx_hash))))
+    return txids.map(normalizeTxid).filter(id => seen.has(id))
+  })
+
 // Whether each outpoint is still an unspent, token-free output of `lockingBytecode`.
 export const checkUnspent = (lockingBytecode: string, outpoints: { txid: string; vout: number; value: string }[]) =>
   withElectrum(async client => {
@@ -395,6 +423,10 @@ export const checkOutpointsLive = (outpoints: { txid: string; vout: number; valu
       })
     )
   )
+
+// Sends a signed transaction to the network through Fulcrum; answers the txid. A server error
+// (RpcError) is the node's verdict on the transaction; any other error is a failed delivery.
+export const broadcastTransaction = (signedHex: string) => withElectrum(client => client.request<string>('blockchain.transaction.broadcast', [signedHex]))
 
 // The second leg's state on chain: 'unknown' when no server has it, else its confirmations.
 export const getTransactionState = (txid: string) =>
