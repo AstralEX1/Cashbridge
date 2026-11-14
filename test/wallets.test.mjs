@@ -1,0 +1,263 @@
+// Run: node --no-warnings --import ./test/register-ts-alias.mjs --test test/wallets.test.mjs
+import assert from 'node:assert/strict'
+import { beforeEach, test } from 'node:test'
+import { register } from 'node:module'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { Chain, USwapNumber, WalletOption } from '@tcswap/core'
+import { controls } from './fixtures/wallet-mocks.mjs'
+
+register('./fixtures/wallet-test-loader.mjs', import.meta.url)
+
+const local = new Map()
+const tab = new Map()
+const cookies = new Map()
+const storageFor = map => ({ getItem: key => map.get(key) ?? null, setItem: (key, value) => map.set(key, value), removeItem: key => map.delete(key) })
+globalThis.window = { localStorage: storageFor(local), sessionStorage: storageFor(tab), location: { hostname: 'localhost', protocol: 'http:' } }
+globalThis.localStorage = window.localStorage
+globalThis.document = {
+  get cookie() { return [...cookies].map(([key, value]) => `${key}=${value}`).join('; ') },
+  set cookie(value) {
+    const [entry] = value.split(';')
+    const separator = entry.indexOf('=')
+    const key = entry.slice(0, separator)
+    if (value.includes('Max-Age=0')) cookies.delete(key)
+    else cookies.set(key, entry.slice(separator + 1))
+  }
+}
+
+const { useWalletStore, connectedAccount } = await import('../src/store/wallets-store.ts')
+const { browserSessionStorage } = await import('../src/components/bch-wallet.tsx')
+const { BridgeWalletBadge } = await import('../src/components/swap/bridge-wallet-badge.tsx')
+const { SwapBalance } = await import('../src/components/swap/swap-balance.tsx')
+const { useBalance } = await import('../src/hooks/use-balance.ts')
+const { ConnectWallet } = await import('../src/components/connect-wallet/connect-wallet.tsx')
+const account = (address = '0x1111111111111111111111111111111111111111', network = Chain.Ethereum, provider = WalletOption.METAMASK) => ({ address, network, provider })
+const deferred = () => {
+  let resolve
+  const promise = new Promise(done => { resolve = done })
+  return { promise, resolve }
+}
+const flush = () => new Promise(resolve => setImmediate(resolve))
+const render = (Component, props) => {
+  let tree
+  const html = renderToStaticMarkup(createElement(() => {
+    tree = Component(props)
+    return tree
+  }))
+  return { tree, html }
+}
+const findElement = (node, predicate) => {
+  if (!node || typeof node !== 'object') return undefined
+  if (Array.isArray(node)) return node.map(child => findElement(child, predicate)).find(Boolean)
+  return predicate(node) ? node : findElement(node.props?.children, predicate)
+}
+
+beforeEach(() => {
+  local.clear(); tab.clear(); cookies.clear()
+  controls.getAccounts = async () => []
+  controls.wallets.clear()
+  controls.disconnected = []
+  controls.account = undefined
+  controls.bch = { state: 'idle', connect() {}, pairAgain() {}, disconnect() {} }
+  controls.balance = null
+  controls.loading = false
+  controls.amount = undefined
+  controls.dialogs = []
+  controls.walletState = undefined
+  controls.queryData = undefined
+  useWalletStore.setState({ accounts: [], selected: undefined, connectedWallets: [], hasHydrated: true, externalWalletMode: false })
+})
+
+test('a rejected or empty connection rejects the caller instead of reporting success', async () => {
+  let succeeded = false
+  controls.getAccounts = async () => { throw new Error('User rejected connection') }
+  await assert.rejects(useWalletStore.getState().connect(WalletOption.METAMASK, [Chain.Ethereum]).then(() => { succeeded = true }), /User rejected/)
+  assert.equal(succeeded, false)
+  controls.getAccounts = async () => []
+  await assert.rejects(useWalletStore.getState().connect(WalletOption.METAMASK, [Chain.Ethereum]), /Failed to get addresses/)
+  assert.equal(connectedAccount(useWalletStore.getState()), undefined)
+})
+
+test('a successful connection immediately selects its account and a replacement updates the address', async () => {
+  useWalletStore.setState({ externalWalletMode: true })
+  const first = account()
+  controls.getAccounts = async () => [first]
+  await useWalletStore.getState().connect(first.provider, [first.network])
+  assert.deepEqual(connectedAccount(useWalletStore.getState()), first)
+  assert.equal(useWalletStore.getState().externalWalletMode, false)
+  const replacement = account('0x2222222222222222222222222222222222222222')
+  controls.getAccounts = async () => [replacement]
+  await useWalletStore.getState().connect(first.provider, [first.network])
+  assert.deepEqual(connectedAccount(useWalletStore.getState()), replacement)
+  assert.equal(useWalletStore.getState().accounts.length, 1)
+})
+
+test('selecting an already connected Rabby account exits legacy no-wallet mode without reconnecting', () => {
+  const base = account('0x2222222222222222222222222222222222222222', Chain.Base, WalletOption.RABBY)
+  useWalletStore.setState({ accounts: [base], selected: base, externalWalletMode: true })
+  controls.walletState = useWalletStore.getState()
+  let closed = false
+  const { tree, html } = render(ConnectWallet, { isOpen: true, chain: Chain.Base, onOpenChange: open => { closed = !open } })
+  assert.match(html, /Connected on Base/)
+  assert.match(html, /2222/)
+  const row = findElement(tree, element => element.props?.['aria-label'] === 'Rabby Wallet')
+  assert.equal(row.props.role, 'button')
+  row.props.onClick()
+  assert.equal(closed, true)
+  assert.equal(useWalletStore.getState().externalWalletMode, false)
+  assert.deepEqual(connectedAccount(useWalletStore.getState()), base)
+})
+
+test('Rabby connected on Base is not reported as connected on Bitcoin', () => {
+  controls.walletState = { accounts: [account(undefined, Chain.Base, WalletOption.RABBY)], select() {} }
+  const { html } = render(ConnectWallet, { isOpen: true, chain: Chain.Bitcoin, onOpenChange() {} })
+  assert.doesNotMatch(html, /Connected on/)
+  assert.match(html, /disconnected/)
+})
+
+test('disconnect clears the selected address and ignores an older in-flight connection', async () => {
+  const pending = deferred()
+  controls.getAccounts = () => pending.promise
+  const connect = useWalletStore.getState().connect(WalletOption.METAMASK, [Chain.Ethereum])
+  useWalletStore.getState().disconnect(WalletOption.METAMASK)
+  pending.resolve([account()])
+  await connect
+  assert.equal(connectedAccount(useWalletStore.getState()), undefined)
+  assert.deepEqual(useWalletStore.getState().accounts, [])
+})
+
+test('a newer connection wins when async replies arrive out of order', async () => {
+  const older = deferred()
+  controls.getAccounts = () => older.promise
+  const first = useWalletStore.getState().connect(WalletOption.METAMASK, [Chain.Ethereum])
+  const latest = account('0x2222222222222222222222222222222222222222')
+  controls.getAccounts = async () => [latest]
+  await useWalletStore.getState().connect(WalletOption.METAMASK, [Chain.Ethereum])
+  older.resolve([account()])
+  await first
+  assert.deepEqual(connectedAccount(useWalletStore.getState()), latest)
+})
+
+test('restoring a session preserves the selected account and never revives an explicitly disconnected wallet', async () => {
+  useWalletStore.setState({ hasHydrated: false })
+  const restored = account()
+  local.set('tc-wallet-store', JSON.stringify({ state: { selected: restored }, version: 1 }))
+  cookies.set('tc-wallet-link', encodeURIComponent(JSON.stringify([{ provider: restored.provider, chains: [restored.network] }])))
+  controls.getAccounts = async () => [restored]
+  await useWalletStore.persist.rehydrate()
+  await flush()
+  assert.deepEqual(connectedAccount(useWalletStore.getState()), restored)
+
+  const pending = deferred()
+  controls.getAccounts = () => pending.promise
+  await useWalletStore.persist.rehydrate()
+  useWalletStore.getState().disconnect(restored.provider)
+  pending.resolve([restored])
+  await flush()
+  assert.equal(useWalletStore.getState().selected, undefined)
+  assert.deepEqual(useWalletStore.getState().accounts, [])
+})
+
+test('a failed session restore finishes hydration without claiming the saved address is connected', async () => {
+  useWalletStore.setState({ hasHydrated: false })
+  local.set('tc-wallet-store', JSON.stringify({ state: { selected: account() }, version: 1 }))
+  cookies.set('tc-wallet-link', encodeURIComponent(JSON.stringify([{ provider: WalletOption.METAMASK, chains: [Chain.Ethereum] }])))
+  controls.getAccounts = async () => { throw new Error('Wallet unavailable') }
+  await useWalletStore.persist.rehydrate()
+  await flush()
+  assert.equal(useWalletStore.getState().hasHydrated, true)
+  assert.equal(connectedAccount(useWalletStore.getState()), undefined)
+})
+
+test('BCH session storage persists by default, migrates an old tab session, and clears both copies', () => {
+  browserSessionStorage.setItem('test-session', 'fixture-session')
+  assert.equal(local.get('test-session'), 'fixture-session')
+  assert.equal(tab.get('test-session'), 'fixture-session')
+  browserSessionStorage.removeItem('test-session')
+  assert.equal(browserSessionStorage.getItem('test-session'), null)
+  tab.set('test-session', 'old-tab-session')
+  assert.equal(browserSessionStorage.getItem('test-session'), 'old-tab-session')
+  assert.equal(local.get('test-session'), 'old-tab-session')
+})
+
+test('BCH session storage still works for the tab if browser persistence is blocked', () => {
+  const saved = window.localStorage
+  window.localStorage = { getItem() { throw new Error('Storage blocked') }, setItem() { throw new Error('Storage blocked') }, removeItem() { throw new Error('Storage blocked') } }
+  try {
+    browserSessionStorage.setItem('test-session', 'fixture-session')
+    assert.equal(browserSessionStorage.getItem('test-session'), 'fixture-session')
+    browserSessionStorage.removeItem('test-session')
+    assert.equal(tab.has('test-session'), false)
+  } finally { window.localStorage = saved }
+})
+
+test('the source badge shows a connect action while disconnected and a short address with actions after connection', () => {
+  const disconnected = render(BridgeWalletBadge, { side: 'from' })
+  assert.match(disconnected.html, /Connect wallet/)
+  disconnected.tree.props.onClick()
+  assert.deepEqual(controls.dialogs, [{ chain: Chain.Ethereum }])
+  controls.account = account()
+  const connected = render(BridgeWalletBadge, { side: 'from' })
+  assert.match(connected.html, /0x1111…1111/)
+  assert.match(connected.html, /bridge-wallet-dot/)
+  assert.match(connected.html, /Copy|copy/)
+  assert.match(connected.html, /etherscan.io/)
+  assert.doesNotMatch(connected.html, /Connect wallet/)
+})
+
+test('a remembered BCH address is never shown as connected and a stalled reconnect offers a fresh pairing', () => {
+  let paired = false
+  controls.bch = { state: 'reconnecting', remembered: { cashAddress: 'bitcoincash:qfixture' }, reconnectStalled: true, pairAgain() { paired = true } }
+  const { tree, html } = render(BridgeWalletBadge, { side: 'to' })
+  assert.match(html, /Connect BCH wallet/)
+  assert.doesNotMatch(html, /bridge-wallet-dot|qfixture/)
+  assert.equal(tree.props.disabled, false)
+  tree.props.onClick()
+  assert.equal(paired, true)
+})
+
+test('the maximum balance button inserts spendable funds rather than the total before gas', () => {
+  controls.balance = { total: new USwapNumber('101'), spendable: new USwapNumber('100.61') }
+  const { tree, html } = render(SwapBalance)
+  assert.match(html, /100\.61/)
+  const button = tree.props.children
+  button.props.onClick()
+  assert.equal(controls.amount, '100.61')
+  controls.balance.spendable = new USwapNumber('0.00000001')
+  render(SwapBalance).tree.props.children.props.onClick()
+  assert.equal(controls.amount, '0.00000001')
+  controls.balance.spendable = new USwapNumber(0)
+  assert.equal(render(SwapBalance).tree.props.children.props.disabled, true)
+})
+
+test('disconnecting one provider keeps another provider on the same chain usable', () => {
+  const first = account()
+  const other = account('0x2222222222222222222222222222222222222222', Chain.Ethereum, WalletOption.RABBY)
+  useWalletStore.setState({ accounts: [first, other], selected: first, connectedWallets: [first.provider, other.provider] })
+  controls.wallets.set(`${other.provider}:${other.network}`, { chain: other.network, walletType: other.provider })
+  useWalletStore.getState().disconnect(first.provider)
+  assert.deepEqual(connectedAccount(useWalletStore.getState()), other)
+  assert.deepEqual(controls.disconnected, [])
+})
+
+test('the BCH badge shows the connected destination and removes the connect action', () => {
+  controls.bch = { state: 'connected', binding: { cashAddress: 'bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a' } }
+  const { html } = render(BridgeWalletBadge, { side: 'to' })
+  assert.match(html, /bridge-wallet-dot/)
+  assert.match(html, /qpm2qs…dx6a/)
+  assert.doesNotMatch(html, /Connect BCH wallet/)
+})
+
+test('balances are scoped to the account address and cached funds disappear immediately on disconnect', () => {
+  controls.account = account()
+  useBalance()
+  const firstKey = controls.queryOptions.queryKey
+  controls.account = account('0x2222222222222222222222222222222222222222')
+  useBalance()
+  assert.notDeepEqual(controls.queryOptions.queryKey, firstKey)
+  controls.queryData = { total: new USwapNumber('101'), spendable: new USwapNumber('100.61') }
+  controls.account = undefined
+  assert.equal(useBalance().balance, null)
+  assert.equal(controls.queryOptions.enabled, false)
+})
