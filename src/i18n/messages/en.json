@@ -265,6 +265,8 @@
       "invalidAddress": "Invalid {chain} address",
       "taprootNotSupported": "Maya Protocol does not support Taproot addresses",
       "delegatedNotSupported": "This address uses EIP-7702 delegation and cannot receive the outbound. Revoke the delegation, or use a standard self-custody address",
+      "addressCheckFailed": "Couldn't check this address on-chain, so it can't be confirmed yet.",
+      "addressCheckRetry": "Try again",
       "contractNotSupported": "This is a smart contract address and cannot receive the outbound. Use a self-custody wallet address",
       "memoPlaceholder": "Memo/Tag/Comment (optional)",
       "destinationTagInvalid": "XRP needs a numeric destination tag - a whole number up to 4294967295",

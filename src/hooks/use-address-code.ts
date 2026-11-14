@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Chain, EVMChain, EVMChains } from '@tcswap/core'
 import { getProvider } from '@tcswap/toolboxes/evm'
 
@@ -15,6 +15,34 @@ export interface AddressCodeCheck {
   isContract: boolean
   /** The current value hasn't been read on-chain yet. */
   isChecking: boolean
+  /** The read failed, so the address is neither cleared nor rejected until a retry succeeds. */
+  isUnverified: boolean
+  retry: () => void
+}
+
+// `code` is undefined when the read failed: a failure is never the same answer as "no code".
+export interface CheckedCode {
+  key: string
+  code?: string
+}
+
+export const readAddressCode = (getCode: () => Promise<string>): Promise<string | undefined> =>
+  getCode().then(
+    code => (typeof code === 'string' ? code.toLowerCase() : undefined),
+    () => undefined
+  )
+
+export const addressCodeState = (checked: CheckedCode, key: string, active: boolean): Omit<AddressCodeCheck, 'retry'> => {
+  if (!active) return { isDelegated: false, isContract: false, isChecking: false, isUnverified: false }
+  if (checked.key !== key) return { isDelegated: false, isContract: false, isChecking: true, isUnverified: false }
+  const { code } = checked
+  if (code === undefined) return { isDelegated: false, isContract: false, isChecking: false, isUnverified: true }
+  return {
+    isDelegated: code.startsWith(DELEGATION_DESIGNATOR),
+    isContract: code !== NO_CODE && !code.startsWith(DELEGATION_DESIGNATOR),
+    isChecking: false,
+    isUnverified: false
+  }
 }
 
 /**
@@ -23,37 +51,32 @@ export interface AddressCodeCheck {
  * an EIP-7702 delegate - reverts and the payout bounces back to the vault. Detecting it lets the
  * address be rejected before the swap instead of the funds being lost on the way out.
  *
- * Non-EVM chains and unreadable addresses report as plain accounts: an RPC that is down must not
- * stand between the user and a swap.
+ * Non-EVM chains are not checked. On an EVM chain an RPC that cannot be read leaves the address
+ * unverified, and confirmation waits for a read that succeeds: an unknown destination is not a
+ * safe one.
  */
 export const useAddressCode = (address: string, chain: Chain, enabled = true): AddressCodeCheck => {
   const value = address.trim()
   const isEVM = EVMChains.includes(chain as EVMChain)
   const active = enabled && isEVM && value.length > 0
-  const key = `${chain}:${value.toLowerCase()}`
-  const [checked, setChecked] = useState({ key: '', code: NO_CODE })
+  const [attempt, setAttempt] = useState(0)
+  const key = `${chain}:${value.toLowerCase()}:${attempt}`
+  const [checked, setChecked] = useState<CheckedCode>({ key: '' })
 
   useEffect(() => {
     if (!active) return
 
     let cancelled = false
-    const done = (code: string) => !cancelled && setChecked({ key, code: code.toLowerCase() })
-
-    getProvider(chain as EVMChain)
-      .then(provider => provider.getCode(value))
-      .then(done, () => done(NO_CODE))
+    readAddressCode(() => getProvider(chain as EVMChain).then(provider => provider.getCode(value))).then(code => {
+      if (!cancelled) setChecked({ key, code })
+    })
 
     return () => {
       cancelled = true
     }
   }, [key, value, chain, active])
 
-  const isChecking = active && checked.key !== key
-  const code = !isChecking && checked.key === key ? checked.code : NO_CODE
+  const retry = useCallback(() => setAttempt(n => n + 1), [])
 
-  return {
-    isDelegated: code.startsWith(DELEGATION_DESIGNATOR),
-    isContract: code !== NO_CODE && !code.startsWith(DELEGATION_DESIGNATOR),
-    isChecking
-  }
+  return { ...addressCodeState(checked, key, active), retry }
 }

@@ -170,6 +170,7 @@ export const SwapRecipient = ({ provider, onFetchQuote, autoPrepare = false }: S
     !isUnsupportedDestination &&
     !isMemoInvalid &&
     !destinationCode.isChecking &&
+    !destinationCode.isUnverified &&
     !quoting &&
     !(isLimitSwap && isLimitSwapPaused) &&
     (refundRequired ? refundCheck.isValid && refundAddress.length : true)
@@ -313,6 +314,14 @@ export const SwapRecipient = ({ provider, onFetchQuote, autoPrepare = false }: S
                 {isTaprootDestination && <div className="text-lucian text-xs font-semibold">{t('recipient.taprootNotSupported')}</div>}
                 {isDelegatedDestination && <div className="text-lucian text-xs font-semibold">{t('recipient.delegatedNotSupported')}</div>}
                 {destinationCode.isContract && <div className="text-lucian text-xs font-semibold">{t('recipient.contractNotSupported')}</div>}
+                {destinationCode.isUnverified && (
+                  <div className="text-lucian text-xs font-semibold">
+                    {t('recipient.addressCheckFailed')}{' '}
+                    <button type="button" className="underline" onClick={destinationCode.retry}>
+                      {t('recipient.addressCheckRetry')}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* One field for a destination tag, memo or comment, whatever the chain calls it - as Houdini's own app does. */}
