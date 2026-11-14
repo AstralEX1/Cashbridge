@@ -12,6 +12,7 @@ import { useMimir } from '@/hooks/use-mimir'
 import { useAssetFrom, useSetAssetFrom } from '@/hooks/use-swap'
 import { isAssetHalted } from '@/lib/swap-helpers'
 import { isBridgeSellAsset, useSwapStore } from '@/store/swap-store'
+import { PusdMark } from '@/components/swap/bridge-marks'
 
 export interface BridgeInputProps {
   selecting: boolean
@@ -31,7 +32,7 @@ export const BridgeAssetButton = ({ asset, ticker, ...props }: ComponentProps<'b
           <span>{chainLabel(chain)}</span>
           <span className="bridge-asset-icon" aria-hidden="true">
             {ticker === 'PUSD' ? (
-              <span className="bridge-token-mark">P</span>
+              <PusdMark size={22} />
             ) : asset ? (
               <AssetIcon asset={asset} className="size-[22px] [&_img]:size-[22px]" showNetworkIcons={false} />
             ) : (
@@ -153,6 +154,8 @@ export const BridgeAssetPicker = ({ side, open, onClose }: { side: 'from' | 'to'
                   >
                     {ticker === 'BCH' ? (
                       <img src="/networks/bch.svg" width={20} height={20} alt="" />
+                    ) : ticker === 'PUSD' ? (
+                      <PusdMark size={20} />
                     ) : (
                       <span className="bridge-token-mark" aria-hidden="true">
                         {ticker[0]}

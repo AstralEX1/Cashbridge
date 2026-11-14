@@ -1,22 +1,28 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { useQuery } from '@tanstack/react-query'
-import { Chain, getChainConfig, getExplorerTxUrl } from '@tcswap/core'
-import { ArrowRight, CheckCircle2, Clock, Copy, ExternalLink, LoaderCircle } from 'lucide-react'
+import { Chain, EVMChain, EVMChains, getChainConfig, getExplorerTxUrl } from '@tcswap/core'
+import { getProvider } from '@tcswap/toolboxes/evm'
+import { ArrowRight, Check, ChevronDown, Clock, Coins, ExternalLink, History, LoaderCircle, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
-import { Tooltip } from '@/components/tooltip'
-import { shortBridgeAddress } from '@/components/swap/bridge-wallet-badge'
+import { AssetIcon } from '@/components/asset-icon'
+import { useDialog } from '@/components/global-dialog'
+import { TransactionHistoryDialog } from '@/components/header/transaction-history-dialog'
+import { chainLabel } from '@/components/connect-wallet/config'
+import { BchMark, PusdMark } from '@/components/swap/bridge-marks'
+import { shortBridgeAddress, WalletAddressBadge } from '@/components/swap/bridge-wallet-badge'
 import { useBchWallet } from '@/components/bch-wallet'
 import { GenericButton } from '@/components/generic-button'
 import { SwapError } from '@/components/swap/swap-error'
 import { BridgeConfig } from '@/config'
 import { useQuote } from '@/hooks/use-quote'
-import { useSwapRates } from '@/hooks/use-rates'
+import { useRates, useSwapRates } from '@/hooks/use-rates'
 import { getMidgardActions, getTrack, getTxStatus } from '@/lib/api'
-import { checkUnspent, getTransactionState, isTxid, normalizeTxid, verifyThorchainOutbound } from '@/lib/bch'
+import { checkUnspent, findThorchainOutbound, getTransactionState, historyIncludes, isTxid, normalizeTxid, verifyThorchainOutbound } from '@/lib/bch'
+import { firstLegFromChain, formatStepTime, type SourceReceipt, stepTime } from '@/lib/bridge-tracking'
 import {
   formatBaseUnits,
   inboundMatchesBinding,
@@ -41,10 +47,10 @@ import {
   sourcesOf
 } from '@/lib/cauldron'
 import { generateId } from '@/lib/utils'
+import { formatAmount, formatMinutes, formatUsd, PUSD_LEG_SECONDS } from '@/lib/bridge-summary'
 import { useSwapStore } from '@/store/swap-store'
 import {
   type BridgeOperation,
-  getActiveBridge,
   type SwapTransaction,
   transactionStore,
   useActiveBridge,
@@ -63,13 +69,10 @@ const formatPusd = (units: bigint | string) => formatBaseUnits(units, BridgeConf
 // A reviewed second-leg transaction is signed only while this fresh; after that it is rebuilt.
 const REVIEW_TTL_MS = 60_000
 const SIGN_TIMEOUT_MS = 5 * 60_000
-const POLL_MS = 15_000
+// The chains are polled often: a BCH outbound shows up in the mempool within seconds.
+const POLL_MS = 8_000
 
-// Serialises authorizations across tabs: the Web Locks API is shared by every tab of the origin.
-const withLock = async <T,>(name: string, fn: () => Promise<T>): Promise<T | undefined> => {
-  if (typeof navigator === 'undefined' || !navigator.locks) return fn()
-  return navigator.locks.request(name, { ifAvailable: true }, async (lock: Lock | null) => (lock ? fn() : undefined))
-}
+import { withLock } from '@/lib/bridge-first-leg'
 
 // The persisted operation as every tab sees it right now (another tab may have moved it on).
 const freshOperation = async (uid: string) => {
@@ -82,17 +85,18 @@ const freshOperation = async (uid: string) => {
 
 // The indicative PUSD the first leg's BCH would buy now. Nothing is reserved: the second leg is
 // quoted again on the BCH actually received, and the user may keep the BCH instead.
-export const usePusdEstimate = () => {
-  const { quote } = useQuote()
-  const destinationAsset = useSwapStore(state => state.destinationAsset)
+// The Cauldron quote for the BCH a first leg is expected to deliver (`expectedBuyAmount`, in BCH).
+// `destination` overrides the form's choice (a running operation has its own).
+export const usePusdQuoteFor = (expectedBuyAmount?: string, destination?: 'BCH' | 'PUSD') => {
+  const destinationAsset = useSwapStore(state => destination ?? state.destinationAsset)
   const bchSats = useMemo(() => {
-    if (!quote?.expectedBuyAmount) return undefined
+    if (!expectedBuyAmount) return undefined
     try {
-      return toBaseUnits(quote.expectedBuyAmount, BCH_DECIMALS)
+      return toBaseUnits(expectedBuyAmount, BCH_DECIMALS)
     } catch {
       return undefined
     }
-  }, [quote?.expectedBuyAmount])
+  }, [expectedBuyAmount])
   const sellSats = bchSats === undefined ? undefined : secondLegSellAmount(bchSats)
 
   const query = useQuery({
@@ -103,7 +107,12 @@ export const usePusdEstimate = () => {
     staleTime: 20_000
   })
 
-  return { bchSats, sellSats, pusd: query.data?.output, isLoading: query.isLoading, error: query.error as Error | null }
+  return { bchSats, sellSats, pusd: query.data?.output, quote: query.data, isLoading: query.isLoading, error: query.error as Error | null }
+}
+
+export const usePusdEstimate = () => {
+  const { quote } = useQuote()
+  return usePusdQuoteFor(quote?.expectedBuyAmount)
 }
 
 export const PusdEstimate = () => {
@@ -149,79 +158,57 @@ export const PusdEstimate = () => {
 
 export const BchWalletStatus = () => {
   const t = useTranslations('bridge')
-  const { mismatch, error, reconnectStalled, walletName } = useBchWallet()
+  const { mismatch, error, reconnectStalled, walletName, pairAgain } = useBchWallet()
   if (!mismatch && !error && !reconnectStalled) return null
   return (
     <div className="bridge-wallet">
       {mismatch && <SwapError error={new Error(t('wallet.mismatch'))} />}
       {error && <SwapError error={new Error(error)} />}
-      {reconnectStalled && <p>{t('wallet.reconnectStalled', { name: walletName ?? t('wallet.yourWallet') })}</p>}
+      {/* The kept binding moves the main button past the BCH step, so a fresh pairing is offered
+          here. The stored session stays until the user picks it. */}
+      {reconnectStalled && (
+        <p>
+          {t('wallet.reconnectStalled', { name: walletName ?? t('wallet.yourWallet') })}{' '}
+          <button type="button" className="cursor-pointer underline" onClick={pairAgain}>
+            {t('wallet.pairAgain')}
+          </button>
+        </p>
+      )}
     </div>
   )
 }
 
 // --- First leg ---------------------------------------------------------------------------------
 
-export class BridgeBlocked extends Error {}
-
-// Records the operation before the source wallet opens, then hands the swap to the SDK. A wallet
-// error or a closed page leaves it 'first_leg_unknown': it is never re-sent on its own.
-export const startBridgeFirstLeg = async ({
-  base,
-  binding,
-  walletName,
-  quotedBchSats,
-  destinationAsset = 'PUSD',
-  execute
-}: {
-  base: Omit<SwapTransaction, 'uid' | 'status' | 'bridge' | 'hash'>
-  binding: BridgeOperation['binding']
-  walletName?: string
-  quotedBchSats?: string
-  destinationAsset?: BridgeOperation['destinationAsset']
-  execute: () => Promise<string>
-}) => {
-  const result = await withLock('bch-bridge-first-leg', async () => {
-    await transactionStore.persist.rehydrate()
-    if (getActiveBridge()) throw new BridgeBlocked('Finish or close the current bridge operation first')
-
-    const uid = generateId()
-    const { setTransaction, updateBridge } = transactionStore.getState()
-    setTransaction({
-      ...base,
-      uid,
-      status: 'not_started',
-      bridge: {
-        id: uid,
-        stage: 'first_leg_signing',
-        destinationAsset,
-        binding,
-        walletName,
-        quotedBchSats,
-        firstLeg: { result: 'pending' },
-        updatedAt: Date.now()
-      }
-    })
-
-    try {
-      const hash = await execute()
-      updateBridge(uid, () => ({ stage: 'first_leg_pending', hash }))
-      return hash
-    } catch (error) {
-      updateBridge(uid, () => ({ stage: 'first_leg_unknown', error: error instanceof Error ? error.message : 'Wallet error' }))
-      throw error
-    }
-  })
-  if (result === undefined) throw new BridgeBlocked('Another tab is starting a bridge operation')
-  return result
-}
+export { BridgeBlocked, FirstLegRejected, startBridgeFirstLeg } from '@/lib/bridge-first-leg'
 
 // --- Tracking ----------------------------------------------------------------------------------
+
+// The source transaction's receipt on its own chain (EVM sources; others rely on THORChain's view).
+const sourceReceipt = async (tx: BridgeTx): Promise<SourceReceipt | undefined> => {
+  if (!tx.hash || !EVMChains.includes(tx.assetFrom.chain as EVMChain)) return undefined
+  const provider = await getProvider(tx.assetFrom.chain as EVMChain)
+  const receipt = await provider.getTransactionReceipt(tx.hash)
+  if (!receipt) return { confirmations: 0, failed: false }
+  const head = await provider.getBlockNumber()
+  return { confirmations: Math.max(1, head - receipt.blockNumber + 1), failed: receipt.status === 0 }
+}
 
 const syncFirstLeg = async (tx: BridgeTx, update: ReturnType<typeof useUpdateBridge>, setDetails: ReturnType<typeof useSetTransactionDetails>) => {
   const op = tx.bridge
   if (!tx.hash) return
   let timing: Partial<BridgeOperation['firstLeg']> = {}
+
+  // The chains decide: the source receipt on its own chain, and the BCH at the bound address
+  // (THORChain's OUT:<inbound hash> outbound, mempool included). THORChain's status below only
+  // fills gaps (refunds, timing) and never holds a stage back.
+  const [source, outbound] = await Promise.all([
+    sourceReceipt(tx).catch(() => undefined),
+    findThorchainOutbound(tx.hash, op.binding.lockingBytecode).catch(() => undefined)
+  ])
+  const fromChain = firstLegFromChain(op, { source, outbound })
+  if (fromChain) update(tx.uid, () => fromChain)
+  if (fromChain?.stage) return
 
   // The aggregator's tracker is the normal progress feed; its answer is shown, never trusted for receipt.
   getTrack({
@@ -309,15 +296,20 @@ const syncSecondLeg = async (tx: BridgeTx, update: ReturnType<typeof useUpdateBr
   const leg = op.secondLeg
   if (!leg?.txid) return
   const state = await getTransactionState(leg.txid)
+  // 0-conf: once the network holds the swap (mempool or block) the operation is complete.
   if (state.seen) {
     return update(tx.uid, () => ({
-      stage: state.confirmations >= 1 ? 'completed' : 'second_leg_pending',
+      stage: 'completed',
       secondLeg: { ...leg, confirmations: state.confirmations, error: undefined }
     }))
   }
-  // Not seen: if the funding is gone, something else spent it and this transaction can never confirm.
+  // Not seen by that server, yet the funding is spent: if the address's history holds any swap this
+  // operation signed, that is the spender (a server can lag on the txid), so the swap is done. Only a
+  // genuinely foreign spender means the PUSD swap did not happen.
   const checked = await checkUnspent(op.binding.lockingBytecode, op.received ?? [])
   if (checked.some(o => !o.unspent)) {
+    const ours = await historyIncludes(op.binding.lockingBytecode, [leg.txid, ...(op.priorSwapTxids ?? [])])
+    if (ours.length > 0) return update(tx.uid, () => ({ stage: 'completed', secondLeg: { ...leg, txid: ours[0], confirmations: 0, error: undefined } }))
     update(tx.uid, () => ({ stage: 'failed', error: 'The BCH was spent by a different transaction; the PUSD swap did not happen' }))
   }
 }
@@ -358,7 +350,8 @@ export const BridgeTracker = () => {
     },
     enabled: !!active,
     refetchInterval: POLL_MS,
-    refetchIntervalInBackground: false,
+    // Keeps following while the user is in the wallet app or another tab.
+    refetchIntervalInBackground: true,
     retry: false
   })
 
@@ -367,16 +360,344 @@ export const BridgeTracker = () => {
 
 // --- Operation panel ---------------------------------------------------------------------------
 
-const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
-  <div className="flex justify-between gap-4">
-    <span className="text-txt-label-small">{label}</span>
-    <span className="text-right break-all">{value}</span>
+const timeOf = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+const usdText = (value?: number) => (value === undefined || !Number.isFinite(value) ? undefined : formatUsd(value))
+
+interface FlowToken {
+  amount: string
+  ticker: string
+  usd?: string
+  icon: ReactNode
+}
+
+interface FlowBar {
+  // 0..1 of the bar filled; `live` adds the moving shimmer, `done` the check.
+  fill: number
+  // Time left, or time elapsed once past the estimate.
+  eta?: string
+  live?: boolean
+  done?: boolean
+}
+
+export interface FlowToast {
+  id: string
+  title: string
+  hash: string
+  chain: Chain
+  time?: string
+}
+
+export type FlowStage = 'bridging' | 'ready' | 'swapping' | 'plain' | 'done' | 'ended'
+
+export interface BridgeFlowProps {
+  stage: FlowStage
+  // Read by screen readers as the dialog title.
+  title: string
+  sourceChain: Chain
+  sourceAddress?: string
+  bchAddress: string
+  sent: FlowToken
+  bch: FlowToken
+  pusd?: FlowToken
+  bridgeBar: FlowBar
+  swapBar?: FlowBar
+  details?: ReactNode
+  actions?: ReactNode
+  toasts: FlowToast[]
+  onDismissToast: (id: string) => void
+  onHistory: () => void
+  onClose: () => void
+  // Plays the bridge-collapse animation; off once it has been shown for this operation.
+  animateCollapse?: boolean
+}
+
+const ProgressBar = ({ label, bar }: { label: string; bar: FlowBar }) => {
+  const t = useTranslations('bridge.progress')
+  return (
+    <div
+      className="bridge-flow-bar"
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(bar.fill * 100)}
+    >
+      <i className={`bridge-flow-fill${bar.live ? ' is-live' : ''}`} style={{ width: `${Math.round(bar.fill * 100)}%` }} />
+      <span>
+        {label}
+        {bar.done ? (
+          <Check size={16} strokeWidth={3} aria-label={t('stepDone')} />
+        ) : bar.eta !== undefined ? (
+          <span className="bridge-flow-eta">
+            <Clock size={14} aria-hidden="true" />
+            {bar.eta}
+          </span>
+        ) : null}
+      </span>
+    </div>
+  )
+}
+
+const FlowAmount = ({ token }: { token: FlowToken }) => (
+  <div className="bridge-flow-token">
+    <div>
+      {token.icon}
+      <strong>{token.amount}</strong>
+    </div>
+    <span>
+      {token.ticker}
+      {token.usd ? ` · ${token.usd}` : ''}
+    </span>
   </div>
 )
+
+const FlowArrow = ({ live }: { live: boolean }) => (
+  <ArrowRight className={`bridge-flow-arrow${live ? ' is-live' : ''}`} size={26} strokeWidth={2.4} aria-hidden="true" />
+)
+
+const Spinner = () => (
+  <svg className="bridge-flow-spinner" width="20" height="20" viewBox="0 0 24 24" fill="none" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="9" stroke="#3a4f59" />
+    <path d="M12 3a9 9 0 019 9" stroke="#0ac18e" />
+  </svg>
+)
+
+const WaitingButton = ({ children }: { children: ReactNode }) => (
+  <button type="button" className="bridge-flow-primary" disabled>
+    <Spinner />
+    {children}
+  </button>
+)
+
+const COLLAPSE_SEEN_KEY = 'bridge-flow-collapse-seen'
+
+// Whether this operation's bridge-collapse animation still has to play. Remounts (a reload, a hot
+// update, reopening the screen) show the collapsed state at once instead of replaying it.
+const useCollapseOnce = (uid: string | undefined, collapsed: boolean) => {
+  const [seen] = useState(() => {
+    try {
+      return uid ? (JSON.parse(sessionStorage.getItem(COLLAPSE_SEEN_KEY) ?? '[]') as string[]).includes(uid) : false
+    } catch {
+      return false
+    }
+  })
+  useEffect(() => {
+    if (!uid || !collapsed || seen) return
+    try {
+      const list = JSON.parse(sessionStorage.getItem(COLLAPSE_SEEN_KEY) ?? '[]') as string[]
+      sessionStorage.setItem(COLLAPSE_SEEN_KEY, JSON.stringify([...list.filter(id => id !== uid), uid].slice(-20)))
+    } catch {
+      // Storage unavailable: the animation may replay, nothing else changes.
+    }
+  }, [uid, collapsed, seen])
+  return !seen
+}
+
+// The progress screen after Send: one component for every stage. The transactions are not part of
+// the card but toast-style notes in the page's bottom-right corner; History sits in the top-right.
+export const BridgeFlow = (props: BridgeFlowProps) => {
+  const t = useTranslations('bridge.progress')
+  const { stage, pusd } = props
+  const collapsed = !!pusd && (stage === 'ready' || stage === 'swapping' || stage === 'done')
+  return (
+    <div className="bridge-flow">
+      <div className="bridge-flow-corner">
+        <button type="button" className="bridge-flow-corner-btn" onClick={props.onHistory}>
+          <History size={16} aria-hidden="true" />
+          {t('history')}
+        </button>
+        <button type="button" className="bridge-flow-corner-btn is-icon" aria-label={t('close')} onClick={props.onClose}>
+          <X size={18} aria-hidden="true" />
+        </button>
+      </div>
+
+      <div className="bridge-flow-main">
+        <div className="bridge-flow-card">
+          <div className="bridge-flow-wallets">
+            {props.sourceAddress ? (
+              <WalletAddressBadge address={props.sourceAddress} chain={props.sourceChain} label={t('sourceWallet')} showChainIcon />
+            ) : (
+              <span />
+            )}
+            <WalletAddressBadge address={props.bchAddress} chain={Chain.BitcoinCash} label={t('bchWallet')} showChainIcon />
+          </div>
+
+          {collapsed ? (
+            <div className="bridge-flow-ready" data-stage={stage} data-animate={props.animateCollapse === false ? 'false' : undefined}>
+              <div className="bridge-flow-tile" role="img" aria-label={t('bridgeDone', { from: props.sent.ticker })}>
+                <div className="bridge-flow-tile-inner">
+                  <span className="bridge-flow-tile-icons">
+                    {props.sent.icon}
+                    <ArrowRight size={14} strokeWidth={2.6} aria-hidden="true" />
+                    {props.bch.icon}
+                  </span>
+                  <span>{t('bridge')}</span>
+                  <span className="bridge-flow-check">
+                    <Check size={14} strokeWidth={3} aria-hidden="true" />
+                  </span>
+                </div>
+              </div>
+              <div className="bridge-flow-ready-body">
+                <div className="bridge-flow-tokens is-compact bridge-flow-slide">
+                  <FlowAmount token={props.bch} />
+                  <FlowArrow live={stage !== 'done'} />
+                  <FlowAmount token={pusd} />
+                </div>
+                {props.swapBar && (
+                  <div className="bridge-flow-slide">
+                    <ProgressBar label={t('swapStep')} bar={props.swapBar} />
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className={`bridge-flow-tokens${pusd ? ' is-compact' : ''}`}>
+                <FlowAmount token={props.sent} />
+                <FlowArrow live={stage === 'bridging' || stage === 'plain'} />
+                <FlowAmount token={props.bch} />
+                {pusd && (
+                  <>
+                    <FlowArrow live={false} />
+                    <FlowAmount token={pusd} />
+                  </>
+                )}
+              </div>
+              {pusd ? (
+                <div className="bridge-flow-bars">
+                  <ProgressBar label={t('bridgeStep')} bar={props.bridgeBar} />
+                  {props.swapBar && <ProgressBar label={t('swapStep')} bar={props.swapBar} />}
+                </div>
+              ) : (
+                <ProgressBar label={t('bridge')} bar={props.bridgeBar} />
+              )}
+            </>
+          )}
+
+          {props.details}
+        </div>
+        {props.actions && <div className="bridge-flow-actions">{props.actions}</div>}
+      </div>
+
+      {props.toasts.length > 0 && (
+        <ol className="bridge-flow-toasts" aria-label={t('transactions')}>
+          {props.toasts.map(item => (
+            <li key={item.id} role="status" className="bridge-flow-toast">
+              <span className="bridge-flow-toast-icon">
+                <Check size={16} strokeWidth={2.6} aria-hidden="true" />
+              </span>
+              <div>
+                <strong>{item.title}</strong>
+                <span>
+                  <span title={item.hash}>{shortBridgeAddress(item.hash)}</span> · {chainLabel(item.chain)}
+                  {item.time ? ` · ${item.time}` : ''}
+                  <a href={getExplorerTxUrl({ chain: item.chain, txHash: item.hash })} target="_blank" rel="noopener noreferrer" aria-label={t('explorer')}>
+                    <ExternalLink size={14} />
+                  </a>
+                </span>
+              </div>
+              <button type="button" aria-label={t('dismiss')} onClick={() => props.onDismissToast(item.id)}>
+                <X size={14} strokeWidth={2.4} />
+              </button>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  )
+}
+
+// The Cauldron quote for the swap-ready stage: the trade on the live pools for the BCH received.
+export interface CauldronQuoteView {
+  bchPerPusd: number
+  pusdUsd?: number
+  lpFeePercent: number
+  lpFeeUsd?: number
+  networkFeeBch: number
+  networkFeeUsd?: number
+  priceImpactPercent: number
+  minimum: string
+}
+
+export const CauldronQuoteBlock = ({ quote }: { quote: CauldronQuoteView }) => {
+  const t = useTranslations('bridge.progress')
+  const [open, setOpen] = useState(true)
+  const totalFee = quote.lpFeeUsd !== undefined && quote.networkFeeUsd !== undefined ? quote.lpFeeUsd + quote.networkFeeUsd : undefined
+  return (
+    <section className="bridge-confirm-details bridge-flow-quote">
+      <button type="button" className="bridge-confirm-summary" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <span className="bridge-confirm-rate">
+          {t('quoteRate', { bch: formatAmount(quote.bchPerPusd) })}
+          {quote.pusdUsd !== undefined && <span className="bridge-flow-muted"> ({formatUsd(quote.pusdUsd)})</span>}
+        </span>
+        {totalFee !== undefined && (
+          <span className="bridge-confirm-chip bridge-flow-fee">
+            <Coins size={16} aria-hidden="true" />
+            <span className="sr-only">{t('totalFee')}</span>
+            {formatUsd(totalFee)}
+          </span>
+        )}
+        <ChevronDown size={18} className="bridge-confirm-chevron" aria-hidden="true" />
+      </button>
+      {open && (
+        <dl className="bridge-confirm-rows">
+          <div>
+            <dt>{t('lpFee', { percent: `${quote.lpFeePercent.toFixed(1)}%` })}</dt>
+            <dd>{usdText(quote.lpFeeUsd) ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>{t('platformFee', { percent: '0.0%' })}</dt>
+            <dd>$0</dd>
+          </div>
+          <div>
+            <dt>{t('networkFee')}</dt>
+            <dd>
+              {formatAmount(quote.networkFeeBch)} BCH{quote.networkFeeUsd !== undefined ? ` (${formatUsd(quote.networkFeeUsd)})` : ''}
+            </dd>
+          </div>
+          <div>
+            <dt>{t('priceImpact')}</dt>
+            <dd>{quote.priceImpactPercent.toFixed(2)}%</dd>
+          </div>
+          <div>
+            <dt>{t('minimum')}</dt>
+            <dd>{quote.minimum}</dd>
+          </div>
+        </dl>
+      )}
+    </section>
+  )
+}
+
+export const cauldronQuoteView = (
+  leg: { sellSats: bigint; output: bigint; spotOutput: number; tradeFeeSats: bigint; minerFeeSats?: bigint; minOutput: bigint },
+  bchUsd?: number
+): CauldronQuoteView | undefined => {
+  if (leg.output <= 0n || leg.sellSats <= 0n) return undefined
+  const sell = Number(leg.sellSats) / 1e8
+  const output = Number(leg.output) / 10 ** BridgeConfig.pusd.decimals
+  const fee = Number(leg.tradeFeeSats) / 1e8
+  const spot = leg.spotOutput / 10 ** BridgeConfig.pusd.decimals
+  const miner = leg.minerFeeSats === undefined ? 0 : Number(leg.minerFeeSats) / 1e8
+  const bchPerPusd = sell / output
+  const afterFee = spot * (1 - fee / sell)
+  return {
+    bchPerPusd,
+    pusdUsd: bchUsd ? bchPerPusd * bchUsd : undefined,
+    lpFeePercent: (fee / sell) * 100,
+    lpFeeUsd: bchUsd ? fee * bchUsd : undefined,
+    networkFeeBch: miner,
+    networkFeeUsd: bchUsd ? miner * bchUsd : undefined,
+    priceImpactPercent: afterFee > 0 ? Math.max(0, (1 - output / afterFee) * 100) : 0,
+    minimum: `${formatPusd(leg.minOutput)} ${BridgeConfig.pusd.ticker}`
+  }
+}
 
 export const BridgeOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => void }) => {
   const t = useTranslations('bridge')
   const tx = useTransaction(uid)
+  const { openDialog } = useDialog()
+  const [dismissed, setDismissed] = useState<string[]>([])
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     if (!uid) return
@@ -384,43 +705,181 @@ export const BridgeOperationPanel = ({ uid, onClose }: { uid?: string; onClose: 
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [uid])
-  if (!tx || tx.kind === 'send' || !tx.bridge) return null
-  const active = tx as BridgeTx
-  const op = active.bridge
+
+  const bridgeTx = tx && tx.kind !== 'send' && tx.bridge ? (tx as BridgeTx) : undefined
+  const op = bridgeTx?.bridge
+  const pusd = op?.destinationAsset !== 'BCH'
+  const receivedSats = (op?.received ?? []).reduce((sum, o) => sum + BigInt(o.value), 0n)
+  const bchSats = receivedSats > 0n ? receivedSats : op?.quotedBchSats ? BigInt(op.quotedBchSats) : undefined
+  const pusdEstimate = usePusdQuoteFor(pusd && bchSats !== undefined && !op?.secondLeg ? formatBch(bchSats) : undefined, 'PUSD')
+  const { rates } = useRates(bridgeTx ? [bridgeTx.assetFrom.identifier, 'BCH.BCH'].sort() : [])
+  const collapsedNow =
+    !!op && pusd && ['bch_ready', 'second_leg_signed', 'second_leg_unknown', 'second_leg_pending', 'completed'].includes(op.stage)
+  const animateCollapse = useCollapseOnce(bridgeTx?.uid, collapsedNow)
+
+  if (!bridgeTx || !op) return null
+  const active = bridgeTx
   const terminal = isBridgeTerminal(op)
-  const pusd = op.destinationAsset !== 'BCH'
   const completed = op.stage === 'completed' || (!pusd && op.stage === 'kept_bch' && !!op.received?.length)
   const firstDone =
     ['bch_ready', 'second_leg_signed', 'second_leg_unknown', 'second_leg_pending', 'completed', 'kept_bch'].includes(op.stage) ||
     (terminal && !!op.received?.length)
   const secondStarted = ['second_leg_signed', 'second_leg_unknown', 'second_leg_pending'].includes(op.stage)
   const ready = op.stage === 'bch_ready' && pusd
-  const remaining = Number.isFinite(op.firstLeg.readyAt) ? Math.ceil((op.firstLeg.readyAt! - now) / 1000) : undefined
-  const freshTiming = Number.isFinite(op.firstLeg.timingUpdatedAt) && now - op.firstLeg.timingUpdatedAt! < POLL_MS * 3
-  const time = firstDone
-    ? t('progress.ready')
-    : freshTiming && remaining !== undefined && remaining > 0
-      ? `≈${remaining >= 60 ? `${Math.ceil(remaining / 60)}m` : `${remaining}s`}`
-      : t('progress.estimating')
-  const states = [
-    firstDone ? 'complete' : terminal ? 'waiting' : 'active',
-    op.stage === 'completed' ? 'complete' : secondStarted ? 'active' : 'waiting'
-  ]
-  const elapsed = Math.floor((op.updatedAt - new Date(active.timestamp).getTime()) / 1000)
-  const transactions = [
-    ...(active.hash ? [{ label: t('progress.sourceTx'), chain: active.assetFrom.chain, hash: active.hash }] : []),
-    ...[...new Set((op.received ?? []).map(output => output.txid))].map(hash => ({ label: t('progress.receiveTx'), chain: Chain.BitcoinCash, hash })),
-    ...(op.secondLeg?.txid ? [{ label: t('progress.swapTx'), chain: Chain.BitcoinCash, hash: op.secondLeg.txid }] : [])
-  ]
+  const stage: FlowStage = completed
+    ? 'done'
+    : terminal
+      ? 'ended'
+      : ready
+        ? 'ready'
+        : secondStarted
+          ? 'swapping'
+          : pusd
+            ? 'bridging'
+            : 'plain'
 
-  const copyTransaction = async (hash: string) => {
-    try {
-      await navigator.clipboard.writeText(hash)
-      toast.success(t('progress.copied'))
-    } catch {
-      toast.error(t('progress.copyFailed'))
-    }
+  // Bridge bar: time since the send against the quote's estimate, counting down, then elapsed.
+  const start = new Date(active.timestamp).getTime()
+  const estimate = active.estimatedTime ?? undefined
+  const eta = (time: ReturnType<typeof stepTime>) => {
+    const label = formatStepTime(time)
+    return label.key === 'minutes'
+      ? t('progress.minutes', { minutes: label.value })
+      : label.key === 'seconds'
+        ? t('progress.seconds', { seconds: label.value })
+        : t('progress.elapsedTime', { time: label.value })
   }
+  const bridgeBar: FlowBar = firstDone
+    ? { fill: 1, done: true }
+    : {
+        fill: estimate ? Math.min(0.95, Math.max(0.05, (now - start) / (estimate * 1000))) : 0.5,
+        eta: eta(stepTime(now, start, estimate)),
+        live: !terminal && op.stage !== 'first_leg_unknown'
+      }
+  const swapBar: FlowBar | undefined = !pusd
+    ? undefined
+    : op.stage === 'completed'
+      ? { fill: 1, done: true }
+      : secondStarted
+        ? { fill: 0.6, live: true, eta: eta(stepTime(now, op.updatedAt, PUSD_LEG_SECONDS)) }
+        : { fill: 0, eta: t('progress.minutes', { minutes: formatMinutes(PUSD_LEG_SECONDS) }) }
+
+  const rateOf = (id: string) => (rates[id] ? Number(rates[id].toSignificant(12)) : undefined)
+  const sentUsd = rateOf(active.assetFrom.identifier)
+  const bchUsd = rateOf('BCH.BCH')
+  const bchAmount = bchSats === undefined ? undefined : Number(bchSats) / 1e8
+  const leg = pusdEstimate.quote
+  const pusdUnitUsd = leg && bchUsd && leg.spotOutput > 0 ? ((Number(leg.sellSats) / 1e8) * bchUsd) / (leg.spotOutput / 10 ** BridgeConfig.pusd.decimals) : undefined
+  const pusdUnits = op.secondLeg ? BigInt(op.secondLeg.pusdOut) : leg?.output
+  const pusdAmount = pusdUnits === undefined ? undefined : Number(pusdUnits) / 10 ** BridgeConfig.pusd.decimals
+
+  const sent: FlowToken = {
+    amount: active.amountFrom,
+    ticker: active.assetFrom.ticker,
+    usd: usdText(sentUsd === undefined ? undefined : Number(active.amountFrom) * sentUsd),
+    icon: (
+      <span className="bridge-flow-icon">
+        <AssetIcon asset={active.assetFrom} showNetworkIcons={false} />
+      </span>
+    )
+  }
+  const bch: FlowToken = {
+    amount: bchAmount === undefined ? '—' : `${receivedSats > 0n ? '' : '≈ '}${formatAmount(bchAmount, receivedSats > 0n ? 8 : 4)}`,
+    ticker: 'BCH',
+    usd: usdText(bchAmount !== undefined && bchUsd ? bchAmount * bchUsd : undefined),
+    icon: <BchMark size={30} />
+  }
+  const pusdToken: FlowToken | undefined = pusd
+    ? {
+        amount: pusdAmount === undefined ? '—' : `${op.stage === 'completed' ? '' : '≈ '}${formatAmount(pusdAmount, 4)}`,
+        ticker: BridgeConfig.pusd.ticker,
+        usd: usdText(pusdAmount !== undefined && pusdUnitUsd ? pusdAmount * pusdUnitUsd : undefined),
+        icon: <PusdMark size={30} />
+      }
+    : undefined
+
+  const receivedTxids = [...new Set((op.received ?? []).map(output => output.txid))]
+  const toasts: FlowToast[] = [
+    ...(active.hash
+      ? [
+          {
+            id: `send:${active.hash}`,
+            title:
+              (op.firstLeg.sourceConfirmations ?? 0) > 0 || firstDone
+                ? t('progress.toastSendConfirmed')
+                : t('progress.toastSent'),
+            hash: active.hash,
+            chain: active.assetFrom.chain,
+            time: timeOf(start)
+          }
+        ]
+      : []),
+    ...receivedTxids.map(hash => ({ id: `receive:${hash}`, title: t('progress.toastReceived'), hash, chain: Chain.BitcoinCash })),
+    ...(op.secondLeg?.txid
+      ? [
+          {
+            id: `swap:${op.secondLeg.txid}`,
+            // Complete at 0-conf; the depth is only a detail.
+            title: t(op.stage === 'completed' ? 'progress.toastPusdReceived' : 'progress.toastSwapSent', {
+              confirmations: op.secondLeg.confirmations ?? 0
+            }),
+            hash: op.secondLeg.txid,
+            chain: Chain.BitcoinCash
+          }
+        ]
+      : [])
+  ]
+    .filter(item => !dismissed.includes(item.id))
+    .reverse()
+
+  const common = {
+    sourceChain: active.assetFrom.chain,
+    sourceAddress: active.addressFrom,
+    bchAddress: op.binding.cashAddress,
+    sent,
+    bch,
+    pusd: pusdToken,
+    bridgeBar,
+    swapBar,
+    toasts,
+    onDismissToast: (id: string) => setDismissed(list => [...list, id]),
+    onHistory: () => openDialog(TransactionHistoryDialog, {}),
+    onClose,
+    animateCollapse
+  }
+
+  const ended = terminal && !completed
+  // Completed is the final word: no error is shown next to it.
+  const error = op.error && !completed && op.stage !== 'first_leg_unknown' ? <SwapError error={new Error(op.error)} /> : null
+  const details = (
+    <>
+      {ended && <p className="bridge-flow-message">{t(`stage.${op.stage}`)}</p>}
+      {completed && (
+        <p className="bridge-flow-message is-success">
+          {pusd && pusdAmount !== undefined
+            ? t('progress.completedPusd', { amount: formatAmount(pusdAmount, 6) })
+            : t('progress.completeTitle')}
+        </p>
+      )}
+      {error}
+      {op.stage === 'first_leg_unknown' && <UnknownFirstLeg tx={active} />}
+    </>
+  )
+
+  const actions =
+    stage === 'swapping' ? (
+      <SecondLegStatus tx={active} />
+    ) : terminal ? (
+      <GenericButton className="bridge-flow-primary is-active w-full" onClick={onClose}>
+        {t(completed ? 'progress.newTransfer' : 'progress.done')}
+      </GenericButton>
+    ) : op.stage === 'first_leg_unknown' ? null : stage === 'bridging' ? (
+      <WaitingButton>{t('progress.swapAction')}</WaitingButton>
+    ) : stage === 'plain' ? (
+      <WaitingButton>{t('progress.bridgingAction')}</WaitingButton>
+    ) : null
+
+  const title = completed ? t('progress.completeTitle') : ready ? t('progress.readyTitle') : secondStarted ? t('progress.swapping') : t('progress.processing')
 
   return (
     <Dialog
@@ -429,127 +888,77 @@ export const BridgeOperationPanel = ({ uid, onClose }: { uid?: string; onClose: 
         if (!open) onClose()
       }}
     >
-      <DialogContent className="bridge-progress">
-        <div className="bridge-progress-top">
-          <span>
-            {t('progress.transfer')} <strong>{shortBridgeAddress(active.hash ?? active.uid)}</strong>
-          </span>
-          {completed && Number.isFinite(elapsed) && elapsed >= 0 ? (
-            <span className="bridge-progress-time" title={t('progress.elapsed')}>
-              <Clock size={14} />
-              {elapsed >= 60 ? `${Math.floor(elapsed / 60)}m ${elapsed % 60}s` : `${elapsed}s`}
-            </span>
-          ) : !secondStarted && !terminal ? (
-            <span className="bridge-progress-time">
-              <Clock size={14} />
-              {time}
-            </span>
-          ) : null}
-        </div>
-        <div className={`bridge-progress-message${completed ? ' bridge-progress-success' : ''}`}>
-          <DialogTitle className="bridge-progress-title">
-            {completed
-              ? t('progress.completeTitle')
-              : terminal || op.stage === 'first_leg_unknown'
-                ? t(`stage.${op.stage}`)
-                : ready
-                  ? t('progress.readyTitle')
-                  : secondStarted
-                    ? t('progress.swapping')
-                    : t('progress.processing')}
-          </DialogTitle>
-          <DialogDescription className="bridge-progress-description">
-            {completed
-              ? t('progress.completeDescription')
-              : terminal
-                ? t('progress.finished')
-                : pusd
-                  ? t(firstDone ? 'progress.secondDescription' : 'progress.firstDescription')
-                  : t('progress.nativeDescription')}
-          </DialogDescription>
-        </div>
-        <div className="bridge-progress-transfer">
-          <div>
-            <span className="bridge-progress-address">
-              <img src={`/networks/${active.assetFrom.chain.toLowerCase()}.svg`} width={18} height={18} alt="" />
-              {active.addressFrom ? shortBridgeAddress(active.addressFrom) : active.assetFrom.chain}
-            </span>
-            <strong>
-              {active.amountFrom} <small>{active.assetFrom.ticker}</small>
-            </strong>
-          </div>
-          {completed ? <CheckCircle2 size={30} aria-hidden="true" /> : <ArrowRight size={24} aria-hidden="true" />}
-          <div>
-            <span className="bridge-progress-address">
-              <img src="/networks/bch.svg" width={18} height={18} alt="" />
-              {shortBridgeAddress(op.binding.cashAddress)}
-            </span>
-            <strong>
-              {op.secondLeg
-                ? `${op.stage === 'completed' ? '' : '≈ '}${formatPusd(op.secondLeg.pusdOut)}`
-                : !pusd && op.received?.length
-                  ? formatBch(op.received.reduce((sum, o) => sum + BigInt(o.value), 0n))
-                  : '—'}{' '}
-              <small>{pusd ? 'PUSD' : 'BCH'}</small>
-            </strong>
-          </div>
-        </div>
-        {!completed && (
-          <div className="bridge-progress-steps" aria-label={t(pusd ? 'progress.threeTransactions' : 'progress.bridgeTransactions')}>
-            {states.slice(0, pusd ? 2 : 1).map((state, index) => (
-              <div key={index} className="bridge-progress-step" data-state={state}>
-                <span>{t(index === 0 ? 'progress.firstStep' : 'progress.secondStep', { step: pusd ? '1/2' : '1/1' })}</span>
-                <div className="bridge-progress-bars" aria-hidden="true">
-                  {Array.from({ length: 14 }, (_, n) => (
-                    <i key={n} style={{ animationDelay: `${n * 80}ms` }} />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-        {transactions.length > 0 && (
-          <div className="bridge-progress-transactions">
-            {transactions.map(({ label, chain, hash }) => (
-              <div key={`${label}:${hash}`} className="bridge-progress-tx">
-                <span>{label}</span>
-                <strong title={hash}>{shortBridgeAddress(hash)}</strong>
-                <Tooltip content={t('progress.copy')}>
-                  <button type="button" aria-label={`${t('progress.copy')}: ${label}`} onClick={() => copyTransaction(hash)}>
-                    <Copy size={16} />
-                  </button>
-                </Tooltip>
-                <Tooltip content={t('progress.explorer')}>
-                  <a
-                    aria-label={`${t('progress.explorer')}: ${label}`}
-                    href={getExplorerTxUrl({ chain, txHash: hash })}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <ExternalLink size={16} />
-                  </a>
-                </Tooltip>
-              </div>
-            ))}
-          </div>
-        )}
-        {op.error && op.stage !== 'first_leg_unknown' && <SwapError error={new Error(op.error)} />}
-        {op.stage === 'first_leg_unknown' && <UnknownFirstLeg tx={active} />}
+      <DialogContent className="bridge-flow-layer" showCloseButton={false}>
+        <DialogTitle className="sr-only">{title}</DialogTitle>
+        <DialogDescription className="sr-only">{t(pusd ? 'progress.firstDescription' : 'progress.nativeDescription')}</DialogDescription>
         {ready ? (
-          <SecondLeg key={active.uid} tx={active} />
-        ) : secondStarted ? (
-          <SecondLegStatus tx={active} />
-        ) : terminal ? (
-          <GenericButton className="bridge-progress-primary w-full" onClick={onClose}>
-            {t(completed ? 'progress.newTransfer' : 'progress.done')}
-          </GenericButton>
+          <ReadyStage key={active.uid} tx={active} bchUsd={bchUsd} common={common} />
         ) : (
-          <GenericButton className="bridge-progress-primary w-full" disabled>
-            {t(pusd ? 'progress.swapButton' : 'progress.processing')}
-          </GenericButton>
+          <BridgeFlow stage={stage} title={title} {...common} details={details} actions={actions} />
         )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+type CommonFlowProps = Omit<BridgeFlowProps, 'stage' | 'title' | 'details' | 'actions'>
+
+// BCH received, the PUSD swap (2/2) ready to sign: the live Cauldron quote and the swap action.
+const ReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: number; common: CommonFlowProps }) => {
+  const t = useTranslations('bridge')
+  const leg = useSecondLeg(tx)
+  // Shown from the live trade at once; the reviewed build (exact figures) replaces it when ready.
+  const live = usePusdQuoteFor(leg.reviewed ? undefined : formatBch(leg.total), 'PUSD')
+  const figures = leg.reviewed
+    ? live.quote && {
+        ...live.quote,
+        output: leg.reviewed.pusdOut,
+        sellSats: leg.reviewed.sellSats,
+        minerFeeSats: leg.reviewed.minerFeeSats,
+        minOutput: leg.reviewed.minOutput
+      }
+    : live.quote && { ...live.quote, minOutput: minOutputFor(live.quote.output) }
+  const quote = figures ? cauldronQuoteView(figures, bchUsd) : undefined
+  const pusdToken = common.pusd && {
+    ...common.pusd,
+    amount: figures ? `≈ ${formatAmount(Number(figures.output) / 10 ** BridgeConfig.pusd.decimals, 4)}` : common.pusd.amount
+  }
+
+  return (
+    <BridgeFlow
+      stage="ready"
+      title={t('progress.readyTitle')}
+      {...common}
+      pusd={pusdToken}
+      details={
+        <>
+          {quote && <CauldronQuoteBlock quote={quote} />}
+          {!leg.walletMatches && <p className="bridge-flow-message">{t('progress.reconnectBch')}</p>}
+          {leg.error && <SwapError error={new Error(leg.error)} />}
+        </>
+      }
+      actions={
+        <>
+          <GenericButton
+            className="bridge-flow-primary is-active w-full"
+            colorType="3"
+            onClick={leg.sign}
+            disabled={!leg.reviewed || !!leg.busy || !leg.walletMatches}
+          >
+            {leg.busy && <LoaderCircle size={18} className="animate-spin" />}
+            {t('progress.swapAction')}
+          </GenericButton>
+          {!leg.reviewed && !leg.busy && leg.error && (
+            <button type="button" className="bridge-flow-link" onClick={leg.prepare}>
+              {t('progress.retry')}
+            </button>
+          )}
+          <button type="button" className="bridge-flow-link" onClick={leg.keep} disabled={!!leg.busy}>
+            {t('progress.keepBch')}
+          </button>
+        </>
+      }
+    />
   )
 }
 
@@ -605,17 +1014,20 @@ interface Review {
   at: number
 }
 
-const SecondLeg = ({ tx }: { tx: BridgeTx }) => {
+// The second leg's state and actions: a fresh quote and build on the BCH actually received, then
+// signing in the bound wallet. Rendered by the swap-ready stage.
+const useSecondLeg = (tx: BridgeTx) => {
   const t = useTranslations('bridge')
   const update = useUpdateBridge()
-  const { binding, manager } = useBchWallet()
+  const { binding, manager, state: walletState } = useBchWallet()
   const [review, setReview] = useState<Review>()
   const [busy, setBusy] = useState<'quote' | 'sign'>()
   const [error, setError] = useState<string>()
   const [now, setNow] = useState(Date.now())
   const op = tx.bridge
   const total = (op.received ?? []).reduce((sum, o) => sum + BigInt(o.value), 0n)
-  const walletMatches = !!binding && binding.pubkey === op.binding.pubkey
+  // The binding outlives a wallet that is briefly away (see bch-wallet.tsx); signing needs it live.
+  const walletMatches = walletState === 'connected' && !!binding && binding.pubkey === op.binding.pubkey
   const signing = useRef(false)
   const preparation = useRef(0)
   const fundingKey = (op.received ?? []).map(o => `${o.txid}:${o.vout}:${o.value}`).join('|')
@@ -752,37 +1164,8 @@ const SecondLeg = ({ tx }: { tx: BridgeTx }) => {
     }
   }
 
-  const r = review?.reviewed
-  return (
-    <div className="bridge-progress-offer">
-      {r && !expired && (
-        <div className="bridge-progress-quote">
-          <strong>≈ {formatPusd(r.pusdOut)} PUSD</strong>
-          <Row label={t('second.minimum')} value={`${formatPusd(r.minOutput)} PUSD`} />
-          <Row label={t('second.minerFee')} value={`${formatBch(r.minerFeeSats)} BCH`} />
-        </div>
-      )}
-      {!walletMatches && <p className="bridge-progress-note">{t('progress.reconnectBch')}</p>}
-      {error && <SwapError error={new Error(error)} />}
-      <GenericButton className="bridge-progress-primary w-full" colorType="3" onClick={sign} disabled={!r || expired || !!busy || !walletMatches}>
-        {busy && <LoaderCircle size={16} className="animate-spin" />}
-        {t('progress.swapButton')}
-      </GenericButton>
-      {!r && !busy && error && (
-        <button type="button" className="bridge-progress-link" onClick={prepare}>
-          {t('progress.retry')}
-        </button>
-      )}
-      <button
-        type="button"
-        className="bridge-progress-link"
-        onClick={() => update(tx.uid, current => (current.stage === 'bch_ready' ? { stage: 'kept_bch' } : {}))}
-        disabled={!!busy}
-      >
-        {t('second.keepBch')}
-      </button>
-    </div>
-  )
+  const keep = () => update(tx.uid, current => (current.stage === 'bch_ready' ? { stage: 'kept_bch' } : {}))
+  return { reviewed: expired ? undefined : review?.reviewed, busy, error, walletMatches, prepare, sign, keep, total }
 }
 
 const rejectedAndFundingIntact = async (uid: string, txid: string) => {
@@ -797,14 +1180,22 @@ const rejectedAndFundingIntact = async (uid: string, txid: string) => {
 const broadcast = async (uid: string, signedHex: string, txid: string, update: ReturnType<typeof useUpdateBridge>) => {
   try {
     await broadcastPusdSwap(signedHex, txid)
-    update(uid, op => ({ stage: 'second_leg_pending', secondLeg: { ...op.secondLeg!, error: undefined } }))
+    // Accepted by the network: complete at 0-conf (the tracker no longer needs to follow it).
+    update(uid, op => ({ stage: 'completed', secondLeg: { ...op.secondLeg!, confirmations: op.secondLeg?.confirmations ?? 0, error: undefined } }))
   } catch (error) {
     if (error instanceof BroadcastRejected) {
       // A rejection can also mean "already known" or a conflicting spend, so only go back to a
       // fresh quote once the transaction is absent and every funding output is still unspent.
       const unspent = await rejectedAndFundingIntact(uid, txid).catch(() => false)
       if (unspent) {
-        update(uid, op => ({ stage: 'bch_ready', secondLeg: undefined, error: `PUSD swap rejected: ${error.message}. Get a new quote.`, received: op.received }))
+        update(uid, op => ({
+          stage: 'bch_ready',
+          // The next signature starts a fresh second leg; this txid is remembered as one of ours.
+          secondLeg: undefined,
+          priorSwapTxids: [...(op.priorSwapTxids ?? []), txid],
+          error: `PUSD swap rejected: ${error.message}. Get a new quote.`,
+          received: op.received
+        }))
         return
       }
     }

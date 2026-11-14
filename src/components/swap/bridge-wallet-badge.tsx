@@ -26,15 +26,8 @@ export const BridgeWalletBadge = ({ side }: { side: 'from' | 'to' }) => {
   const setExternalWalletMode = useSetExternalWalletMode()
   const { openDialog } = useDialog()
   const bch = useBchWallet()
-  const [copied, setCopied] = useState(false)
   const address = side === 'from' ? (assetFrom ? account?.address : undefined) : bch.binding?.cashAddress
   const chain = side === 'from' ? assetFrom?.chain : Chain.BitcoinCash
-
-  useEffect(() => {
-    if (!copied) return
-    const timer = setTimeout(() => setCopied(false), 1500)
-    return () => clearTimeout(timer)
-  }, [copied])
 
   if (!chain) return null
 
@@ -62,6 +55,44 @@ export const BridgeWalletBadge = ({ side }: { side: 'from' | 'to' }) => {
     )
   }
 
+  return (
+    <WalletAddressBadge
+      address={address}
+      chain={chain}
+      label={t(side === 'from' ? 'source' : 'destination')}
+      onDisconnect={() => {
+        if (side === 'from' && account) disconnectSource(account.provider)
+        else if (side === 'to') void bch.disconnect()
+      }}
+    />
+  )
+}
+
+// A wallet address as a pill: the green dot and short address, with Copy, View in explorer and,
+// when `onDisconnect` is given, Disconnect sliding out on hover or focus (always shown on touch).
+// The progress screen passes no `onDisconnect`: a running operation's wallets stay as recorded.
+export const WalletAddressBadge = ({
+  address,
+  chain,
+  label,
+  showChainIcon = false,
+  onDisconnect
+}: {
+  address: string
+  chain: Chain
+  label: string
+  showChainIcon?: boolean
+  onDisconnect?: () => void
+}) => {
+  const t = useTranslations('bridge.wallet')
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 1500)
+    return () => clearTimeout(timer)
+  }, [copied])
+
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(address)
@@ -72,8 +103,12 @@ export const BridgeWalletBadge = ({ side }: { side: 'from' | 'to' }) => {
   }
 
   return (
-    <div className="bridge-wallet-badge" role="group" tabIndex={0} aria-label={`${t(side === 'from' ? 'source' : 'destination')}: ${address}`}>
-      <span className="bridge-wallet-dot" aria-hidden="true" />
+    <div className="bridge-wallet-badge" role="group" tabIndex={0} aria-label={`${label}: ${address}`}>
+      {showChainIcon ? (
+        <img className="bridge-wallet-chain" src={`/networks/${chain.toLowerCase()}.svg`} width={18} height={18} alt="" />
+      ) : (
+        <span className="bridge-wallet-dot" aria-hidden="true" />
+      )}
       <span title={address}>{shortBridgeAddress(address)}</span>
       <div className="bridge-wallet-actions">
         <div className="bridge-wallet-actions-inner">
@@ -87,18 +122,13 @@ export const BridgeWalletBadge = ({ side }: { side: 'from' | 'to' }) => {
               <ExternalLink size={16} />
             </a>
           </Tooltip>
-          <Tooltip content={t('disconnect')}>
-            <button
-              type="button"
-              aria-label={t('disconnect')}
-              onClick={() => {
-                if (side === 'from' && account) disconnectSource(account.provider)
-                else if (side === 'to') void bch.disconnect()
-              }}
-            >
-              <X size={17} />
-            </button>
-          </Tooltip>
+          {onDisconnect && (
+            <Tooltip content={t('disconnect')}>
+              <button type="button" aria-label={t('disconnect')} onClick={onDisconnect}>
+                <X size={17} />
+              </button>
+            </Tooltip>
+          )}
         </div>
       </div>
     </div>

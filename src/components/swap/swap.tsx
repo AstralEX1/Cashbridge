@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import dynamic from 'next/dynamic'
+import { useSearchParams } from 'next/navigation'
 import { ArrowDown } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { AssetValue } from '@tcswap/core'
@@ -26,6 +28,13 @@ import { useSwapStore } from '@/store/swap-store'
 import { useActiveBridge } from '@/store/transaction-store'
 import './bridge.css'
 
+// Development-only preview of the progress screen (`?bridgeFlowPreview=<stage>`); the condition is
+// constant at build time, so production bundles drop the import.
+const BridgeFlowPreview =
+  process.env.NODE_ENV !== 'production'
+    ? dynamic(() => import('@/components/swap/bridge-flow-preview').then(m => m.BridgeFlowPreview), { ssr: false })
+    : () => null
+
 const DEFAULT_SELL = 'BTC.BTC'
 const DEFAULT_BUY = BridgeConfig.buyAsset
 
@@ -46,6 +55,8 @@ export const Swap = () => {
   const { quote } = useQuote()
   const { rateFrom, rateTo } = useSwapRates()
   const { isHalted, chains: haltedChains } = useTradingHalt()
+  const searchParams = useSearchParams()
+  const flowPreview = process.env.NODE_ENV !== 'production' ? searchParams.get('bridgeFlowPreview') : null
 
   const isPrivateTab = useUrlParams()
   useResolveSource()
@@ -118,6 +129,7 @@ export const Swap = () => {
       <BchWalletStatus />
 
       <BridgeOperationPanel uid={progressId} onClose={() => setProgressId(undefined)} />
+      {flowPreview && <BridgeFlowPreview stage={flowPreview} />}
 
       {isHalted && !isPrivateTab && (
         <div className="pt-2">

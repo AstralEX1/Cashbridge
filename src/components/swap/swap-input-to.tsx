@@ -13,7 +13,7 @@ import { useQuote } from '@/hooks/use-quote'
 import { useSwapRates } from '@/hooks/use-rates'
 import { useAssetTo } from '@/hooks/use-swap'
 import { formatBaseUnits } from '@/lib/bridge'
-import { toCurrencyFixed } from '@/lib/utils'
+import { formatUsd, pusdUsdPrice } from '@/lib/bridge-summary'
 import { useSwapStore } from '@/store/swap-store'
 
 export const SwapInputTo = ({ priceImpact, selecting, onSelectOpenChange }: BridgeInputProps & { priceImpact?: USwapNumber }) => {
@@ -39,6 +39,17 @@ export const SwapInputTo = ({ priceImpact, selecting, onSelectOpenChange }: Brid
       : new USwapNumber(quote.expectedBuyAmount).toSignificant()
   const busy = isLoading || (isPusd && estimate.isLoading)
 
+  // USD of what arrives: BCH at its pool price; PUSD at the live Cauldron price (BCH price × pool
+  // rate), or the $1 peg marked "≈" when BCH has no price.
+  const bchUsd = rateTo ? Number(rateTo.toSignificant(12)) : undefined
+  const usd = (() => {
+    if (busy || output === undefined || !quote) return undefined
+    if (!isPusd) return bchUsd === undefined ? undefined : formatUsd(Number(quote.expectedBuyAmount) * bchUsd)
+    const leg = estimate.quote && { sell: Number(estimate.quote.sellSats) / 1e8, spotOutput: estimate.quote.spotOutput / 10 ** BridgeConfig.pusd.decimals }
+    const { price, estimate: approx } = pusdUsdPrice(bchUsd, leg)
+    return `${approx ? '≈ ' : ''}${formatUsd(Number(output) * price)}`
+  })()
+
   return (
     <BridgeInputSwitcher selecting={selecting}>
       <div className="bridge-input-switcher__slot" aria-hidden={selecting} inert={selecting}>
@@ -59,11 +70,7 @@ export const SwapInputTo = ({ priceImpact, selecting, onSelectOpenChange }: Brid
           </output>
           <div className="bridge-input-meta">
             <span>
-              {isPusd
-                ? null
-                : rateTo && quote
-                  ? toCurrencyFixed(new USwapNumber(quote.expectedBuyAmount).mul(rateTo).toCurrency('$', { trimTrailingZeros: false }))
-                  : t('receiveAmount')}
+              {usd ?? t('receiveAmount')}
             </span>
             <div className="flex items-center gap-2">
               {priceImpact && (
