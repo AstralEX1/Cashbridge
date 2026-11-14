@@ -1,6 +1,7 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { USwapNumber } from '@tcswap/core'
+import { ArrowRight, ChevronDown, Clock, Fuel, Route, TrendingDown, Wallet } from 'lucide-react'
 import { QuoteResponseRoute } from '@tcswap/helpers/api'
 import { CredenzaHeader, CredenzaTitle } from '@/components/ui/credenza'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -19,6 +20,280 @@ import { useAssetFrom, useAssetTo, useSlippage } from '@/hooks/use-swap'
 import { formatExpiration, isHoudiniProvider, isPrivateSend, resolveFees } from '@/lib/swap-helpers'
 import { cn, toCurrencyFixed, truncate } from '@/lib/utils'
 import { useIsLimitSwap, useLimitSwapBuyAmount } from '@/store/limit-swap-store'
+import { shortBridgeAddress } from '@/components/swap/bridge-wallet-badge'
+import { usePusdQuoteFor } from '@/components/swap/pusd-swap'
+import { BridgeConfig } from '@/config'
+import { formatBaseUnits, minOutputFor } from '@/lib/bridge'
+import { bridgeSummary, firstLegSeconds, formatAmount, formatMinutes, formatPercent, formatUsd, PUSD_LEG_SECONDS } from '@/lib/bridge-summary'
+import type { Asset } from '@/components/swap/asset'
+import { BchMark, CauldronMark, HoverCard, PusdMark, ThorchainMark } from '@/components/swap/bridge-marks'
+
+const THORCHAIN_FEES_URL = 'https://docs.thorchain.org/technical-documentation/technical-deep-dive/fees'
+const toNumber = (value?: USwapNumber) => (value ? Number(value.toSignificant(12)) : undefined)
+
+const TokenMark = ({ asset }: { asset: Asset }) => (
+  <span className="bridge-confirm-token">
+    <AssetIcon asset={asset} showNetworkIcons={false} />
+  </span>
+)
+
+interface BridgeConfirmProps {
+  quote: QuoteResponseRoute
+  destination: 'PUSD' | 'BCH'
+  // The bound BCH wallet's address; the route pays it.
+  bchAddress: string
+}
+
+// The bridge's confirm screen: who sends to whom, how much arrives, and one collapsible block with
+// the route, time, gas and the full price impact. Every figure is live (quote, pool prices, Cauldron).
+export const BridgeConfirm = ({ quote, destination, bchAddress }: BridgeConfirmProps) => {
+  const t = useTranslations('bridge.confirm')
+  const assetFrom = useAssetFrom()
+  const [open, setOpen] = useState(false)
+  const pusd = destination === 'PUSD'
+  const pusdQuote = usePusdQuoteFor(pusd ? quote.expectedBuyAmount : undefined)
+
+  const identifiers = useMemo(() => quote.fees.map(f => f.asset).sort(), [quote.fees])
+  const { rates } = useRates(identifiers, quote.providers[0])
+  const { rateFrom, rateTo } = useSwapRates()
+  const { inbound, included } = resolveFees(quote, rates)
+
+  const sent = Number(quote.sellAmount)
+  const bch = Number(quote.expectedBuyAmount)
+  const leg = pusdQuote.quote
+  const summary = bridgeSummary({
+    sent,
+    sentUsd: rateFrom ? sent * toNumber(rateFrom)! : undefined,
+    bch,
+    bchUsd: toNumber(rateTo),
+    thorFeeUsd: toNumber(included),
+    sourceGasUsd: inbound && toNumber(inbound.usd) ? toNumber(inbound.usd) : undefined,
+    thorSeconds: firstLegSeconds(quote.estimatedTime),
+    pusd: leg && {
+      output: Number(leg.output) / 10 ** BridgeConfig.pusd.decimals,
+      spotOutput: leg.spotOutput / 10 ** BridgeConfig.pusd.decimals,
+      sell: Number(leg.sellSats) / 1e8,
+      tradeFee: Number(leg.tradeFeeSats) / 1e8,
+      minerFee: leg.minerFeeSats === undefined ? undefined : Number(leg.minerFeeSats) / 1e8
+    }
+  })
+
+  if (!assetFrom) return null
+
+  const chain = chainLabel(assetFrom.chain)
+  const bridgeSeconds = firstLegSeconds(quote.estimatedTime)
+  const thorMinutes = bridgeSeconds ? formatMinutes(bridgeSeconds) : undefined
+  const minutes = summary.seconds ? t('minutes', { minutes: formatMinutes(summary.seconds) }) : '—'
+  const pusdPending = pusd && !leg
+  const received = pusdPending ? undefined : summary.received
+  const receivedTicker = pusd ? BridgeConfig.pusd.ticker : 'BCH'
+  const usd = (value?: number) => (value === undefined ? '—' : formatUsd(value))
+
+  return (
+    <>
+      <CredenzaHeader>
+        <CredenzaTitle>{t('title')}</CredenzaTitle>
+      </CredenzaHeader>
+
+      <ScrollArea className="relative flex min-h-0 flex-1 px-4 md:px-7" classNameViewport="flex-1 h-auto">
+        <div className="bridge-confirm">
+          <section className="bridge-confirm-transfer" aria-label={t('transfer')}>
+            <div className="bridge-confirm-wallets">
+              <span className="bridge-confirm-wallet" title={quote.sourceAddress}>
+                <img src={`/networks/${assetFrom.chain.toLowerCase()}.svg`} width={22} height={22} alt="" />
+                {quote.sourceAddress && quote.sourceAddress !== '{sourceAddress}' ? shortBridgeAddress(quote.sourceAddress) : chain}
+              </span>
+              <span className="bridge-confirm-arrow" aria-hidden="true">
+                <ArrowRight size={18} />
+              </span>
+              <span className="bridge-confirm-wallet" title={bchAddress}>
+                <img src="/networks/bch.svg" width={22} height={22} alt="" />
+                {shortBridgeAddress(bchAddress)}
+              </span>
+            </div>
+            <div className="bridge-confirm-amounts">
+              <div>
+                <div className="bridge-confirm-amount">
+                  <TokenMark asset={assetFrom} />
+                  <strong>{formatAmount(sent)}</strong>
+                </div>
+                <span>
+                  {t('on', { ticker: assetFrom.ticker, chain })}
+                  {rateFrom ? ` · ${usd(sent * toNumber(rateFrom)!)}` : ''}
+                </span>
+              </div>
+              <div className="bridge-confirm-received">
+                <div className="bridge-confirm-amount">
+                  <strong className={pusdPending ? 'bridge-muted animate-pulse' : undefined}>
+                    {received === undefined ? '···' : `${pusd ? '≈ ' : ''}${formatAmount(received)}`}
+                  </strong>
+                  {pusd ? <PusdMark /> : <BchMark />}
+                </div>
+                <span>
+                  {t('on', { ticker: receivedTicker, chain: 'Bitcoin Cash' })}
+                  {summary.receivedUsd !== undefined ? ` · ${usd(summary.receivedUsd)}` : ''}
+                </span>
+              </div>
+            </div>
+            {pusdQuote.error && <p className="bridge-confirm-note">{t('pusdUnavailable')}</p>}
+          </section>
+
+          <section className="bridge-confirm-details">
+            <button type="button" className="bridge-confirm-summary" aria-expanded={open} onClick={() => setOpen(!open)}>
+              <span className="bridge-confirm-rate">
+                {summary.rate !== undefined && !pusdPending
+                  ? t('rate', { from: assetFrom.ticker, amount: formatAmount(summary.rate), to: receivedTicker })
+                  : t('details')}
+              </span>
+              <span className="bridge-confirm-chip">
+                <Fuel size={16} aria-hidden="true" />
+                <span className="sr-only">{t('gas')}</span>
+                {usd(summary.gasUsd)}
+              </span>
+              <span className="bridge-confirm-chip">
+                <Clock size={16} aria-hidden="true" />
+                <span className="sr-only">{t('time')}</span>
+                {minutes}
+              </span>
+              <ChevronDown size={18} className="bridge-confirm-chevron" aria-hidden="true" />
+            </button>
+
+            {open && (
+              <dl className="bridge-confirm-rows">
+                <div>
+                  <dt>
+                    <Route size={16} aria-hidden="true" />
+                    {t('route')}
+                  </dt>
+                  <dd>
+                    <HoverCard
+                      label={
+                        <>
+                          <span>{pusd ? 2 : 1}</span>
+                          <ThorchainMark />
+                          {pusd && <CauldronMark />}
+                        </>
+                      }
+                    >
+                      <span className="bridge-tip-row bridge-tip-head">
+                        <span>{t('routeTransactions', { count: pusd ? 2 : 1 })}</span>
+                        <span className="bridge-tip-label">{minutes}</span>
+                      </span>
+                      <span className="bridge-tip-sep" />
+                      {pusd ? (
+                        <span className="bridge-tip-steps">
+                          <span className="bridge-tip-step">
+                            <ThorchainMark size={22} />
+                            <span>
+                              <strong>{t('routeBridge', { from: assetFrom.ticker })}</strong>
+                              <span className="bridge-tip-label">
+                                {t('routeBridgeDetail', { chain, minutes: thorMinutes ?? '—' })}
+                              </span>
+                            </span>
+                          </span>
+                          <span className="bridge-tip-step">
+                            <CauldronMark size={22} />
+                            <span>
+                              <strong>{t('routeSwap')}</strong>
+                              <span className="bridge-tip-label">{t('routeSwapDetail', { minutes: formatMinutes(PUSD_LEG_SECONDS) })}</span>
+                            </span>
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="bridge-tip-label">{t('routeSingle', { from: assetFrom.ticker, chain })}</span>
+                      )}
+                    </HoverCard>
+                  </dd>
+                </div>
+
+                <div>
+                  <dt>
+                    <Clock size={16} aria-hidden="true" />
+                    {t('time')}
+                  </dt>
+                  <dd>{minutes}</dd>
+                </div>
+
+                {pusd && (
+                  <div>
+                    <dt>
+                      <Wallet size={16} aria-hidden="true" />
+                      {t('minimumReceived')}
+                    </dt>
+                    <dd>{leg ? `${formatBaseUnits(minOutputFor(leg.output), BridgeConfig.pusd.decimals)} ${BridgeConfig.pusd.ticker}` : '—'}</dd>
+                  </div>
+                )}
+
+                <div>
+                  <dt>
+                    <Fuel size={16} aria-hidden="true" />
+                    {t('gas')}
+                  </dt>
+                  <dd>
+                    <HoverCard label={usd(summary.gasUsd)}>
+                      <span className="bridge-tip-row bridge-tip-head">
+                        <span>{t('gasTotal')}</span>
+                        <span>{usd(summary.gasUsd)}</span>
+                      </span>
+                      <span className="bridge-tip-sep" />
+                      <span className="bridge-tip-row">
+                        <span className="bridge-tip-label">{t('gasSource', { chain })}</span>
+                        <span>{inbound ? `${formatAmount(Number(inbound.amount.toSignificant(12)))} ${inbound.ticker}` : '—'}</span>
+                      </span>
+                      {pusd && (
+                        <span className="bridge-tip-row">
+                          <span className="bridge-tip-label">{t('gasBch')}</span>
+                          <span>{usd(summary.bchGasUsd)}</span>
+                        </span>
+                      )}
+                    </HoverCard>
+                  </dd>
+                </div>
+
+                <div>
+                  <dt>
+                    <TrendingDown size={16} aria-hidden="true" />
+                    {t('priceImpact')}
+                  </dt>
+                  <dd>
+                    <HoverCard label={summary.impactPercent === undefined ? '—' : formatPercent(summary.impactPercent)}>
+                      <span className="bridge-tip-row bridge-tip-head">
+                        <span>{t('impactTotal')}</span>
+                        <span className="bridge-tip-label">
+                          {summary.impactUsd === undefined
+                            ? '—'
+                            : `${formatUsd(summary.impactUsd)} (${formatPercent(summary.impactPercent ?? 0)})`}
+                        </span>
+                      </span>
+                      <span className="bridge-tip-sep" />
+                      <span className="bridge-tip-row">
+                        <span className="bridge-tip-label">{t('thorFee')}</span>
+                        <span>{usd(included.gt(0) ? -toNumber(included)! : undefined)}</span>
+                      </span>
+                      {pusd && (
+                        <span className="bridge-tip-row">
+                          <span className="bridge-tip-label">{t('cauldronFee')}</span>
+                          <span>{usd(summary.cauldronFeeUsd === undefined ? undefined : -summary.cauldronFeeUsd)}</span>
+                        </span>
+                      )}
+                      <span className="bridge-tip-row">
+                        <span className="bridge-tip-label">{t('poolImpact')}</span>
+                        <span>{usd(summary.poolImpactUsd)}</span>
+                      </span>
+                      <a className="bridge-tip-link" href={THORCHAIN_FEES_URL} target="_blank" rel="noopener noreferrer">
+                        {t('learnFees')}
+                      </a>
+                    </HoverCard>
+                  </dd>
+                </div>
+              </dl>
+            )}
+          </section>
+        </div>
+      </ScrollArea>
+    </>
+  )
+}
 
 interface SwapConfirmProps {
   quote: QuoteResponseRoute & { refundAddress?: string; destinationMemo?: string }

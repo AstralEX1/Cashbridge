@@ -6,7 +6,7 @@ import { QuoteResponseRoute } from '@tcswap/helpers/api'
 import { LoaderCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Credenza, CredenzaContent } from '@/components/ui/credenza'
-import { SwapConfirm } from '@/components/swap/swap-confirm'
+import { BridgeConfirm } from '@/components/swap/swap-confirm'
 import { SwapRecipient } from '@/components/swap/swap-recipient'
 import { SwapAddressWarning } from '@/components/swap/swap-address-warning'
 import { GenericButton } from '@/components/generic-button'
@@ -19,8 +19,9 @@ import { getUSwap } from '@/lib/wallets'
 import { isBridgeRoute } from '@/lib/api'
 import { addressPaysScript } from '@/lib/bch'
 import { toBaseUnits } from '@/lib/bridge'
+import { firstLegSeconds } from '@/lib/bridge-summary'
 import { useBchWallet } from '@/components/bch-wallet'
-import { startBridgeFirstLeg } from '@/components/swap/pusd-swap'
+import { BridgeBlocked, FirstLegRejected, startBridgeFirstLeg } from '@/components/swap/pusd-swap'
 import { useIsLimitSwap, useLimitSwapBuyAmount } from '@/store/limit-swap-store'
 import { useReplacementOrderStore, useSetReplacementOrder } from '@/store/replacement-order-store'
 import { useSwapStore } from '@/store/swap-store'
@@ -33,6 +34,7 @@ interface SwapDialogProps {
 
 export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) => {
   const t = useTranslations('swap')
+  const tConfirm = useTranslations('bridge.confirm')
   const tBridge = useTranslations('bridge')
   const destinationAsset = useSwapStore(state => state.destinationAsset)
   const uSwap = getUSwap()
@@ -56,14 +58,12 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
 
   const [quote, setQuote] = useState<QuoteResponseRoute | undefined>(undefined)
   const [highPriceImpactAccepted, setHighPriceImpactAccepted] = useState(false)
-  const [selfCustodyAccepted, setSelfCustodyAccepted] = useState(false)
   const [ltcWarningAccepted, setLtcWarningAccepted] = useState(false)
 
   const priceImpact = resolvePriceImpact(quote, rateFrom, rateTo)
   const requiresHighPriceImpactAcceptance = !isLimitSwap && !!priceImpact && priceImpact.gt(2)
   const requiresLtcWarning = assetFrom?.ticker === 'LTC'
-  const confirmBlocked =
-    !selfCustodyAccepted || (requiresLtcWarning && !ltcWarningAccepted) || (requiresHighPriceImpactAcceptance && !highPriceImpactAccepted)
+  const confirmBlocked = (requiresLtcWarning && !ltcWarningAccepted) || (requiresHighPriceImpactAcceptance && !highPriceImpactAccepted)
 
   const onConfirm = () => {
     if (!quote || !assetFrom || !assetTo || confirmBlocked || submitting) return
@@ -101,7 +101,7 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
         provider: provider,
         chainId: getChainConfig(assetFrom.chain).chainId,
         timestamp: new Date(),
-        estimatedTime: quote.estimatedTime?.total,
+        estimatedTime: firstLegSeconds(quote.estimatedTime),
         assetFrom: assetFrom,
         assetTo: assetTo,
         amountFrom: valueFrom.toSignificant(),
@@ -112,42 +112,39 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
       },
       execute: () => uSwap.swap({ route: route as any, feeOptionKey: FeeOption.Fast }) as Promise<string>
     })
+
+    const toastId = toast.loading(t('toast.submittingTransaction'))
+    broadcast
       .then(() => {
+        toast.success(t('toast.transactionSubmitted'), { id: toastId })
         setAmountFrom('')
         refetchBalance()
         onOpenChange(false)
       })
-      .catch((err: any) => {
-        console.error('Bridge first leg failed', err)
+      .catch((err: unknown) => {
         setSubmitting(false)
-        throw err
+        // Declined in the wallet: nothing was sent and nothing was recorded. Back to the form.
+        if (err instanceof FirstLegRejected) {
+          toast.dismiss(toastId)
+          toast(tBridge('cancelledInWallet'))
+          onOpenChange(false)
+          return
+        }
+        console.warn('Bridge first leg failed', err)
+        toast.error(readableError(err, t('toast.errorSubmitting')), { id: toastId })
+        // A recorded operation now has its own progress screen; this one must not stay on top of it.
+        if (!(err instanceof BridgeBlocked)) onOpenChange(false)
       })
-
-    toast.promise(broadcast, {
-      loading: t('toast.submittingTransaction'),
-      success: () => t('toast.transactionSubmitted'),
-      error: (err: unknown) => readableError(err, t('toast.errorSubmitting'))
-    })
   }
 
   return (
     <Credenza open={isOpen} onOpenChange={onOpenChange}>
-      <CredenzaContent className="flex h-auto max-h-5/6 flex-col md:max-w-2xl">
+      <CredenzaContent className="bridge-confirm-dialog flex h-auto max-h-5/6 flex-col md:max-w-[620px]">
         {quote ? (
           <>
-            <SwapConfirm quote={quote} priceImpact={priceImpact} />
+            <BridgeConfirm quote={quote} destination={destinationAsset === 'BCH' ? 'BCH' : 'PUSD'} bchAddress={binding?.cashAddress ?? quote.destinationAddress ?? ''} />
 
-            <div className="space-y-3 p-4 pt-2 md:p-8 md:pt-2">
-              <div className="text-txt-label-small text-sm">
-                {tBridge('form.selectedDestination', { asset: destinationAsset })}
-                {destinationAsset === 'PUSD' && <p className="mt-1 text-xs">{tBridge('estimate.disclaimer')}</p>}
-              </div>
-              <SwapAddressWarning
-                checked={selfCustodyAccepted}
-                onCheckedChange={setSelfCustodyAccepted}
-                text={t('warning.selfCustody')}
-                textAccent={t('warning.lossOfFunds')}
-              />
+            <div className="space-y-3 p-4 pt-2 md:px-7 md:pb-7">
               {requiresLtcWarning && (
                 <SwapAddressWarning
                   checked={ltcWarningAccepted}
@@ -173,7 +170,12 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
                 {submitting ? (
                   <LoaderCircle size={20} className="animate-spin" />
                 ) : (
-                  <span>{isLimitSwap ? t('confirm.buttonLimit') : t('button.send')}</span>
+                  <span>
+                    {tConfirm(destinationAsset === 'BCH' ? 'send' : 'sendFirst', {
+                      amount: new USwapNumber(quote.sellAmount).toSignificant(),
+                      ticker: assetFrom?.ticker ?? ''
+                    })}
+                  </span>
                 )}
               </GenericButton>
             </div>
