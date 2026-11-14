@@ -36,9 +36,11 @@ export const useLimitSwapStore = create<LimitSwapState>()(set => ({
   limitSwapExpiry: 0,
   pendingLimitOrder: undefined,
 
-  setIsLimitSwap: isLimit => set(state => ({ isLimitSwap: isLimit, isPrivateSwap: isLimit ? false : state.isPrivateSwap })),
-  setIsPrivateSwap: isPrivate => set(state => ({ isPrivateSwap: isPrivate, isLimitSwap: isPrivate ? false : state.isLimitSwap })),
-  setIsPrivateSend: isSend => set({ isPrivateSend: isSend }),
+  // The bridge offers market swaps to BCH only: limit orders, the PRIVATE tab and its Send mode
+  // stay off whichever code path (URL, replacement order, tab click) asks for them.
+  setIsLimitSwap: () => set({ isLimitSwap: false, isPrivateSwap: false }),
+  setIsPrivateSwap: () => set({ isPrivateSwap: false, isLimitSwap: false }),
+  setIsPrivateSend: () => set({ isPrivateSend: false }),
   setLimitSwapBuyAmount: amount => set({ limitSwapBuyAmount: amount }),
   setLimitSwapExpiry: expiry => set({ limitSwapExpiry: expiry }),
   setPendingLimitOrder: order => set({ pendingLimitOrder: order })

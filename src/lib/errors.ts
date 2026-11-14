@@ -26,6 +26,11 @@ export const translateError = (message: string): string => {
 
   if (message.includes('user rejected action')) return 'Transaction Cancelled'
 
+  // Rabby refuses a transaction whose `from` is not the account currently selected in the wallet.
+  if (message.includes('from should be same as current address')) {
+    return 'The wallet has a different account selected. Switch back to the connected address or reconnect the wallet'
+  }
+
   if (message.includes('insufficient funds') || message.includes('missing revert data')) return 'Insufficient Funds'
 
   if (message.includes(`Invalid \\\"to\\\" address.`)) return `Invalid \"to\" address`
@@ -62,7 +67,19 @@ const MAX_READABLE_LENGTH = 160
 export const readableError = (error: unknown, fallback: string): string => {
   const message = translateError((error as { message?: string })?.message || '')
 
-  return message.length > 0 && message.length <= MAX_READABLE_LENGTH ? message : fallback
+  if (message.length > 0 && message.length <= MAX_READABLE_LENGTH) return message
+
+  // The generic copy alone hides which step failed, so it carries the short error code when there is
+  // one: the SDK's error key (`toolbox_evm_...`) or the wallet/ethers code (`NETWORK_ERROR`, 4001).
+  const code = errorCode(error)
+  return code ? `${fallback} (${code})` : fallback
+}
+
+const errorCode = (error: unknown): string | undefined => {
+  const e = error as { name?: string; message?: string; code?: unknown }
+  const sdkKey = e?.name === 'USwapError' ? e.message?.match(/^[a-z0-9_]+/)?.[0] : undefined
+  const code = sdkKey ?? (typeof e?.code === 'string' || typeof e?.code === 'number' ? String(e.code) : undefined)
+  return code && code.length <= 64 ? code : undefined
 }
 
 // A halted chain reports it in prose, e.g. "failed to simulate swap: trading is halted, can't

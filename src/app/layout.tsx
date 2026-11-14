@@ -13,6 +13,8 @@ import { ReactQueryProvider } from '@/components/react-query/react-query-provide
 import { WalletStoreHydration } from '@/components/wallet-store-hydration'
 import { ReferralCapture } from '@/components/referral-capture'
 import { AppConfig } from '@/config'
+import { BchWalletProvider } from '@/components/bch-wallet'
+import { BridgeTracker } from '@/components/swap/pusd-swap'
 import { getLangDir, type Locale } from '@/i18n/config'
 import './globals.css'
 
@@ -168,7 +170,10 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <ReactQueryProvider>
           <NextIntlClientProvider locale={locale} messages={messages}>
             <ThemeProvider defaultTheme="light" attribute="class" disableTransitionOnChange>
-              {children}
+              <BchWalletProvider>
+                {children}
+                <BridgeTracker />
+              </BchWalletProvider>
               <ChatwootWidget />
             </ThemeProvider>
           </NextIntlClientProvider>

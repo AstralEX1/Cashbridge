@@ -1,11 +1,15 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { Asset } from '@/components/swap/asset'
-import { isPrivateSendMode, useLimitSwapStore } from '@/store/limit-swap-store'
+import { BridgeConfig } from '@/config'
+import { useLimitSwapStore } from '@/store/limit-swap-store'
 
 const INITIAL_AMOUNT_FROM = 1
 
-const isSending = () => isPrivateSendMode(useLimitSwapStore.getState())
+// The bridge's first leg always buys native BCH: no other buy asset is accepted, and BCH itself
+// cannot be sold into it.
+export const isBridgeBuyAsset = (asset?: Pick<Asset, 'identifier'>) => asset?.identifier.toUpperCase() === BridgeConfig.buyAsset
+export const isBridgeSellAsset = (asset?: Asset) => !!asset && !isBridgeBuyAsset(asset) && asset.chain !== 'BCH'
 
 // On the PRIVATE tab picking the other side's asset switches Send on instead of flipping. Pickers
 // only: the URL and tab-switch code pass through momentary same-asset pairs.
@@ -56,40 +60,33 @@ export const useSwapStore = create<SwapState>()(
       setAmountFrom: fromAmount => set({ amountFrom: fromAmount }),
 
       setAssetFrom: asset => {
-        const { assetFrom, assetTo } = get()
-        if (isSending()) return set({ assetFrom: asset, assetTo: asset })
+        if (!isBridgeSellAsset(asset)) return
+        const { assetTo } = get()
 
-        set({
-          assetFrom: asset,
-          assetTo: assetTo?.identifier === asset.identifier ? assetFrom : assetTo
-        })
+        set({ assetFrom: asset, assetTo: isBridgeBuyAsset(assetTo) ? assetTo : undefined })
       },
 
       setAssetTo: asset => {
-        const { assetFrom, assetTo } = get()
-        if (isSending()) return set({ assetFrom: asset, assetTo: asset })
-
-        set({
-          assetFrom: assetFrom?.identifier === asset.identifier ? assetTo : assetFrom,
-          assetTo: asset
-        })
+        if (!isBridgeBuyAsset(asset)) return
+        set({ assetTo: asset })
       },
 
-      swapAssets: (amount?: string) => {
-        const { assetFrom, assetTo } = get()
-
-        set({
-          assetFrom: assetTo,
-          assetTo: assetFrom,
-          amountFrom: amount || ''
-        })
-      },
+      // Reversing the pair would sell BCH, which the bridge never does.
+      swapAssets: () => {},
 
       setHasHydrated: (state: boolean) => set({ hasHydrated: state })
     }),
     {
       name: 'tc-swap-store',
-      version: 3,
+      version: 4,
+      // Earlier versions could hold any pair; a restored pair is rechecked against the bridge rules.
+      migrate: () => ({}),
+      merge: (persisted, current) => {
+        const state = { ...current, ...(persisted as Partial<SwapState>) }
+        if (!isBridgeSellAsset(state.assetFrom)) state.assetFrom = undefined
+        if (!isBridgeBuyAsset(state.assetTo)) state.assetTo = undefined
+        return state
+      },
       onRehydrateStorage: () => state => {
         state?.setHasHydrated(true)
       },
