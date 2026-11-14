@@ -1,0 +1,30 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+
+# testing
+/coverage
+
+# next.js
+.next
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+.idea
+
+# debug
+npm-debug.log*
+
+# env files
+.env
+
+# vercel
+.vercel
+
+# generated i18n bookkeeping (one key per line by design)
+/tools/i18n-state
