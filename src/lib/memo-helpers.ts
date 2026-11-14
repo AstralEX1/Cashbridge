@@ -1,7 +1,7 @@
 import { Chain, getThorFactoryAssetDenom, getThorFactoryAssetTicker } from '@tcswap/helpers'
 import { QuoteResponseRoute } from '@tcswap/helpers/api'
 import type { Asset } from '@/components/swap/asset'
-import type { LimitSwapQueueItem } from '@/lib/api'
+import type { LimitSwapQueueItem, TxStatusResponse } from '@/lib/api'
 import { DEFAULT_LIMIT_SWAP_MAX_AGE } from '@/lib/limit-swap'
 
 function toBaseAmount(amount: string, decimals: number = 8): bigint {
@@ -55,7 +55,38 @@ const canonicalAsset = (asset: string) => {
   return (ticker ? `${Chain.THORChain}.${ticker}` : asset).toUpperCase()
 }
 
-const sameAsset = (a?: string, b?: string) => !!a && !!b && canonicalAsset(a) === canonicalAsset(b)
+export const sameAsset = (a?: string, b?: string) => !!a && !!b && canonicalAsset(a) === canonicalAsset(b)
+
+// THORNode may print a cash address without its prefix and an EVM address in any case.
+const canonicalAddress = (address: string) => {
+  const trimmed = address.trim().toLowerCase()
+  return trimmed.includes(':') ? trimmed.slice(trimmed.indexOf(':') + 1) : trimmed
+}
+
+const sameAddress = (a?: string, b?: string) => !!a && !!b && canonicalAddress(a) === canonicalAddress(b)
+
+export interface OrderRefundTarget {
+  // The order's source asset: the refund comes back in what was deposited.
+  asset: string
+  chain: string
+  // The address that placed the order, which is where THORChain refunds it.
+  recipient: string
+}
+
+// A cancelled order that had partly filled settles with both a swap payout and a refund, in any
+// order. Only an outbound of the deposited asset, on its own chain, to the order's sender is the
+// refund; anything else taken for it would place the replacement for the wrong amount.
+export function findOrderRefund(status: TxStatusResponse | undefined, target: OrderRefundTarget): string | undefined {
+  for (const out of status?.out_txs ?? []) {
+    if (out.chain?.toUpperCase() !== target.chain.toUpperCase()) continue
+    if (!sameAddress(out.to_address, target.recipient)) continue
+    // Refunds carry `REFUND:<inbound>`; a payout (`OUT:<inbound>`) is never one, whatever its coin.
+    if (out.memo && !out.memo.toUpperCase().startsWith('REFUND:')) continue
+    const coin = out.coins?.find(c => sameAsset(c.asset, target.asset))
+    if (coin && BigInt(coin.amount) > 0n) return coin.amount
+  }
+  return undefined
+}
 
 // THORNode reports the blocks an order has left directly. Older nodes measured it against the global
 // max age instead of the order's own interval, so fall back to deriving it the way the node does -

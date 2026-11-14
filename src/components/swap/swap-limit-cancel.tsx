@@ -279,6 +279,7 @@ export const SwapLimitCancel = ({ isOpen, onOpenChange, mode, transaction }: Swa
 
     const order: ReplacementOrder = {
       orderTxId: hash,
+      refundAddress: addressFrom,
       provider: provider ?? ProviderName.THORCHAIN,
       assetFrom,
       assetTo,

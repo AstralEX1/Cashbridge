@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { USwapNumber } from '@tcswap/core'
 import { getTxStatus } from '@/lib/api'
 import { ORDER_POLL_MS } from '@/lib/limit-swap'
+import { findOrderRefund } from '@/lib/memo-helpers'
 import { useMarkReplacementRefunded, useReplacementOrder } from '@/store/replacement-order-store'
 
 // A refund that never shows up should not be polled for forever.
@@ -28,9 +29,15 @@ export const useWatchReplacementOrder = () => {
   })
 
   useEffect(() => {
-    const refund = data?.out_txs?.[0]?.coins?.[0]
-    if (!refund || replacement?.refunded) return
+    if (!replacement || replacement.refunded) return
 
-    markRefunded(USwapNumber.fromBigInt(BigInt(refund.amount), 8).toSignificant())
-  }, [data, replacement?.refunded, markRefunded])
+    // Orders parked before the sender was stored fall back to the inbound's own sender.
+    const recipient = replacement.refundAddress ?? data?.tx?.from_address
+    if (!recipient) return
+
+    const refund = findOrderRefund(data, { asset: replacement.assetFrom.identifier, chain: replacement.assetFrom.chain, recipient })
+    if (!refund) return
+
+    markRefunded(USwapNumber.fromBigInt(BigInt(refund), 8).toSignificant())
+  }, [data, replacement, markRefunded])
 }

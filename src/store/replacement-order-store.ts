@@ -12,6 +12,8 @@ import { useSetIsLimitSwap, useSetPendingLimitOrder } from '@/store/limit-swap-s
 export interface ReplacementOrder {
   // Inbound hash of the cancelled order; the refund shows up as its outbound.
   orderTxId?: string
+  // The address that placed the order; only an outbound paying it back counts as the refund.
+  refundAddress?: string
   provider: ProviderName
   assetFrom: Asset
   assetTo: Asset
