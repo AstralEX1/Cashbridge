@@ -1,15 +1,15 @@
 import axios from 'axios'
 import { AssetValue, Chain, getChainConfig } from '@tcswap/core'
-import { BalanceResponse, QuoteRequest, USwapApi } from '@tcswap/helpers/api'
+import { ProviderName } from '@tcswap/helpers'
+import { BalanceResponse, QuoteRequest, QuoteResponseRoute, USwapApi } from '@tcswap/helpers/api'
 import { normalizeThorBankDenom } from '@/lib/swap-helpers'
 import { referralHeaders } from '@/lib/referral'
+import { aggregatorApiUrl, BridgeConfig } from '@/config'
+import { addressToLockingBytecode } from '@/lib/bch'
 
-const uSwap = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_USWAP_API_URL,
-  headers: {
-    'x-api-key': process.env.NEXT_PUBLIC_USWAP_API_KEY
-  }
-})
+// Through our own proxy, which adds the aggregator API key on the server (src/app/api/thorchain).
+const uSwap = axios.create()
+uSwap.interceptors.request.use(config => ({ ...config, baseURL: aggregatorApiUrl() }))
 
 const DEXSCREENER_MIN_LIQUIDITY_USD = 10_000
 
@@ -157,16 +157,57 @@ export const getAssetBalance = async (chain: Chain, address: string, identifier:
     })
 }
 
-export const getQuotes = async (
-  json: QuoteRequest & { streamingInterval?: number; streamingQuantity?: number; destinationMemo?: string },
-  abortController?: AbortController
-) => {
-  return USwapApi.getSwapQuote(json as QuoteRequest, {
+export class BridgeRouteError extends Error {}
+
+// Every aggregator quote goes through here, so this is where the bridge's first leg is enforced:
+// THORChain only, buying native BCH.BCH, with the aggregator's own streaming policy (no interval,
+// quantity or destination-memo overrides).
+export const assertBridgeQuoteRequest = (json: Pick<QuoteRequest, 'buyAsset' | 'sellAsset' | 'providers'>) => {
+  if (json.buyAsset?.toUpperCase() !== BridgeConfig.buyAsset) throw new BridgeRouteError(`Only ${BridgeConfig.buyAsset} can be bought`)
+  if (json.sellAsset?.toUpperCase().startsWith('BCH.')) throw new BridgeRouteError('BCH cannot be sold into the bridge')
+  if (!json.providers?.length || json.providers.some(p => p !== ProviderName.THORCHAIN)) throw new BridgeRouteError('Only the THORChain provider is supported')
+}
+
+// A returned route is only usable if it is still the bridge's: THORChain, selling what was asked,
+// buying BCH.BCH and (for an executable quote) paying the destination that was asked for.
+export const isBridgeRoute = (route: QuoteResponseRoute, request: Pick<QuoteRequest, 'sellAsset' | 'destinationAddress'>) =>
+  route.buyAsset?.toUpperCase() === BridgeConfig.buyAsset &&
+  route.sellAsset?.toUpperCase() === request.sellAsset.toUpperCase() &&
+  route.providers?.length === 1 &&
+  BridgeConfig.providers.includes(route.providers[0]) &&
+  (!request.destinationAddress || sameBchScript(route.destinationAddress, request.destinationAddress))
+
+// The aggregator echoes a BCH destination without its `bitcoincash:` prefix, so the two are compared by the
+// script they pay, never as strings: a string match drops every route quoted to the bound wallet.
+const sameBchScript = (a: string | undefined, b: string) => {
+  const script = a ? addressToLockingBytecode(a) : undefined
+  return !!script && script === addressToLockingBytecode(b)
+}
+
+export const getQuotes = async (json: QuoteRequest, abortController?: AbortController) => {
+  assertBridgeQuoteRequest(json)
+  const { sellAsset, sellAmount, sourceAddress, destinationAddress, refundAddress, slippage, dry } = json
+  const request: QuoteRequest = {
+    buyAsset: BridgeConfig.buyAsset,
+    sellAsset,
+    sellAmount,
+    slippage,
+    providers: [ProviderName.THORCHAIN],
+    ...(sourceAddress && { sourceAddress }),
+    ...(destinationAddress && { destinationAddress }),
+    ...(refundAddress && { refundAddress }),
+    ...(dry !== undefined && { dry })
+  }
+
+  return USwapApi.getSwapQuote(request, {
     abortController,
     retry: { maxRetries: 0 },
-    // Merged with the SDK's own x-api-key header, not substituted for it.
     headers: referralHeaders()
-  }).then(res => res.routes.map(route => ({ ...route, sellAsset: requestCase(route.sellAsset, json.sellAsset), buyAsset: requestCase(route.buyAsset, json.buyAsset) })))
+  }).then(res =>
+    res.routes
+      .map(route => ({ ...route, sellAsset: requestCase(route.sellAsset, sellAsset), buyAsset: requestCase(route.buyAsset, BridgeConfig.buyAsset) }))
+      .filter(route => isBridgeRoute(route, request))
+  )
 }
 
 // The aggregator upper-cases the asset identifiers it echoes back, which breaks case-sensitive base58 contracts: the
@@ -293,8 +334,29 @@ export interface LimitSwapQueueItem {
 }
 
 export interface TxStatusResponse {
-  out_txs?: { id: string; chain: string; coins: { asset: string; amount: string }[] }[]
-  stages?: { inbound_finalised?: { completed?: boolean } }
+  tx?: { id?: string; chain?: string; from_address?: string; to_address?: string; coins?: { asset: string; amount: string }[]; memo?: string }
+  out_txs?: { id: string; chain: string; to_address?: string; coins: { asset: string; amount: string }[]; memo?: string }[]
+  planned_out_txs?: { chain: string; to_address: string; coin: { asset: string; amount: string }; refund: boolean }[]
+  stages?: {
+    inbound_observed?: { completed?: boolean }
+    inbound_finalised?: { completed?: boolean }
+    swap_status?: { pending?: boolean; streaming?: { interval: number; quantity: number; count: number } }
+    swap_finalised?: { completed?: boolean }
+    outbound_delay?: { remaining_delay_seconds?: number; completed?: boolean }
+    outbound_signed?: { completed?: boolean }
+  }
+}
+
+export interface MidgardAction {
+  status: string
+  type: string
+  in: { txID: string; address: string; coins: { asset: string; amount: string }[] }[]
+  out: { txID: string; address: string; coins: { asset: string; amount: string }[] }[]
+}
+
+// Midgard's view of a swap, used to reconcile when THORNode is unreachable or silent.
+export const getMidgardActions = async (txid: string): Promise<MidgardAction[]> => {
+  return midgard.get('/v2/actions', { params: { txid: thorTxId(txid) } }).then(res => res.data?.actions ?? [])
 }
 
 // THORNode indexes inbounds by the bare hash. A wallet hands back the `0x`-prefixed form, and

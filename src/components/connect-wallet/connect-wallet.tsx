@@ -6,7 +6,6 @@ import { Credenza, CredenzaContent, CredenzaHeader, CredenzaTitle } from '@/comp
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { BrowserWallet } from '@/components/connect-wallet/browser-wallet'
 import { ALL_CHAINS, chainLabel, COMING_SOON_CHAINS, isWalletAvailable, WalletParams, WALLETS, WalletType } from '@/components/connect-wallet/config'
-import { Keystore } from '@/components/connect-wallet/keystore/keystore'
 import { Ledger } from '@/components/connect-wallet/ledger'
 import { Trezor } from '@/components/connect-wallet/trezor'
 import { WalletIcon } from '@/components/wallet-icon'
@@ -130,10 +129,6 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
 
     if (wallet.key === 'trezor') {
       return <Trezor key={wallet.key} wallet={wallet} onConnect={onConnect} />
-    }
-
-    if (wallet.key === 'keystore') {
-      return <Keystore key={wallet.key} wallet={wallet} chains={chains} onConnect={onConnect} />
     }
 
     return null
