@@ -38,5 +38,5 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Copy `.env.example` to `.env` and fill in the API keys. Typecheck with
-`npx tsc --noEmit -p tsconfig.json`.
+Open [http://localhost:3000](http://localhost:3000). If you need external integrations locally, copy `.env.example` to `.env.local` and set the
+variables for those services. Typecheck with `npx tsc --noEmit -p tsconfig.json`.
