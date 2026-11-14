@@ -1,0 +1,226 @@
+import { useState } from 'react'
+import { useTranslations } from 'next-intl'
+import { getChainConfig, USwapNumber } from '@tcswap/core'
+import { ProviderName, USwapError } from '@tcswap/helpers'
+import { QuoteResponseRoute, USwapApi } from '@tcswap/helpers/api'
+import { LoaderCircle } from 'lucide-react'
+import { Credenza, CredenzaContent } from '@/components/ui/credenza'
+import { InstantSwap } from '@/components/swap/instant-swap'
+import { SwapAddressWarning } from '@/components/swap/swap-address-warning'
+import { SwapConfirm } from '@/components/swap/swap-confirm'
+import { SwapError } from '@/components/swap/swap-error'
+import { SwapRecipient } from '@/components/swap/swap-recipient'
+import { GenericButton } from '@/components/generic-button'
+import { useSwapRates } from '@/hooks/use-rates'
+import { useAssetFrom, useAssetTo, useSwap } from '@/hooks/use-swap'
+import { isHoudiniProvider, resolvePriceImpact } from '@/lib/swap-helpers'
+import { generateId } from '@/lib/utils'
+import { useIsLimitSwap, useLimitSwapBuyAmount } from '@/store/limit-swap-store'
+import { useSetTransaction } from '@/store/transaction-store'
+
+interface InstantSwapDialogProps {
+  provider: ProviderName
+  isOpen: boolean
+  onOpenChange: (isOpen: boolean) => void
+}
+
+export interface DepositChannel {
+  qrCodeData: string
+  address: string
+  value: string
+  expiration?: number
+  // A memo the deposit must carry (a provider's deposit tag); none for a plain transfer.
+  memo?: string
+  provider?: ProviderName
+  // The history entry tracking this deposit, so the screen can follow its status.
+  txUid?: string
+}
+
+export const InstantSwapDialog = ({ provider, isOpen, onOpenChange }: InstantSwapDialogProps) => {
+  const t = useTranslations('swap')
+  const assetFrom = useAssetFrom()
+  const assetTo = useAssetTo()
+  const { valueFrom } = useSwap()
+  const setTransaction = useSetTransaction()
+  const isLimitSwap = useIsLimitSwap()
+  const limitSwapBuyAmount = useLimitSwapBuyAmount()
+  const { rateFrom, rateTo } = useSwapRates()
+
+  const [quote, setQuote] = useState<(QuoteResponseRoute & { qrCodeDataURL?: string }) | undefined>(undefined)
+  const [channel, setChannel] = useState<DepositChannel | undefined>(undefined)
+  const [creatingChannel, setCreatingChannel] = useState(false)
+  const [error, setError] = useState<Error | undefined>()
+  const [highPriceImpactAccepted, setHighPriceImpactAccepted] = useState(false)
+
+  const priceImpact = resolvePriceImpact(quote, rateFrom, rateTo)
+  const requiresHighPriceImpactAcceptance = !isLimitSwap && !!priceImpact && priceImpact.gt(2)
+  const confirmBlocked = requiresHighPriceImpactAcceptance && !highPriceImpactAccepted
+
+  if (!assetFrom || !assetTo) return null
+
+  const createChannel = (quote: QuoteResponseRoute, qrCodeData: string, address: string, value: string, expiration?: number, memo?: string) => {
+    const uid = generateId()
+    setChannel({
+      qrCodeData,
+      address,
+      value,
+      expiration,
+      memo,
+      provider,
+      txUid: uid
+    })
+
+    const sentAmount = new USwapNumber(value)
+
+    setTransaction({
+      uid,
+      provider,
+      chainId: getChainConfig(assetFrom.chain).chainId,
+      timestamp: new Date(),
+      estimatedTime: quote.estimatedTime?.total,
+      assetFrom,
+      assetTo,
+      amountFrom: value,
+      amountTo: new USwapNumber(quote.expectedBuyAmount).toSignificant(),
+      addressTo: quote.destinationAddress || '',
+      addressDeposit: address,
+      status: 'not_started',
+      qrCodeData,
+      depositMemo: memo,
+      expiration,
+      limitSwapMemo: isLimitSwap ? quote.memo : undefined,
+      limitPrice:
+        isLimitSwap && limitSwapBuyAmount && !sentAmount.eq(0)
+          ? USwapNumber.fromBigInt(BigInt(limitSwapBuyAmount), 8).div(sentAmount).toSignificant()
+          : undefined,
+      providerSwapId: quote.meta?.houdini?.houdiniId
+    })
+  }
+
+  const onConfirm = () => {
+    if (!quote || !assetFrom) return
+
+    // A deposit-address provider created the order on the non-dry quote: the deposit address,
+    // exact amount and QR code are already on the route, so there is no channel to register.
+    if (provider === 'NEAR' || provider === 'HOUDINI') {
+      if (!quote.inboundAddress || !quote.qrCodeDataURL) {
+        setError(new Error(t('error.preflightRequest')))
+        return
+      }
+
+      createChannel(
+        quote,
+        quote.qrCodeDataURL,
+        quote.inboundAddress,
+        quote.sellAmount,
+        quote.expiration ? Number(quote.expiration) : undefined,
+        provider === 'HOUDINI' ? quote.memo : undefined
+      )
+
+      return
+    }
+
+    if (!quote.memo) {
+      setError(new Error(t('error.memoMissing')))
+      return
+    }
+
+    setCreatingChannel(true)
+    setError(undefined)
+
+    USwapApi.registerMemoless(
+      {
+        asset: assetFrom.identifier,
+        memo: quote.memo,
+        requested_in_asset_amount: valueFrom.toSignificant()
+      },
+      {
+        retry: {
+          maxRetries: 0
+        }
+      }
+    )
+      .then(data => {
+        const suggestedInAssetAmount = data.suggested_in_asset_amount
+        if (!suggestedInAssetAmount) {
+          throw new Error(t('error.calculateSuggestedAmount'))
+        }
+
+        return USwapApi.preflightMemoless({
+          asset: assetFrom.identifier,
+          reference: data.reference,
+          amount: suggestedInAssetAmount
+        }).then(preflight => ({
+          ...preflight,
+          suggested_in_asset_amount: suggestedInAssetAmount
+        }))
+      })
+      .then(preflight => {
+        if (!preflight.data.qr_code_data_url || !preflight.data.inbound_address) {
+          console.log('Failed to preflight request', { preflight })
+          throw new Error(t('error.preflightRequest'))
+        }
+
+        createChannel(
+          quote,
+          preflight.data.qr_code_data_url,
+          preflight.data.inbound_address,
+          preflight.suggested_in_asset_amount,
+          preflight.data.seconds_remaining ? new Date().getTime() / 1000 + preflight.data.seconds_remaining : undefined
+        )
+      })
+      .catch(err => {
+        if (err instanceof USwapError) {
+          const error = err.cause as any
+          setError(new Error(error?.errorData?.error?.message || err.message))
+        } else {
+          setError(err)
+        }
+      })
+      .finally(() => {
+        setCreatingChannel(false)
+      })
+  }
+
+  return (
+    <Credenza open={isOpen} onOpenChange={onOpenChange}>
+      <CredenzaContent className="flex h-auto max-h-5/6 flex-col md:max-w-xl">
+        {channel ? (
+          <InstantSwap assetFrom={assetFrom} assetTo={assetTo} channel={channel} onClose={() => onOpenChange(false)} />
+        ) : quote ? (
+          <>
+            <SwapConfirm quote={quote} priceImpact={priceImpact} />
+
+            {error && (
+              <div className="px-8 pt-2 pb-4">
+                <SwapError error={error} />
+              </div>
+            )}
+
+            <div className="space-y-3 p-4 pt-2 md:p-8 md:pt-2">
+              {requiresHighPriceImpactAcceptance && (
+                <SwapAddressWarning
+                  checked={highPriceImpactAccepted}
+                  onCheckedChange={setHighPriceImpactAccepted}
+                  text={isHoudiniProvider(provider) ? t('warning.highPriceImpactPrivate') : t('warning.highPriceImpact')}
+                />
+              )}
+              <GenericButton
+                colorType={channel ? '1' : '3'}
+                size="large"
+                className="w-full"
+                onClick={() => onConfirm()}
+                disabled={creatingChannel || confirmBlocked}
+              >
+                {creatingChannel && <LoaderCircle size={20} className="animate-spin" />}
+                <span>{creatingChannel ? t('confirm.confirming') : t('confirm.button')}</span>
+              </GenericButton>
+            </div>
+          </>
+        ) : (
+          <SwapRecipient provider={provider} onFetchQuote={quote => setQuote(quote)} />
+        )}
+      </CredenzaContent>
+    </Credenza>
+  )
+}
