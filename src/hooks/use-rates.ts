@@ -7,6 +7,7 @@ import { useQuote } from '@/hooks/use-quote'
 import { useAssetFrom, useAssetTo } from '@/hooks/use-swap'
 import { getDexScreenerTokens, getMayaMidgardCacaoPrice, getMayaMidgardPools, getMidgardPools, getMidgardRunePrice } from '@/lib/api'
 import { isHoudiniProvider } from '@/lib/swap-helpers'
+import { getThorPools } from '@/lib/thorchain-api'
 
 export type AssetRateMap = Record<string, USwapNumber>
 export type AssetLogoMap = Record<string, string>
@@ -21,12 +22,18 @@ export const useRates = (identifiers: string[], provider?: ProviderName): { rate
   const { data: midgardData, isLoading: midgardLoading } = useQuery({
     queryKey: ['thorchain-pool-prices'],
     queryFn: async () => {
-      const [pools, runePrice, mayaPools, cacaoPrice] = await Promise.all([
-        getMidgardPools(),
-        getMidgardRunePrice(),
+      const [midgardPools, runePrice, mayaPools, cacaoPrice] = await Promise.all([
+        getMidgardPools().catch(() => undefined),
+        getMidgardRunePrice().catch(() => NaN),
         getMayaMidgardPools().catch(() => []),
         getMayaMidgardCacaoPrice().catch(() => NaN)
       ])
+
+      // Midgard's gateway answers an occasional 5xx; THORNode's own pool prices (TOR, 1e8 = $1) are
+      // the same pools' USD prices from a different endpoint. Only when both fail is there no price.
+      const pools =
+        midgardPools ??
+        (await getThorPools()).map(pool => ({ asset: pool.asset, assetPriceUSD: String(Number(pool.asset_tor_price) / 1e8) }))
 
       const thor: AssetRateMap = {}
       const maya: AssetRateMap = {}
@@ -69,7 +76,9 @@ export const useRates = (identifiers: string[], provider?: ProviderName): { rate
     staleTime: 3 * 60_000,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
-    retry: false
+    // Without a retry, and a fresh try while failing, every USD value stayed empty for the visit.
+    retry: 2,
+    refetchInterval: query => (query.state.status === 'error' ? 30_000 : false)
   })
 
   // Collect Solana mint addresses for tokens not covered by Midgard pools

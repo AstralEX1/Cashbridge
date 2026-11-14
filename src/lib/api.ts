@@ -1,11 +1,12 @@
 import axios from 'axios'
 import { AssetValue, Chain, getChainConfig } from '@tcswap/core'
-import { ProviderName } from '@tcswap/helpers'
-import { BalanceResponse, QuoteRequest, QuoteResponseRoute, USwapApi } from '@tcswap/helpers/api'
+import { ProviderName, USwapError } from '@tcswap/helpers'
+import { BalanceResponse, QuoteRequest, QuoteResponse, QuoteResponseRoute, USwapApi } from '@tcswap/helpers/api'
 import { normalizeThorBankDenom } from '@/lib/swap-helpers'
 import { referralHeaders } from '@/lib/referral'
 import { aggregatorApiUrl, BridgeConfig } from '@/config'
 import { addressToLockingBytecode } from '@/lib/bch'
+import { BelowMinimumError, minimumFromProviderErrors } from '@/lib/errors'
 
 // Through our own proxy, which adds the aggregator API key on the server (src/app/api/thorchain).
 const uSwap = axios.create()
@@ -184,6 +185,30 @@ const sameBchScript = (a: string | undefined, b: string) => {
   return !!script && script === addressToLockingBytecode(b)
 }
 
+// The SDK's request client logs every non-OK answer as a USwapError before throwing it, so an amount
+// under the minimum (an expected 404) would read as an error. Post the quote ourselves: that case
+// becomes a quiet BelowMinimumError; any other failure is the same USwapError the SDK raises.
+const postQuote = async (request: QuoteRequest, abortController?: AbortController): Promise<QuoteResponse> => {
+  const response = await fetch(`${aggregatorApiUrl()}/quote`, {
+    method: 'POST',
+    headers: { ...referralHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+    signal: abortController?.signal
+  })
+  const body = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    const minimum = response.status === 404 ? minimumFromProviderErrors(body) : undefined
+    if (minimum) throw new BelowMinimumError(minimum)
+
+    const errorData = { status: response.status, statusText: response.statusText }
+    throw new USwapError({ errorKey: 'helpers_invalid_response', info: errorData }, { ...errorData, ...(body && { errorData: body }) })
+  }
+  if (body?.error) throw new USwapError('api_v2_server_error', { message: body.error })
+
+  return body
+}
+
 export const getQuotes = async (json: QuoteRequest, abortController?: AbortController) => {
   assertBridgeQuoteRequest(json)
   const { sellAsset, sellAmount, sourceAddress, destinationAddress, refundAddress, slippage, dry } = json
@@ -199,11 +224,7 @@ export const getQuotes = async (json: QuoteRequest, abortController?: AbortContr
     ...(dry !== undefined && { dry })
   }
 
-  return USwapApi.getSwapQuote(request, {
-    abortController,
-    retry: { maxRetries: 0 },
-    headers: referralHeaders()
-  }).then(res =>
+  return postQuote(request, abortController).then(res =>
     res.routes
       .map(route => ({ ...route, sellAsset: requestCase(route.sellAsset, sellAsset), buyAsset: requestCase(route.buyAsset, BridgeConfig.buyAsset) }))
       .filter(route => isBridgeRoute(route, request))

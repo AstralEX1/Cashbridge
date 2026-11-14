@@ -105,9 +105,10 @@ async function forward(req: NextRequest, path: string[], method: 'GET' | 'POST')
 
   let upstream = await fetchUpstream().catch(() => null)
 
-  // Quotes are read-only, so retry one explicit gateway failure before the SDK logs it as an error.
-  // A timed-out or unreachable upstream is not retried, keeping the request within its current bound.
-  if (method === 'POST' && target.path === 'quote' && upstream && RETRYABLE_UPSTREAM_STATUSES.has(upstream.status)) {
+  // Quotes and balances are read-only, so retry one explicit gateway failure before the SDK logs it
+  // as an error. A timed-out or unreachable upstream is not retried, keeping the request within its current bound.
+  const readOnly = (method === 'POST' && target.path === 'quote') || (method === 'GET' && target.path === 'balance')
+  if (readOnly && upstream && RETRYABLE_UPSTREAM_STATUSES.has(upstream.status)) {
     const firstResponse = upstream
     const retry = await fetchUpstream().catch(() => null)
     if (retry) {

@@ -53,9 +53,9 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
   const isMemolessHalted = useIsMemolessHalted()
   const setExternalWalletMode = useSetExternalWalletMode()
   const { valueFrom } = useSwap()
-  const { quote, isLoading: isQuoting, refetch: refetchQuote } = useQuote()
+  const { quote, isLoading: isQuoting, refetch: refetchQuote, minimum } = useQuote()
   const { isLoading: isSimulating, approveData } = useSimulation()
-  const { balance, isLoading: isBalanceLoading } = useBalance()
+  const { balance, isLoading: isBalanceLoading, error: balanceError, refetch: refetchBalance } = useBalance()
   const { mimir } = useMimir()
   const isLimitSwapPaused = useIsLimitSwapPaused()
   const isMayaChain = isMayaProvider(quote?.providers[0])
@@ -158,6 +158,7 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
     if (isQuoting || isSimulating) return { text: t('button.quoting'), spinner: true, accent: false }
 
     // A halt is called out by the banner under the button, so every no-quote case reads the same here.
+    if (!quote && minimum) return { text: t('button.minimum', { amount: minimum, ticker: assetFrom.ticker }), spinner: false, accent: false }
     if (!quote) return { text: t('button.noValidQuotes'), spinner: false, accent: false }
 
     if (isLimitSwap && limitSwapBuyAmount === '0') {
@@ -197,7 +198,11 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
       return { text: t('button.taprootNotSupported'), spinner: false, accent: false }
     }
 
-    if (isBalanceLoading || !balance || balance.spendable.lt(valueFrom)) {
+    // A balance still loading or failed to load is not a zero balance.
+    if (isBalanceLoading) return { text: t('button.checkingBalance'), spinner: true, accent: false }
+    if (balanceError || !balance) return { text: t('button.balanceUnavailable'), spinner: false, accent: false, onClick: () => refetchBalance() }
+
+    if (balance.spendable.lt(valueFrom)) {
       return {
         text: t('button.insufficientBalance'),
         spinner: false,

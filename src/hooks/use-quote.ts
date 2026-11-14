@@ -5,7 +5,7 @@ import { QuoteResponseRoute } from '@tcswap/helpers/api'
 import { AppConfig } from '@/config'
 import { useAssetFrom, useAssetTo, useCustomInterval, useCustomQuantity, useSlippage, useSwap } from '@/hooks/use-swap'
 import { getQuotes } from '@/lib/api'
-import { resolveQuoteError } from '@/lib/errors'
+import { BelowMinimumError, resolveQuoteError } from '@/lib/errors'
 import { isHoudiniProvider } from '@/lib/swap-helpers'
 import { useIsPrivateSend, useIsPrivateSwap } from '@/store/private-swap-store'
 
@@ -16,6 +16,8 @@ type UseQuote = {
   // The quote to price the pair by: `quote`, or while it refetches, the previous one for the same pair.
   pricingQuote?: QuoteResponseRoute
   error: Error | null
+  // Set when the amount is under THORChain's minimum swap, in the sell asset's units.
+  minimum?: string
 }
 
 export const useQuote = (): UseQuote => {
@@ -99,7 +101,8 @@ export const useQuote = (): UseQuote => {
     refetch,
     quote: isLoading || isRefetching || isPlaceholderData || error ? undefined : quote,
     pricingQuote: error ? undefined : quote,
-    error: newError
+    error: newError,
+    minimum: error instanceof BelowMinimumError ? error.minimum : undefined
   }
 }
 

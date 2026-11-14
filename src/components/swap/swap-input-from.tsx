@@ -1,6 +1,5 @@
 import { useRef } from 'react'
 import { useTranslations } from 'next-intl'
-import { USwapNumber } from '@tcswap/core'
 import { DecimalInput } from '@/components/decimal/decimal-input'
 import { BridgeAssetButton, BridgeAssetPicker, type BridgeInputProps } from '@/components/swap/bridge-asset-picker'
 import { BridgeInputSwitcher } from '@/components/swap/bridge-input-switcher'
@@ -43,7 +42,8 @@ export const SwapInputFrom = ({ selecting, onSelectOpenChange }: BridgeInputProp
             <SwapBalance />
           </div>
           <div className="bridge-input-meta">
-            <span>{toCurrencyFixed(valueFrom.mul(rateFrom || new USwapNumber(0)).toCurrency('$', { trimTrailingZeros: false }))}</span>
+            {/* No price (pool prices unavailable) shows nothing rather than a misleading $0.00. */}
+            <span>{rateFrom ? toCurrencyFixed(valueFrom.mul(rateFrom).toCurrency('$', { trimTrailingZeros: false })) : null}</span>
           </div>
         </section>
       </div>

@@ -112,6 +112,37 @@ const isAssetMissingError = (message: string): boolean => message.includes('not 
 //     THORChain declined for an entirely different - and fixable - reason.
 const errorRank = (message: string): number => (isAssetMissingError(message) ? 2 : isTradingHaltedError(message) ? 1 : 0)
 
+// The user declined in the wallet: EIP-1193 4001, ethers' ACTION_REJECTED, or the wallets' own wording.
+// Nothing was signed, so nothing can have been sent.
+export const isUserRejection = (error: unknown): boolean => {
+  for (let e: any = error, depth = 0; e && depth < 5; e = e.cause ?? e.error ?? e.info?.error, depth++) {
+    if (e.code === 4001 || e.code === 'ACTION_REJECTED') return true
+    const message = typeof e.message === 'string' ? e.message.toLowerCase() : ''
+    if (/user rejected|user denied|rejected by user|user cancel+ed|request rejected/.test(message)) return true
+  }
+  return false
+}
+
+// An amount under THORChain's minimum swap is an expected answer, not a failure: it carries the
+// minimum (in asset units) and, unlike USwapError, is not logged to the console.
+export class BelowMinimumError extends Error {
+  constructor(readonly minimum: string) {
+    super(`amount less than min swap amount (${minimum})`)
+    this.name = 'BelowMinimumError'
+  }
+}
+
+// THORChain's "amount less than min swap amount (recommended_min_amount_in: 36045)", in 1e8 units.
+export const minimumFromProviderErrors = (errorData: unknown): string | undefined => {
+  const providerErrors: { message?: string; error?: string }[] = (errorData as any)?.providerErrors ?? []
+  for (const e of providerErrors) {
+    const message = e.message || e.error || ''
+    if (!message.includes('min swap amount')) continue
+    const match = message.match(/recommended_min_amount_in:\s*(\d+)/)
+    if (match) return (Number(match[1]) / 1e8).toFixed(8).replace(/\.?0+$/, '')
+  }
+}
+
 export const resolveQuoteError = (error: unknown): Error => {
   const cause = (error as any)?.cause
   const providerErrors: { message?: string; error?: string }[] | undefined = cause?.errorData?.providerErrors

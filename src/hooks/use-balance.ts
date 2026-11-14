@@ -72,7 +72,17 @@ export const useBalance = (): UseBalance => {
         return id.toLowerCase() === assetFrom.identifier.toLowerCase()
       }
 
-      if (assetFrom.chain === Chain.Near) {
+      const isEVM = EVMChains.includes(assetFrom.chain as EVMChain)
+
+      // EVM balances come straight from the chain's RPC: the aggregator's /balance answers 502 for
+      // some chains and wallets, which left the Max button with nothing to fill in.
+      if (isEVM) {
+        const provider = await getProvider(assetFrom.chain as EVMChain)
+        const raw: bigint = assetFrom.address
+          ? await new Contract(assetFrom.address, ['function balanceOf(address owner) view returns (uint256)'], provider).balanceOf(wallet.address)
+          : await provider.getBalance(wallet.address)
+        value = AssetValue.from({ asset: assetFrom.identifier, fromBaseDecimal: assetFrom.decimals, value: raw.toString() })
+      } else if (assetFrom.chain === Chain.Near) {
         const balances = await getAssetBalance(assetFrom.chain, wallet.address, assetFrom.identifier)
         const balance = balances.find(finder)
 
@@ -97,23 +107,9 @@ export const useBalance = (): UseBalance => {
         }
       }
 
-      // Aggregator /balance omits some ERC-20s (e.g. ETH.THOR); read them directly on-chain.
-      if (!value.gt(0) && EVMChains.includes(assetFrom.chain as EVMChain) && assetFrom.address) {
-        try {
-          const provider = await getProvider(assetFrom.chain as EVMChain)
-          const erc20 = new Contract(assetFrom.address, ['function balanceOf(address owner) view returns (uint256)'], provider)
-          const raw: bigint = await erc20.balanceOf(wallet.address)
-          if (raw > 0n) {
-            value = AssetValue.from({ asset: assetFrom.identifier, fromBaseDecimal: assetFrom.decimals, value: raw.toString() })
-          }
-        } catch {
-          // Leave value as-is if the on-chain read fails; the aggregator result still stands.
-        }
-      }
-
       const estimateFee = async () => {
         try {
-          if (EVMChains.includes(assetFrom.chain as EVMChain)) {
+          if (isEVM) {
             const gasLimit = 300_000n
 
             // Use the chain's configured RPC for gas, not the wallet's injected provider (which a
@@ -160,7 +156,7 @@ export const useBalance = (): UseBalance => {
       }
     },
     enabled: !!(selected && assetFrom),
-    retry: false,
+    retry: 1,
     refetchOnMount: false
   })
 
