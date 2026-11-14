@@ -38,7 +38,7 @@ import {
   formatBlockDuration,
   ORDER_POLL_MS
 } from '@/lib/limit-swap'
-import { createCancelLimitSwapMemo, createModifyLimitSwapMemo, createModifyLimitSwapMemoFromOrder, findLimitSwapOrder } from '@/lib/memo-helpers'
+import { createModifyLimitSwapMemoFromOrder, findLimitSwapOrder } from '@/lib/memo-helpers'
 import { cn } from '@/lib/utils'
 import { getUSwap } from '@/lib/wallets'
 import {
@@ -144,8 +144,8 @@ export const SwapLimitCancel = ({ isOpen, onOpenChange, mode, transaction }: Swa
   // `null` means the queue was read and the order genuinely is not in it; `undefined` means it has
   // not been read yet. Polled, because an order only enters the queue once its deposit is finalised.
   const { data: queueOrder } = useQuery({
-    queryKey: ['limit-swap-order', addressFrom, assetFrom.identifier, assetTo.identifier, limitSwapMemo],
-    queryFn: () => getLimitSwaps(addressFrom!).then(items => findLimitSwapOrder(items, assetFrom, assetTo, limitSwapMemo, maxExpiryBlocks) ?? null),
+    queryKey: ['limit-swap-order', addressFrom, hash, assetFrom.identifier, assetTo.identifier],
+    queryFn: () => getLimitSwaps(addressFrom!).then(items => findLimitSwapOrder(items, hash, assetFrom, assetTo, maxExpiryBlocks) ?? null),
     enabled: isOpen && !!addressFrom && !awaitingRefund,
     refetchInterval: ORDER_POLL_MS,
     retry: false
@@ -163,7 +163,8 @@ export const SwapLimitCancel = ({ isOpen, onOpenChange, mode, transaction }: Swa
 
   const order = queueOrder ?? undefined
   const stillConfirming = queueOrder === null && !!orderTxStatus && orderTxStatus.stages?.inbound_finalised?.completed !== true
-  const orderMissing = queueOrder === null && !stillConfirming
+  // Without the placing hash and its sender the order cannot be found, so it reads as missing too.
+  const orderMissing = (queueOrder === null && !stillConfirming) || !hash || !addressFrom
 
   // The order's own limit price, not what it was expected to fetch at the market when it was placed.
   // `amountTo` is that market estimate, so seeding the price field from it silently rewrites the
@@ -366,10 +367,12 @@ export const SwapLimitCancel = ({ isOpen, onOpenChange, mode, transaction }: Swa
   const inboundReady = isThorNative || (!!inboundAddress && !inboundAddress.halted && !inboundAddress.chain_trading_paused)
   const walletReady = !!selectedAccount && walletMatchesChain && addressMatch && inboundReady
   const memolessReady = useMemolessPath && !!memolessAsset
-  const canSubmit = !!limitSwapMemo && targetReady && !stillConfirming && (walletReady || memolessReady)
+  // The memo is only ever built from the order read back from the queue: without it there is no
+  // way to be sure the cancel or modify reaches this order and not another one on the same pair.
+  const canSubmit = !!limitSwapMemo && !!order && targetReady && !stillConfirming && (walletReady || memolessReady)
 
   const onSubmit = async () => {
-    if (!canSubmit || !limitSwapMemo) return
+    if (!canSubmit || !limitSwapMemo || !order) return
 
     // The first click on a replace only arms the confirmation - the order is only given up once
     // the button has spelled out that the deposit is coming back.
@@ -385,11 +388,7 @@ export const SwapLimitCancel = ({ isOpen, onOpenChange, mode, transaction }: Swa
       // A replacement is a cancel on the wire: the order has to be taken off the book before it can
       // be re-placed with a different expiry.
       const newTarget = cancelsOnWire ? '0' : newTargetBaseAmount!
-      const memo = order
-        ? createModifyLimitSwapMemoFromOrder(order, newTarget)
-        : newTarget === '0'
-          ? createCancelLimitSwapMemo(limitSwapMemo, amountFrom, assetFrom, assetTo)
-          : createModifyLimitSwapMemo(limitSwapMemo, amountFrom, assetFrom, assetTo, newTarget)
+      const memo = createModifyLimitSwapMemoFromOrder(order, newTarget)
 
       if (useMemolessPath && memolessAsset) {
         // Memoless minimum: 10^-(decimals - 5) in source units.

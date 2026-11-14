@@ -4,36 +4,6 @@ import type { Asset } from '@/components/swap/asset'
 import type { LimitSwapQueueItem, TxStatusResponse } from '@/lib/api'
 import { DEFAULT_LIMIT_SWAP_MAX_AGE } from '@/lib/limit-swap'
 
-function toBaseAmount(amount: string, decimals: number = 8): bigint {
-  const [whole, frac = ''] = amount.split('.')
-  const paddedFrac = frac.padEnd(decimals, '0').slice(0, decimals)
-  return BigInt(whole + paddedFrac)
-}
-
-export function createModifyLimitSwapMemo(
-  limitSwapMemo: string,
-  amountFrom: string,
-  sourceAsset: Asset,
-  targetAsset: Asset,
-  newAmount: string
-): string {
-  const parts = limitSwapMemo.split(':')
-  const targetAssetFromMemo = parts[1]
-  const tradeTarget = (parts[3] || '').split('/')[0]
-
-  if (!targetAssetFromMemo || !tradeTarget) {
-    throw new Error('Invalid limit swap memo')
-  }
-
-  const sourceAmount = toBaseAmount(amountFrom)
-
-  return `m=<:${sourceAmount}${sourceAsset.identifier}:${tradeTarget}${targetAsset.identifier}:${newAmount}`
-}
-
-export function createCancelLimitSwapMemo(limitSwapMemo: string, amountFrom: string, sourceAsset: Asset, sourceTo: Asset): string {
-  return createModifyLimitSwapMemo(limitSwapMemo, amountFrom, sourceAsset, sourceTo, '0')
-}
-
 export interface LimitSwapOrder {
   sourceAsset: string
   sourceAmount: string
@@ -103,36 +73,37 @@ function blocksToExpiry(item: LimitSwapQueueItem, maxAgeBlocks: number): number 
   return Math.max(0, lifetime - sinceCreated)
 }
 
+// THORNode prints inbound hashes upper-case and without the EVM `0x`.
+const canonicalTxId = (id: string) => id.trim().replace(/^0x/i, '').toUpperCase()
+
 // THORNode indexes an open limit swap by its exact source coin and trade target, so a modify
 // memo built from the rounded amounts we display will not match anything and the cancellation
-// is silently dropped. Read the open order back from the swap queue instead.
+// is silently dropped. Read the open order back from the swap queue instead - by the inbound
+// hash that placed it. Two orders on the same pair can share a target, and cancelling the wrong
+// one is worse than not cancelling at all, so an order that is not found is not replaced by another.
 export function findLimitSwapOrder(
   items: LimitSwapQueueItem[],
+  orderTxId: string | undefined,
   sourceAsset: Asset,
   targetAsset: Asset,
-  limitSwapMemo?: string,
   maxAgeBlocks: number = DEFAULT_LIMIT_SWAP_MAX_AGE
 ): LimitSwapOrder | undefined {
-  const tradeTarget = limitSwapMemo ? (limitSwapMemo.split(':')[3] || '').split('/')[0] : undefined
+  if (!orderTxId?.trim()) return undefined
+  const txId = canonicalTxId(orderTxId)
 
-  const matches = items
-    .map((item): LimitSwapOrder | undefined => {
-      const { swap } = item
-      const coin = swap?.tx?.coins?.[0]
-      if (!coin || !swap.target_asset || !swap.trade_target) return undefined
-      return {
-        sourceAsset: coin.asset,
-        sourceAmount: coin.amount,
-        targetAsset: swap.target_asset,
-        targetAmount: swap.trade_target,
-        blocksToExpiry: blocksToExpiry(item, maxAgeBlocks)
-      }
-    })
-    .filter((o): o is LimitSwapOrder => !!o && sameAsset(o.sourceAsset, sourceAsset.identifier) && sameAsset(o.targetAsset, targetAsset.identifier))
+  const item = items.find(i => !!i.swap?.tx?.id && canonicalTxId(i.swap.tx.id) === txId)
+  const coin = item?.swap.tx.coins?.[0]
+  if (!item || !coin || !item.swap.target_asset || !item.swap.trade_target) return undefined
+  // The hash is the order; the pair is a sanity check that it is the order this dialog shows.
+  if (!sameAsset(coin.asset, sourceAsset.identifier) || !sameAsset(item.swap.target_asset, targetAsset.identifier)) return undefined
 
-  // Cancelling the wrong order would be worse than not cancelling at all, so only fall back to
-  // "the one open order for this pair" when there is genuinely no ambiguity.
-  return matches.find(o => o.targetAmount === tradeTarget) ?? (matches.length === 1 ? matches[0] : undefined)
+  return {
+    sourceAsset: coin.asset,
+    sourceAmount: coin.amount,
+    targetAsset: item.swap.target_asset,
+    targetAmount: item.swap.trade_target,
+    blocksToExpiry: blocksToExpiry(item, maxAgeBlocks)
+  }
 }
 
 export function modifyMemoForLimitSwap(memo: string, priceAtomic: string, expiryBlocks?: number): string {
