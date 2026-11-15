@@ -182,6 +182,19 @@ export async function processOrder(
     return
   }
   if (unresolved) {
+    // A swap whose broadcast answer was lost and which no node has shown since is resent with the
+    // same bytes; past the fallback deadline it stops there for the operator instead of forever,
+    // since a node may keep refusing it for a reason this worker cannot tell from a lost answer.
+    const deadline = order.deadline ?? (order.receivedAt ?? Infinity) + Math.min(order.maxWaitMs, policy.maxWaitMs)
+    if (unresolved.kind !== 'refund' && unresolved.status === 'unknown' && clock() >= deadline) {
+      store.update(
+        order.id,
+        order.version,
+        { state: 'manual_review', error: 'The swap was never seen on the network after its broadcast answer was lost; an operator returns the BCH.' },
+        clock()
+      )
+      return
+    }
     store.update(order.id, order.version, { observation: { txid: unresolved.txid, seen: false, confirmations: 0 } }, clock())
     order = store.get(order.id)!
     await submit(store, gateway, order, unresolved, clock)

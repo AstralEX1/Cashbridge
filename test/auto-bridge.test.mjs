@@ -331,6 +331,26 @@ test('unknown broadcast stays unknown when later retries are rejected, and no re
   }
 })
 
+test('a lost swap broadcast that nodes keep refusing goes to operator review at the deadline, not forever', async () => {
+  const env = environment()
+  try {
+    env.setBroadcastError(new Error('Unknown acceptance'))
+    await processOrder(env.store, env.gateway, env.signer, env.order, env.policy, env.build, () => 1000)
+    env.setBroadcastError(new BroadcastRejected('min relay fee not met'))
+    await processOrder(env.store, env.gateway, env.signer, env.store.get(env.order.id), env.policy, env.build, () => 2000)
+    assert.equal(env.store.get(env.order.id).state, 'broadcasting', 'before the deadline the same bytes are resent')
+    const deadline = env.store.get(env.order.id).deadline
+    await processOrder(env.store, env.gateway, env.signer, env.store.get(env.order.id), env.policy, env.build, () => deadline)
+    const order = env.store.get(env.order.id)
+    assert.equal(order.state, 'manual_review')
+    assert.match(order.error, /operator/)
+    assert.equal(env.counts().builds, 1, 'no replacement or fallback is signed over the unresolved swap')
+    assert.equal(env.store.attempts(env.order.id).length, 1)
+  } finally {
+    env.store.close()
+  }
+})
+
 test('an uncertain swap whose pool input went to another trade is rebuilt instead of resent forever', async () => {
   const env = environment()
   try {
