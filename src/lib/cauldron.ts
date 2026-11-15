@@ -17,8 +17,8 @@ import { sourceOutputToRelay } from '@wizardconnect/core/hdwalletv1-serialize'
 import { BridgeConfig } from '@/config'
 import { broadcastTransaction, checkOutpointsLive, decodeTx, normalizeTxid, RpcError, RpcTimeoutError, txidOf } from '@/lib/bch'
 
-// BCH -> PUSD on Cauldron: quotes and unsigned trade transactions built from the live PUSD pools.
-// Every transaction is checked here against what the user approved before it is shown for
+// BCH <-> any fungible CashToken on Cauldron (PUSD by default): quotes and unsigned trade
+// transactions built from the token's live pools. Every transaction is checked here against what the user approved before it is shown for
 // signing, and again after the wallet signs it.
 
 export class CauldronError extends Error {
@@ -34,7 +34,7 @@ export class CauldronError extends Error {
 
 // The beta Cauldron router (route.quote / tx.build) priced and built from a stale pool set: in one
 // check, every one of the 42 pool outputs its tx.build spent had been spent on chain a month
-// earlier. Like Cauldron's own app, the trade is therefore built here from the PUSD pools in
+// earlier. Like Cauldron's own app, the trade is therefore built here from the token's pools in
 // Cauldron's indexer with @cashlab/cauldron (pool selection and the trade transaction), and only
 // pools still unspent on chain are traded against. The result goes through the same review as a
 // router build (reviewBuild, checkPoolCovenants, checkPoolsLive) before anything is signed.
@@ -43,18 +43,24 @@ const lab = new ExchangeLab()
 // 1 sat/byte, the relay minimum Cauldron's app also builds with.
 const TX_FEE_PER_BYTE = 1n
 
-export interface PusdQuote {
-  // What the trade actually sells. Pools trade in steps, so this is at most the requested
-  // amount; the rest stays in the wallet as change.
-  sellSats: bigint
-  requestedSats: bigint
-  // PUSD base units (2 decimals).
+// Which way a trade goes: 'buy' sells BCH for the token, 'sell' sells the token for BCH. The pools
+// always keep their fee in BCH.
+export type TradeSide = 'buy' | 'sell'
+
+export interface TokenQuote {
+  side: TradeSide
+  category: string
+  // What the trade actually sells (sats when buying, token base units when selling). Pools trade
+  // in steps, so this is at most the requested amount; the rest stays in the wallet.
+  sell: bigint
+  requested: bigint
+  // What it buys: token base units when buying, sats when selling.
   output: bigint
   pools: number
-  // Satoshis of the sale kept by the pools as their liquidity provider fee.
+  // Satoshis kept by the pools as their liquidity provider fee.
   tradeFeeSats: bigint
-  // PUSD base units the same sale would buy at the traded pools' current prices with no fee and no
-  // price impact. Display only, so a float: PUSD's 2 decimals would round small differences away.
+  // Base units of the output the same sale would buy at the traded pools' current prices with no
+  // fee and no price impact. Display only, so a float: small differences would round away.
   spotOutput: number
   // The miner fee a transaction for this trade pays, from a local build with a stand-in funding coin.
   minerFeeSats?: bigint
@@ -63,19 +69,28 @@ export interface PusdQuote {
 // P2PKH of a zero key hash: only stands in for the wallet's script to size the trade transaction.
 const STAND_IN_SCRIPT = `76a914${'00'.repeat(20)}88ac`
 
-const quoteOf = (trade: TradeResult, requestedSats: bigint): PusdQuote => {
-  const spotOutput = trade.entries.reduce((sum, e) => sum + (Number(e.supply) * Number(e.pool.output.token.amount)) / Number(e.pool.output.amount), 0)
+const quoteOf = (trade: TradeResult, requested: bigint, category: string, side: TradeSide): TokenQuote => {
+  const spotOutput = trade.entries.reduce((sum, e) => {
+    const sats = Number(e.pool.output.amount)
+    const tokens = Number(e.pool.output.token.amount)
+    return sum + (side === 'buy' ? (Number(e.supply) * tokens) / sats : (Number(e.supply) * sats) / tokens)
+  }, 0)
   let minerFeeSats: bigint | undefined
   try {
-    const funding = [{ txid: '00'.repeat(32), vout: 0, value: (trade.summary.supply + 100_000n).toString() }]
-    const build = tradeTransaction(trade, { funding, lockingBytecode: STAND_IN_SCRIPT, tokenAddress: '', cashAddress: '', sellSats: trade.summary.supply, minOutput: 0n })
+    const funding: FundingOutput[] =
+      side === 'buy'
+        ? [{ txid: '00'.repeat(32), vout: 0, value: (trade.summary.supply + 100_000n).toString() }]
+        : [{ txid: '00'.repeat(32), vout: 0, value: '1000', token: { category, amount: trade.summary.supply.toString() } }]
+    const build = tradeTransaction(trade, { category, side, funding, lockingBytecode: STAND_IN_SCRIPT, tokenAddress: '', cashAddress: '', sell: trade.summary.supply, minOutput: 0n })
     minerFeeSats = BigInt(build.miner_fee_sats)
   } catch {
-    // Only an estimate for display; the real build happens when the BCH arrives.
+    // Only an estimate for display; the real build happens when the trade is signed.
   }
   return {
-    sellSats: trade.summary.supply,
-    requestedSats,
+    side,
+    category,
+    sell: trade.summary.supply,
+    requested,
     output: trade.summary.demand,
     pools: trade.entries.length,
     tradeFeeSats: trade.summary.trade_fee,
@@ -84,13 +99,15 @@ const quoteOf = (trade: TradeResult, requestedSats: bigint): PusdQuote => {
   }
 }
 
-const fetchIndexedPools = async (): Promise<PoolV0[]> => {
-  const { category } = BridgeConfig.pusd
+const isCategory = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
+
+const fetchIndexedPools = async (category: string): Promise<PoolV0[]> => {
+  if (!isCategory(category)) throw new CauldronError('bad_request', 'Not a token category')
   const response = await fetch(`${BridgeConfig.cauldronIndexerUrl}/cauldron/pool/active?token=${category}`, { signal: AbortSignal.timeout(15_000) }).catch(
     () => undefined
   )
   const body = (await response?.json().catch(() => undefined)) as { active?: unknown } | undefined
-  if (!response?.ok || !Array.isArray(body?.active)) throw new CauldronError('pools_unavailable', 'Could not read the PUSD pools')
+  if (!response?.ok || !Array.isArray(body?.active)) throw new CauldronError('pools_unavailable', 'Could not read the Cauldron pools')
   return body.active.flatMap(raw => {
     const p = raw as { token_id?: unknown; owner_pkh?: unknown; txid?: unknown; tx_pos?: unknown; sats?: unknown; tokens?: unknown }
     if (
@@ -123,12 +140,14 @@ const fetchIndexedPools = async (): Promise<PoolV0[]> => {
   })
 }
 
-// The trade selling at most `sellSats` BCH for PUSD at the best rate across `pools`.
-export const bestTrade = (pools: PoolV0[], sellSats: bigint): TradeResult => {
+// The trade selling at most `amount` (sats when buying, token units when selling) at the best rate
+// across `pools`.
+export const bestTrade = (pools: PoolV0[], amount: bigint, category: string = BridgeConfig.pusd.category, side: TradeSide = 'buy'): TradeResult => {
+  const [supply, demand] = side === 'buy' ? [NATIVE_BCH_TOKEN_ID, category] : [category, NATIVE_BCH_TOKEN_ID]
   try {
-    return lab.constructTradeBestRateForTargetSupply(NATIVE_BCH_TOKEN_ID, BridgeConfig.pusd.category, sellSats, pools, TX_FEE_PER_BYTE)
+    return lab.constructTradeBestRateForTargetSupply(supply, demand, amount, pools, TX_FEE_PER_BYTE)
   } catch (error) {
-    if (error instanceof InsufficientCapitalInPools) throw new CauldronError('route_failed', 'The PUSD pools cannot fill this amount')
+    if (error instanceof InsufficientCapitalInPools) throw new CauldronError('route_failed', 'The Cauldron pools cannot fill this amount')
     throw error
   }
 }
@@ -137,15 +156,14 @@ export const poolLockingBytecode = (withdrawPubkeyHash: Uint8Array) => lab.gener
 
 const outpointOf = (pool: PoolV0) => `${binToHex(pool.outpoint.txhash)}:${pool.outpoint.index}`
 
-// The best trade selling at most `sellSats` on pools that are unspent on chain right now: the
-// indexer can lag, so each pool the trade picks is checked and the trade is redone without the
-// spent ones.
-const tradeOnLivePools = async (sellSats: bigint) => {
-  if (sellSats <= 0n) throw new CauldronError('bad_request', 'Nothing to sell')
-  let pools = await fetchIndexedPools()
+// The best trade on pools that are unspent on chain right now: the indexer can lag, so each pool
+// the trade picks is checked and the trade is redone without the spent ones.
+const tradeOnLivePools = async (amount: bigint, category: string, side: TradeSide) => {
+  if (amount <= 0n) throw new CauldronError('bad_request', 'Nothing to sell')
+  let pools = await fetchIndexedPools(category)
   const live = new Set<string>()
   for (let round = 0; round < 4; round++) {
-    const trade = bestTrade(pools, sellSats)
+    const trade = bestTrade(pools, amount, category, side)
     const unchecked = trade.entries.filter(e => !live.has(outpointOf(e.pool)))
     const checked = await checkOutpointsLive(
       unchecked.map(e => ({
@@ -158,7 +176,7 @@ const tradeOnLivePools = async (sellSats: bigint) => {
     const spent = new Set(checked.filter(c => !c.live).map(c => `${c.txid}:${c.vout}`))
     checked.filter(c => c.live).forEach(c => live.add(`${c.txid}:${c.vout}`))
     if (spent.size === 0) {
-      if (trade.summary.demand <= 0n) throw new CauldronError('route_failed', 'The PUSD pools cannot fill this amount')
+      if (trade.summary.demand <= 0n) throw new CauldronError('route_failed', 'The Cauldron pools cannot fill this amount')
       return trade
     }
     pools = pools.filter(p => !spent.has(outpointOf(p)))
@@ -166,23 +184,28 @@ const tradeOnLivePools = async (sellSats: bigint) => {
   throw new CauldronError('pools_unavailable', "Cauldron's pool list is behind the chain; try again shortly")
 }
 
-export const quotePusd = async (sellSats: bigint): Promise<PusdQuote> => {
-  return quoteOf(await tradeOnLivePools(sellSats), sellSats)
-}
+export const quoteToken = async ({ category, side, amount }: { category: string; side: TradeSide; amount: bigint }): Promise<TokenQuote> =>
+  quoteOf(await tradeOnLivePools(amount, category, side), amount, category, side)
 
 export interface FundingOutput {
   txid: string
   vout: number
   value: string
+  // A fungible token the output carries (only the traded category, when selling it).
+  token?: { category: string; amount: string }
 }
 
 export interface BuildIntent {
+  category: string
+  side: TradeSide
   funding: FundingOutput[]
-  // P2PKH script of the bound wallet address (hex); both PUSD and BCH change return to it.
+  // P2PKH script of the bound wallet address (hex); tokens and BCH change all return to it.
   lockingBytecode: string
   tokenAddress: string
   cashAddress: string
-  sellSats: bigint
+  // What is sold (sats when buying, token units when selling) and the approved floor of what is
+  // bought (token units when buying, sats when selling).
+  sell: bigint
   minOutput: bigint
 }
 
@@ -198,10 +221,10 @@ interface BuildResult {
   route: unknown
 }
 
-export const buildPusdSwap = async (intent: BuildIntent) => tradeTransaction(await tradeOnLivePools(intent.sellSats), intent)
+export const buildTokenTrade = async (intent: BuildIntent) => tradeTransaction(await tradeOnLivePools(intent.sell, intent.category, intent.side), intent)
 
 // The unsigned transaction for `trade`: pool inputs first (each carrying its pool's redeem script),
-// then the funding outputs with empty unlocking scripts for the wallet to sign. PUSD and all BCH
+// then the funding outputs with empty unlocking scripts for the wallet to sign. Tokens and all BCH
 // change go to the bound address. @cashlab/cauldron only builds signed transactions, so the funding
 // inputs are signed with a throwaway key that is never used for anything else, and those unlocking
 // scripts are then removed; nothing it signs is kept.
@@ -212,11 +235,18 @@ export const tradeTransaction = (trade: TradeResult, intent: BuildIntent): Build
     type: SpendableCoinType.P2PKH as const,
     key: throwawayKey,
     outpoint: { txhash: hexToBin(normalizeTxid(f.txid)), index: f.vout },
-    output: { locking_bytecode: ownScript, amount: BigInt(f.value) }
+    output: {
+      locking_bytecode: ownScript,
+      amount: BigInt(f.value),
+      ...(f.token && { token: { token_id: f.token.category, amount: BigInt(f.token.amount) } })
+    }
   }))
   // createTradeTx reports funding below the sale as a ValueError; it is the same shortfall.
-  const funded = intent.funding.reduce((sum, f) => sum + BigInt(f.value), 0n)
-  if (funded < trade.summary.supply) throw new CauldronError('insufficient_funds', `The funding (${funded} sats) is below the sale (${trade.summary.supply} sats)`)
+  const funded =
+    intent.side === 'buy'
+      ? intent.funding.reduce((sum, f) => sum + BigInt(f.value), 0n)
+      : intent.funding.reduce((sum, f) => sum + (f.token?.category === intent.category ? BigInt(f.token.amount) : 0n), 0n)
+  if (funded < trade.summary.supply) throw new CauldronError('insufficient_funds', `The funding (${funded}) is below the sale (${trade.summary.supply})`)
   let result: TradeTxResult
   try {
     result = lab.createTradeTx(
@@ -261,23 +291,31 @@ const MAX_FEE_RATE = 5n
 const P2PKH_UNLOCK_BYTES = 100n
 
 export interface ReviewedSwap {
+  side: TradeSide
+  category: string
   unsignedHex: string
   // Relay-safe WizardConnect source outputs, aligned to the inputs.
   sourceOutputs: ReturnType<typeof sourceOutputToRelay>[]
   // Indexes of the inputs the bound wallet signs (exactly the verified funding outputs).
   ownIndexes: number[]
-  sellSats: bigint
-  // PUSD the transaction itself pays the bound address, and the approved floor.
-  pusdOut: bigint
+  // The approved sale (sats when buying, token units when selling).
+  sell: bigint
+  // What the transaction itself pays the bound address for the sale (token units when buying, sats
+  // out of the pools before the miner fee when selling), and the approved floor.
+  output: bigint
   minOutput: bigint
   expectedOutput: bigint
-  // Satoshis leaving the user: the sale and the miner fee.
+  // Token units leaving the wallet (selling only; 0 when buying).
+  tokensSold: bigint
+  // Satoshis leaving the user when buying: the sale and the miner fee (0 when selling).
   debitSats: bigint
   // Always 0: no output may pay anyone but the wallet and the pools. Kept for the stored operation.
   routerFeeSats: bigint
   minerFeeSats: bigint
-  // BCH back to the bound address as change and as the PUSD output's dust.
+  // BCH back to the bound address (change, token dust and, when selling, the proceeds).
   returnedSats: bigint
+  // The token-free outputs to the bound address, by index: a sale's BCH, spendable by a next transaction.
+  bchOutputs: { vout: number; value: bigint }[]
 }
 
 type SourceOutput = Output & { lockingBytecode: Uint8Array }
@@ -315,7 +353,8 @@ export const reviewBuild = (build: BuildResult, intent: BuildIntent): ReviewedSw
   if (build.source_outputs.length !== tx.inputs.length) fail('Source outputs do not line up with the inputs')
 
   const ownScript = hexToBin(intent.lockingBytecode)
-  const category = hexToBin(BridgeConfig.pusd.category)
+  const category = hexToBin(intent.category)
+  const selling = intent.side === 'sell'
 
   const sources: SourceOutput[] = build.source_outputs.map(s => ({
     lockingBytecode: hexToBin(s.locking_script_hex),
@@ -333,7 +372,16 @@ export const reviewBuild = (build: BuildResult, intent: BuildIntent): ReviewedSw
     if (funding) {
       if (usedFunding.has(outpoint)) fail('An approved output is spent twice')
       usedFunding.add(outpoint)
-      if (!paysUs || sources[i].valueSatoshis.toString() !== funding.value || sources[i].token) fail('A funding input does not match the verified BCH output')
+      const source = sources[i]
+      const tokenMatches = funding.token
+        ? selling &&
+          funding.token.category === intent.category &&
+          !!source.token &&
+          binsAreEqual(source.token.category, category) &&
+          !source.token.nft &&
+          source.token.amount.toString() === funding.token.amount
+        : !source.token
+      if (!paysUs || source.valueSatoshis.toString() !== funding.value || !tokenMatches) fail('A funding input does not match the verified output')
       if (input.unlockingBytecode.length !== 0) fail('A funding input arrived pre-signed')
       ownIndexes.push(i)
     } else if (paysUs) {
@@ -342,27 +390,31 @@ export const reviewBuild = (build: BuildResult, intent: BuildIntent): ReviewedSw
       fail('A pool input has no unlocking script')
     }
   })
-  if (usedFunding.size !== intent.funding.length) fail('Not every verified BCH output is spent')
+  if (usedFunding.size !== intent.funding.length) fail('Not every verified output is spent')
   const toSign = [...build.inputs_to_sign].sort((a, b) => a - b)
   if (toSign.length !== ownIndexes.length || toSign.some((v, i) => v !== ownIndexes[i])) fail('The inputs to sign are not exactly the approved outputs')
 
   // Outputs: what comes back to us, and what leaves to anyone who is not a pool.
   const poolScripts = sources.filter((_, i) => !ownIndexes.includes(i)).map(s => s.lockingBytecode)
-  let pusdOut = 0n
+  let tokensBack = 0n
   let returnedSats = 0n
-  for (const output of tx.outputs) {
+  const bchOutputs: { vout: number; value: bigint }[] = []
+  tx.outputs.forEach((output, vout) => {
     if (binsAreEqual(output.lockingBytecode, ownScript)) {
       returnedSats += output.valueSatoshis
-      if (!output.token) continue
+      if (!output.token) {
+        bchOutputs.push({ vout, value: output.valueSatoshis })
+        return
+      }
       if (!binsAreEqual(output.token.category, category)) fail('The transaction pays a different token category to the wallet')
       if (output.token.nft) fail('The transaction pays an NFT to the wallet')
-      pusdOut += output.token.amount
+      tokensBack += output.token.amount
     } else if (output.lockingBytecode[0] === 0x6a) {
       if (output.valueSatoshis !== 0n || output.token) fail('A data output carries value')
     } else if (!poolScripts.some(p => binsAreEqual(p, output.lockingBytecode))) {
       fail(output.token ? 'Tokens leave to an address that is neither the wallet nor a pool' : 'BCH leaves to an address that is neither the wallet nor a pool')
     }
-  }
+  })
 
   if (!tokensConserved(sources, tx.outputs)) fail('Tokens would be burned or created')
 
@@ -370,17 +422,33 @@ export const reviewBuild = (build: BuildResult, intent: BuildIntent): ReviewedSw
   const totalOut = tx.outputs.reduce((sum, o) => sum + o.valueSatoshis, 0n)
   const minerFeeSats = totalIn - totalOut
   const ownIn = ownIndexes.reduce((sum, i) => sum + sources[i].valueSatoshis, 0n)
-  const debitSats = ownIn - returnedSats
+  const ownTokensIn = ownIndexes.reduce((sum, i) => sum + (sources[i].token?.amount ?? 0n), 0n)
 
   const signedSize = BigInt(hexToBin(build.unsigned_tx_hex).length) + P2PKH_UNLOCK_BYTES * BigInt(ownIndexes.length)
   if (minerFeeSats < signedSize * MIN_FEE_RATE) fail('The miner fee is too low to relay')
   if (minerFeeSats > signedSize * MAX_FEE_RATE) fail('The miner fee is excessive')
-  if (debitSats > intent.sellSats + minerFeeSats) fail('More BCH leaves the wallet than the sale and its fee')
-  if (debitSats <= 0n) fail('The transaction sells no BCH')
 
   const expectedOutput = BigInt(build.expected_output)
-  if (pusdOut < intent.minOutput) fail('The transaction pays less PUSD than the approved minimum')
-  if (expectedOutput < intent.minOutput) fail('The trade expects less PUSD than the approved minimum')
+  let output: bigint
+  let debitSats = 0n
+  let tokensSold = 0n
+  if (selling) {
+    tokensSold = ownTokensIn - tokensBack
+    if (tokensSold <= 0n) fail('The transaction sells no tokens')
+    if (tokensSold > intent.sell) fail('More tokens leave the wallet than the approved sale')
+    // BCH out of the pools: what came back beyond our own BCH, plus the miner fee it paid.
+    output = returnedSats + minerFeeSats - ownIn
+    if (output < intent.minOutput) fail('The transaction pays less BCH than the approved minimum')
+    if (returnedSats <= ownIn) fail('The transaction pays no BCH to the wallet')
+  } else {
+    if (ownTokensIn !== 0n) fail('A purchase must be funded with BCH only')
+    debitSats = ownIn - returnedSats
+    output = tokensBack
+    if (debitSats > intent.sell + minerFeeSats) fail('More BCH leaves the wallet than the sale and its fee')
+    if (debitSats <= 0n) fail('The transaction sells no BCH')
+    if (output < intent.minOutput) fail('The transaction pays fewer tokens than the approved minimum')
+  }
+  if (expectedOutput < intent.minOutput) fail('The trade expects less than the approved minimum')
 
   const sourceOutputs = tx.inputs.map((input, i) =>
     sourceOutputToRelay({
@@ -395,17 +463,21 @@ export const reviewBuild = (build: BuildResult, intent: BuildIntent): ReviewedSw
   )
 
   return {
+    side: intent.side,
+    category: intent.category,
     unsignedHex: build.unsigned_tx_hex.toLowerCase(),
     sourceOutputs,
     ownIndexes,
-    sellSats: intent.sellSats,
-    pusdOut,
+    sell: intent.sell,
+    output,
     minOutput: intent.minOutput,
     expectedOutput,
+    tokensSold,
     debitSats,
     routerFeeSats: 0n,
     minerFeeSats,
-    returnedSats
+    returnedSats,
+    bchOutputs
   }
 }
 
@@ -547,10 +619,10 @@ const broadcastViaCauldron = async (signedHex: string, txid: string) => {
 // A node that already holds the transaction answers with one of these: the broadcast succeeded.
 const ALREADY_KNOWN = /already (in|known)|txn-already|already have transaction|transaction already in block chain/i
 
-// Broadcasts the signed second leg. Fulcrum first (the server the app already checks the chain
+// Broadcasts a signed BCH transaction (a Cauldron trade or a THORChain deposit). Fulcrum first (the server the app already checks the chain
 // with); Cauldron's service only if Fulcrum cannot be reached. Re-sending the same bytes is safe:
 // it is one transaction, so it cannot pay twice.
-export const broadcastPusdSwap = async (
+export const broadcastBchTransaction = async (
   signedHex: string,
   txid: string,
   routes: { fulcrum: (hex: string) => Promise<string>; cauldron: (hex: string, txid: string) => Promise<string> } = {

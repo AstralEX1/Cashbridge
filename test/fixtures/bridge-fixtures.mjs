@@ -111,7 +111,7 @@ export const signBuild = (unsignedTx, sourceOutputs, ownIndexes, key = privateKe
       ownIndexes.includes(i)
         ? {
             ...input,
-            unlockingBytecode: { compiler, data: { keys: { privateKeys: { key } } }, script: 'unlock', valueSatoshis: sourceOutputs[i].valueSatoshis }
+            unlockingBytecode: { compiler, data: { keys: { privateKeys: { key } } }, script: 'unlock', valueSatoshis: sourceOutputs[i].valueSatoshis, ...(sourceOutputs[i].token && { token: sourceOutputs[i].token }) }
           }
         : input
     ),
