@@ -4,7 +4,7 @@ import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, 
 import { useWizardConnect, WizardConnectQRDialog } from '@wizardconnect/react'
 import { AppConfig } from '@/config'
 import { type BchChoice, BchWalletChooser, type BchConnection, WalletConnectDialog } from '@/components/bch-wallet-dialogs'
-import { useBchWalletConnect, walletConnectEnabled } from '@/components/bch-walletconnect'
+import { hasWalletConnectSession, useBchWalletConnect, walletConnectEnabled } from '@/components/bch-walletconnect'
 import { type BchBinding, BINDING_PATHS, type BindingPath, bindingFromPubkey, isValidBinding, isWatchOnly } from '@/lib/bch'
 import type { BchSigner } from '@/lib/bch-signing'
 import { useActiveBridge } from '@/store/transaction-store'
@@ -279,7 +279,8 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
         void wc2.connect(kind === 'paytaca-extension' ? 'paytaca-extension' : 'walletconnect')
         return
       }
-      if (wc2Active) void wc2.disconnect()
+      // Also a remembered session that could not be restored this visit, so it does not return on reload.
+      if (wc2Active || hasWalletConnectSession()) void wc2.disconnect()
       if (wc.state === 'idle' || wc.state === 'disconnected') return connectWizard()
       setPairPending(true)
       void disconnectWizard()

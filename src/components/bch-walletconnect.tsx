@@ -79,6 +79,8 @@ const writeMarker = (saved?: SavedSession) => {
 
 export const hasWalletConnectSession = () => !!readMarker()
 
+const SESSION_EXTEND_BELOW_MS = 3.5 * 24 * 60 * 60 * 1000
+
 const USER_DISCONNECTED = { code: 6000, message: 'User disconnected' }
 
 export const walletConnectEnabled = () => !!BridgeConfig.walletConnectProjectId
@@ -194,9 +196,21 @@ export function useBchWalletConnect() {
         if (!live || !address) return reset()
         if (address !== saved.binding.cashAddress) return void bind(instance, live, address, run)
         setSession(live)
+        // WalletConnect sessions end after 7 days. Like a returning visit to any dApp, a visit past
+        // the halfway mark slides it another 7 days, so a regular user never has to pair again.
+        if (live.expiry * 1000 - Date.now() < SESSION_EXTEND_BELOW_MS) {
+          void instance
+            .extend({ topic: live.topic })
+            .then(({ acknowledged }) => acknowledged())
+            .catch(() => {})
+        }
       })
       .catch(() => {
-        if (run === attempt.current) reset()
+        // The client could not start (a stale chunk after a deploy, no network): the session itself
+        // is fine, so the marker stays and the next load restores it instead of asking to pair again.
+        if (run !== attempt.current) return
+        setBinding(undefined)
+        setState('idle')
       })
   }, [bind, getClient, reset, chooseVia])
 
