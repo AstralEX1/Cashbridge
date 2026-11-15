@@ -923,7 +923,8 @@ export const ReverseOperationPanel = ({ uid, onClose }: { uid?: string; onClose:
   const token = operationToken(op)
   const target = active.assetTo
   const terminal = isBridgeTerminal(op)
-  const keptBch = op.stage === 'kept_bch' && !!reverse.sale?.outputs?.length && !op.error
+  const keptSats = (reverse.sale?.outputs ?? []).reduce((sum, output) => sum + BigInt(output.value), 0n)
+  const keptBch = op.stage === 'kept_bch' && keptSats > 0n && !op.error
   const completed = op.stage === 'completed' || keptBch
   const saleDone = !!token && !['first_leg_signing', 'first_leg_pending', 'first_leg_unknown'].includes(op.stage) && !!reverse.sale?.txid
   const depositing = ['second_leg_signed', 'second_leg_unknown', 'second_leg_pending'].includes(op.stage)
@@ -1013,7 +1014,7 @@ export const ReverseOperationPanel = ({ uid, onClose }: { uid?: string; onClose:
     secondBar,
     completion: {
       received: keptBch
-        ? { amount: formatBaseUnits(reverse.sale!.bchOut, 8), ticker: 'BCH', icon: <BchMark size={48} /> }
+        ? { amount: formatBaseUnits(keptSats, 8), ticker: 'BCH', icon: <BchMark size={48} /> }
         : { amount: reverse.payout?.amount === undefined ? '—' : formatBaseUnits(reverse.payout.amount, target.decimals), ticker: target.ticker, icon: <AssetIcon asset={target} showNetworkIcons={false} /> },
       transactions: bridgeCompletionTransactions(active),
       liquidityCategory: keptBch ? PUSD_TOKEN.category : undefined
