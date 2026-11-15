@@ -104,3 +104,19 @@ test('without a configured key the proxy fails closed', async () => {
   assert.equal(seen.length, 0)
   process.env.THORCHAIN_API_KEY = KEY
 })
+
+test('on Vercel a caller-supplied cf-connecting-ip does not pick its own rate-limit bucket', async () => {
+  const { clientIp } = await import('../src/lib/rate-limit.ts')
+  const request = headers => new NextRequest('http://localhost/api/x', { headers })
+  const previous = process.env.VERCEL
+  process.env.VERCEL = '1'
+  try {
+    assert.equal(clientIp(request({ 'cf-connecting-ip': '6.6.6.6', 'x-vercel-forwarded-for': '1.2.3.4' })), '1.2.3.4')
+    assert.equal(clientIp(request({ 'cf-connecting-ip': '6.6.6.6', 'x-real-ip': '1.2.3.4' })), '1.2.3.4')
+    assert.equal(clientIp(request({ 'cf-connecting-ip': '6.6.6.6' })), 'unknown')
+  } finally {
+    if (previous === undefined) delete process.env.VERCEL
+    else process.env.VERCEL = previous
+  }
+  assert.equal(clientIp(request({ 'cf-connecting-ip': '6.6.6.6', 'x-forwarded-for': '9.9.9.9, 1.2.3.4' })), '6.6.6.6')
+})

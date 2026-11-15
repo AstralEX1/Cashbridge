@@ -1,7 +1,7 @@
 import { request } from 'node:http'
 import { request as secureRequest } from 'node:https'
 import { NextRequest, NextResponse } from 'next/server'
-import { rateLimit } from '@/lib/rate-limit'
+import { clientIp, rateLimit } from '@/lib/rate-limit'
 import { isSameOrigin } from '@/lib/same-origin'
 
 // The public process has socket access, not access to the signer or its SQLite database.
@@ -11,11 +11,8 @@ export async function forwardOrder(req: NextRequest, id?: string) {
   if (id && !/^[a-f0-9-]{36}$/.test(id)) return failure(400, 'Invalid order identifier')
   if (req.method === 'POST' && !isSameOrigin(req)) return failure(403, 'Same-origin request required')
   if (!/^Bearer [a-f0-9]{64}$/.test(req.headers.get('authorization') ?? '')) return failure(401, 'Order authorization required')
-  const ip = process.env.VERCEL
-    ? req.headers.get('x-vercel-forwarded-for') ?? req.headers.get('x-real-ip') ?? 'unknown'
-    : req.headers.get('cf-connecting-ip') ?? req.headers.get('x-forwarded-for')?.split(',').at(-1)?.trim() ?? 'unknown'
-  const limited = new NextRequest(req.url, { headers: { 'cf-connecting-ip': ip } })
-  if (rateLimit(limited, req.method === 'POST' ? 'automatic-proxy-write' : 'automatic-proxy-read', req.method === 'POST' ? 10 : 600) !== null)
+  const ip = clientIp(req)
+  if (rateLimit(req, req.method === 'POST' ? 'automatic-proxy-write' : 'automatic-proxy-read', req.method === 'POST' ? 10 : 600) !== null)
     return failure(429, 'Too many order requests')
   try {
     const chunks: Uint8Array[] = []

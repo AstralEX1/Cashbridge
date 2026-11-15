@@ -14,7 +14,11 @@ const hits = new Map<string, number[]>()
  * is set by the edge and overwrites any client-supplied copy; the last
  * forwarded hop is the equivalent fallback for any other single proxy.
  */
-function clientKey(req: NextRequest) {
+export function clientIp(req: NextRequest) {
+  // Vercel has no Cloudflare in front: a caller can send its own `cf-connecting-ip`, while Vercel
+  // overwrites `x-vercel-forwarded-for` and `x-real-ip` with the address it saw.
+  if (process.env.VERCEL) return req.headers.get('x-vercel-forwarded-for')?.split(',')[0].trim() || req.headers.get('x-real-ip')?.trim() || 'unknown'
+
   const edgeIp = req.headers.get('cf-connecting-ip')?.trim()
   if (edgeIp) return edgeIp
 
@@ -42,7 +46,7 @@ export function rateLimit(req: NextRequest, scope: string, limit: number, cost =
   const now = Date.now()
   if (hits.size > MAX_TRACKED_CLIENTS) sweep(now)
 
-  const key = `${scope}:${clientKey(req)}`
+  const key = `${scope}:${clientIp(req)}`
   const recent = (hits.get(key) ?? []).filter(ts => ts > now - WINDOW_MS)
 
   if (recent.length + cost > limit) {
