@@ -7,6 +7,7 @@ import { referralHeaders } from '@/lib/referral'
 import { aggregatorApiUrl, BridgeConfig } from '@/config'
 import { addressToLockingBytecode } from '@/lib/bch'
 import { BelowMinimumError, minimumFromProviderErrors } from '@/lib/errors'
+import { sourceTransactionId } from '@/lib/source-transaction'
 
 // Through our own proxy, which adds the aggregator API key on the server (src/app/api/thorchain).
 const uSwap = axios.create()
@@ -411,12 +412,12 @@ export const getMidgardActions = async (txid: string): Promise<MidgardAction[]> 
 // THORNode indexes inbounds by the bare hash. A wallet hands back the `0x`-prefixed form, and
 // asking for that answers 200 with an empty, never-observed body rather than a 404 - so the
 // transaction silently looks like it never arrived. Every /thorchain/tx/* route needs this.
-export const thorTxId = (hash: string) => (hash.startsWith('0x') || hash.startsWith('0X') ? hash.slice(2) : hash)
+export const thorTxId = (hash: string) => sourceTransactionId(hash) ?? hash.trim()
 
 // An order's refund is published as an outbound of the *order's* inbound hash, so a cancelled
 // order is watched through the hash it was placed with, not the hash that cancelled it.
 export const getTxStatus = async (hash: string): Promise<TxStatusResponse> => {
-  return thornode.get(`/thorchain/tx/status/${thorTxId(hash)}`).then(res => res.data ?? {})
+  return thornode.get(`/thorchain/tx/status/${encodeURIComponent(thorTxId(hash))}`).then(res => res.data ?? {})
 }
 
 export const getLimitSwaps = async (sender: string): Promise<LimitSwapQueueItem[]> => {

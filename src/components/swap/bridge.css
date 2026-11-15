@@ -1999,3 +1999,30 @@ button.bridge-flow-primary:disabled {
     padding: 10px 12px;
   }
 }
+
+/* Automatic execution shares the form and receipt, with its own order lifecycle. */
+.bridge-auto-mode { margin: 0 0 18px; }
+.bridge-auto-options { display: flex; gap: 4px; padding: 4px; border-radius: 18px; background: #1b2c35; color: #c4d2d6; }
+.bridge-auto-options button { flex: 1; padding: 10px 14px; border-radius: 14px; font-size: 14px; font-weight: 600; cursor: pointer; }
+.bridge-auto-options button[aria-pressed='true'] { background: #0ac18e; color: #0f1820; }
+.bridge-auto-options button:disabled { opacity: .4; cursor: default; }
+.bridge-auto-options button:focus-visible, .bridge-auto-history:focus-visible { outline: 2px solid #0ac18e; outline-offset: 3px; }
+.bridge-auto-mode .bridge-input-meta { color: #a6b9c0; line-height: 1.5; }
+.bridge-auto-recipient { margin-top: 16px; }
+.bridge-auto-recipient label { display: block; margin-bottom: 8px; font-size: 12px; font-weight: 600; }
+.bridge-auto-recipient input { width: 100%; color: #0f1820; background: #eaf0ef; }
+.bridge-auto-recipient input[aria-invalid='true'] { outline: 1px solid #bd493e; }
+.bridge-auto-orders { display: grid; gap: 8px; margin-top: 20px; color: #c4d2d6; }
+.bridge-auto-history { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-radius: 16px; text-align: left; background: #1b2c35; color: #eaf0ef; cursor: pointer; }
+.bridge-auto-history > span { display: flex; min-width: 0; gap: 8px; font-size: 13px; overflow-wrap: anywhere; }
+.bridge-auto-history > span:first-child { flex-direction: column; gap: 4px; }
+.bridge-auto-history small { color: #a6b9c0; }
+.bridge-auto-history svg { flex: none; }
+.bridge-auto-dialog .bridge-flow-main { width: 100%; margin: 0; }
+.bridge-auto-dialog .bridge-complete-brand { display: none; }
+.bridge-auto-dialog .bridge-flow-card { box-shadow: none; }
+.bridge-auto-dialog .bridge-complete-close { display: none; }
+.bridge-auto-stages { display: grid; gap: 8px; }
+.bridge-auto-stages > div { padding: 10px 14px; border-radius: 12px; background: #dce6e8; font-size: 13px; }
+.bridge-auto-stages [data-state='complete'] { background: #c7f4e5; }
+.bridge-auto-stages [data-state='active'] { background: #0ac18e; font-weight: 600; }

@@ -43,12 +43,14 @@ interface BridgeConfirmProps {
   token: CauldronToken | null
   // The bound BCH wallet's address; the route pays it.
   bchAddress: string
+  automatic?: { minPusd: string; refundAddress: string }
 }
 
 // The bridge's confirm screen: who sends to whom, how much arrives, and one collapsible block with
 // the route, time, gas and the full price impact. Every figure is live (quote, pool prices, Cauldron).
-export const BridgeConfirm = ({ quote, token, bchAddress }: BridgeConfirmProps) => {
+export const BridgeConfirm = ({ quote, token, bchAddress, automatic }: BridgeConfirmProps) => {
   const t = useTranslations('bridge.confirm')
+  const tAuto = useTranslations('automatic')
   const assetFrom = useAssetFrom()
   const [open, setOpen] = useState(false)
   const pusd = !!token
@@ -127,17 +129,21 @@ export const BridgeConfirm = ({ quote, token, bchAddress }: BridgeConfirmProps) 
               <div className="bridge-confirm-received">
                 <div className="bridge-confirm-amount">
                   <strong className={pusdPending ? 'bridge-muted animate-pulse' : undefined}>
-                    {received === undefined ? '···' : `${pusd ? '≈ ' : ''}${formatAmount(received)}`}
+                    {automatic ? formatBaseUnits(automatic.minPusd, 2) : received === undefined ? '···' : `${pusd ? '≈ ' : ''}${formatAmount(received)}`}
                   </strong>
                   {token ? <CauldronTokenMark token={token} /> : <BchMark />}
                 </div>
                 <span>
-                  {t('on', { ticker: receivedTicker, chain: 'Bitcoin Cash' })}
-                  {summary.receivedUsd !== undefined ? ` · ${usd(summary.receivedUsd)}` : ''}
+                  {automatic ? tAuto('minimumLabel') : t('on', { ticker: receivedTicker, chain: 'Bitcoin Cash' })}
+                  {!automatic && summary.receivedUsd !== undefined ? ` · ${usd(summary.receivedUsd)}` : ''}
                 </span>
               </div>
             </div>
             {pusdQuote.error && <p className="bridge-confirm-note">{t('pusdUnavailable', { ticker: receivedTicker })}</p>}
+            {automatic && <div className="bridge-confirm-note">
+              <p>{tAuto('custody')}</p>
+              <p title={automatic.refundAddress}>{tAuto('fallback', { address: shortBridgeAddress(automatic.refundAddress) })}</p>
+            </div>}
           </section>
 
           <section className="bridge-confirm-details">

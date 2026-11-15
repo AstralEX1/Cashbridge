@@ -16,6 +16,8 @@ export interface BridgeCompletionProps {
   transactions: CompletionTransaction[]
   liquidityCategory?: string
   onClose: () => void
+  notice?: ReactNode
+  additionalReceived?: { amount: string; ticker: string }[]
 }
 
 const CauldronEarn = ({ category }: { category: string }) => {
@@ -36,7 +38,7 @@ const CauldronEarn = ({ category }: { category: string }) => {
   )
 }
 
-export const BridgeCompletion = ({ received, transactions, liquidityCategory, onClose }: BridgeCompletionProps) => {
+export const BridgeCompletion = ({ received, transactions, liquidityCategory, onClose, notice, additionalReceived }: BridgeCompletionProps) => {
   const t = useTranslations('bridge.completion')
   const tProgress = useTranslations('bridge.progress')
   const amount = `${received.amount} ${received.ticker}`
@@ -54,6 +56,8 @@ export const BridgeCompletion = ({ received, transactions, liquidityCategory, on
               <span className="bridge-complete-icon">{received.icon}</span>
               <strong title={amount}>{amount}</strong>
             </div>
+            {additionalReceived?.map(value => <p className="bridge-input-meta" key={value.ticker}>+ {value.amount} {value.ticker}</p>)}
+            {notice && <div className="bridge-flow-message" role="status">{notice}</div>}
             {liquidityCategory && <CauldronEarn category={liquidityCategory} />}
           </section>
           <section className="bridge-complete-history" aria-label={t('history')}>

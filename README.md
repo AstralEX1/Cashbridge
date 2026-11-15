@@ -1,8 +1,9 @@
 # Cash Bridge
 
-Bridge assets to Bitcoin Cash and PUSD. The first leg buys native BCH through [THORChain](https://www.thorchain.org); an optional second leg
-swaps that BCH to PUSD on [Cauldron](https://app.cauldron.quest). Every step is signed in the user's own wallet: the site holds no funds and
-takes no fee.
+Bridge THORChain assets to Bitcoin Cash and Cauldron CashTokens, and back. **Manual** is the default: the user signs in their own wallets.
+For forward PUSD transfers, **Automatic** explicitly uses temporary service custody of BCH and the Cashbridge Router to pay PUSD directly to the
+recipient, with a fixed minimum and BCH fallback. ERC-20 approval may still need a separate transaction. See the
+[transaction flows](docs/how-it-works.md).
 
 Forked from the [swap.thorchain.org](https://github.com/thorchain/swap.thorchain) interface.
 
@@ -20,3 +21,6 @@ it). Typecheck with `npx tsc --noEmit -p tsconfig.json` and run the bridge tests
 
 The app is a standard Next.js build (`npm run build`, `output: 'standalone'`). On Vercel, import the repository and set the environment variables
 from `.env.example` in the project settings; `THORCHAIN_API_KEY` must stay a server-side variable.
+
+Automatic execution additionally requires the separately operated Cashbridge Router and its authenticated HTTPS order API. Do not put its
+wallet, xpub, database or RPC credentials on Vercel.

@@ -207,10 +207,12 @@ export interface BuildIntent {
   // bought (token units when buying, sats when selling).
   sell: bigint
   minOutput: bigint
+  // Both destinations are explicit when the funding wallet differs from the customer.
+  payout?: { tokenScript: string; changeScript: string }
 }
 
 // The shape of a router tx.build answer, which reviewBuild checks; the local build produces it too.
-interface BuildResult {
+export interface BuildResult {
   unsigned_tx_hex: string
   source_outputs: { value: string; locking_script_hex: string; token?: { category: string; amount: string } }[]
   inputs_to_sign: number[]
@@ -246,6 +248,7 @@ export const prepareTokenTrade = async (
 // scripts are then removed; nothing it signs is kept.
 export const tradeTransaction = (trade: TradeResult, intent: BuildIntent): BuildResult => {
   const ownScript = hexToBin(intent.lockingBytecode)
+  if (intent.payout && intent.side !== 'buy') throw new CauldronError('bad_request', 'Direct payout is only supported for token purchases')
   const throwawayKey = generatePrivateKey()
   const coins = intent.funding.map(f => ({
     type: SpendableCoinType.P2PKH as const,
@@ -268,7 +271,12 @@ export const tradeTransaction = (trade: TradeResult, intent: BuildIntent): Build
     result = lab.createTradeTx(
       trade.entries,
       coins,
-      [{ type: PayoutAmountRuleType.CHANGE, locking_bytecode: ownScript, allow_mixing_native_and_token_when_bch_change_is_dust: true }],
+      intent.payout
+        ? [
+            { type: PayoutAmountRuleType.FIXED, locking_bytecode: hexToBin(intent.payout.tokenScript), amount: -1n, token: { token_id: intent.category, amount: trade.summary.demand } },
+            { type: PayoutAmountRuleType.CHANGE, locking_bytecode: hexToBin(intent.payout.changeScript) }
+          ]
+        : [{ type: PayoutAmountRuleType.CHANGE, locking_bytecode: ownScript, allow_mixing_native_and_token_when_bch_change_is_dust: true }],
       null,
       TX_FEE_PER_BYTE
     )
@@ -371,6 +379,10 @@ export const reviewBuild = (build: BuildResult, intent: BuildIntent): ReviewedSw
   const ownScript = hexToBin(intent.lockingBytecode)
   const category = hexToBin(intent.category)
   const selling = intent.side === 'sell'
+  if (intent.payout && selling) fail('Direct payout cannot sell customer tokens')
+  const tokenScript = intent.payout ? hexToBin(intent.payout.tokenScript) : ownScript
+  const changeScript = intent.payout ? hexToBin(intent.payout.changeScript) : ownScript
+  if (tokenScript.length === 0 || changeScript.length === 0) fail('Payout scripts are required')
 
   const sources: SourceOutput[] = build.source_outputs.map(s => ({
     lockingBytecode: hexToBin(s.locking_script_hex),
@@ -416,7 +428,7 @@ export const reviewBuild = (build: BuildResult, intent: BuildIntent): ReviewedSw
   let returnedSats = 0n
   const bchOutputs: { vout: number; value: bigint }[] = []
   tx.outputs.forEach((output, vout) => {
-    if (binsAreEqual(output.lockingBytecode, ownScript)) {
+    if ((output.token && binsAreEqual(output.lockingBytecode, tokenScript)) || (!output.token && binsAreEqual(output.lockingBytecode, changeScript))) {
       returnedSats += output.valueSatoshis
       if (!output.token) {
         bchOutputs.push({ vout, value: output.valueSatoshis })
@@ -611,7 +623,7 @@ export class BroadcastRejected extends Error {}
 export class BroadcastUnknown extends Error {}
 
 // Cauldron's broadcast service: the second route, used only when Fulcrum cannot be reached.
-const broadcastViaCauldron = async (signedHex: string, txid: string) => {
+export const broadcastViaCauldron = async (signedHex: string, txid: string) => {
   let response: Response
   try {
     response = await fetch(BridgeConfig.cauldronBroadcastUrl, {

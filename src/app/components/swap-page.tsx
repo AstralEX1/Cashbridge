@@ -12,8 +12,8 @@ export function SwapPage() {
         <span className="text-lg font-semibold tracking-tight">{AppConfig.appName}</span>
       </header>
       <p className="sr-only">
-        Bridge supported source assets to Bitcoin Cash through THORChain. Receive native BCH, or continue to PUSD with a separately signed Cauldron
-        swap in your BCH wallet.
+        Bridge supported source assets to Bitcoin Cash and CashTokens through THORChain and Cauldron. Manual execution uses your own wallets.
+        Automatic PUSD delivery uses temporary service custody of BCH and the Cashbridge Router.
       </p>
       <Suspense>
         <Swap />

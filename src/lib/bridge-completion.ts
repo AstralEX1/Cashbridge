@@ -1,5 +1,5 @@
 import { Chain } from '@tcswap/core'
-import { isTxid, normalizeTxid } from '@/lib/bch'
+import { sourceTransactionId } from '@/lib/source-transaction'
 import type { BridgeOperation, SwapTransaction } from '@/store/transaction-store'
 
 export interface CompletionTransaction {
@@ -16,12 +16,14 @@ export const bridgeCompletionTransactions = (tx: SwapTransaction & { bridge: Bri
   const transactions: CompletionTransaction[] = []
   const seen = new Set<string>()
   const add = (kind: CompletionTransaction['kind'], chain: Chain, hash?: string) => {
-    if (typeof hash !== 'string' || !/^[a-zA-Z0-9]+$/.test(hash)) return
-    // Hex hashes ignore case; base58 transaction IDs (e.g. Solana) do not.
-    const key = `${chain}:${isTxid(normalizeTxid(hash)) ? normalizeTxid(hash) : hash}`
+    if (typeof hash !== 'string') return
+    // Preserve older alphanumeric receipt IDs; only source authorization uses the strict parser.
+    const id = sourceTransactionId(hash) ?? (/^[a-zA-Z0-9]+$/.test(hash) ? hash : undefined)
+    if (!id) return
+    const key = `${chain}:${id}`
     if (seen.has(key)) return
     seen.add(key)
-    transactions.push({ key, kind, chain, hash })
+    transactions.push({ key, kind, chain, hash: hash.replace(/-\d+$/, '') })
   }
 
   if (op.direction === 'reverse') {

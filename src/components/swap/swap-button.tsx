@@ -24,6 +24,9 @@ import { getUSwap } from '@/lib/wallets'
 import { useIsLimitSwap, useLimitSwapBuyAmount } from '@/store/limit-swap-store'
 import { useIsPrivateSwap, usePrivateSwapAcknowledged } from '@/store/private-swap-store'
 import { useSwapStore } from '@/store/swap-store'
+import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
+import { AutoBridgeDialog } from '@/components/swap/auto-bridge-confirm'
+import { addressToLockingBytecode } from '@/lib/bch'
 
 interface SwapButtonProps {
   onShowBridge: () => void
@@ -41,6 +44,8 @@ interface ButtonState {
 export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowBridge }: SwapButtonProps) => {
   const t = useTranslations('swap')
   const tWallet = useTranslations('wallet')
+  const tAuto = useTranslations('automatic')
+  const { automatic, recipient } = useAutomaticBridge()
   const assetFrom = useAssetFrom()
   const assetTo = useAssetTo()
   const uSwap = getUSwap()
@@ -75,7 +80,8 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
   const { openDialog } = useDialog()
 
   const onSwap = (quote: QuoteResponseRoute) => {
-    openDialog(SwapDialog, { provider: quote.providers[0] })
+    if (automatic) openDialog(AutoBridgeDialog, { provider: quote.providers[0] })
+    else openDialog(SwapDialog, { provider: quote.providers[0] })
   }
 
   const onInstantSwap = (quote: QuoteResponseRoute) => {
@@ -134,7 +140,7 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
   }
 
   const getState = (): ButtonState => {
-    if (!bchWallet.binding) {
+    if (!automatic && !bchWallet.binding) {
       const connecting = bchWallet.state === 'connecting' || bchWallet.state === 'reconnecting'
       return {
         text: bchWallet.mismatch ? t('button.connectBoundBch') : t('button.connectBch'),
@@ -143,6 +149,7 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
         onClick: bchWallet.reconnectStalled || bchWallet.mismatch || bchWallet.state === 'connected' ? bchWallet.pairAgain : connecting ? undefined : bchWallet.connect
       }
     }
+    if (automatic && !addressToLockingBytecode(recipient)) return { text: tAuto('enterRecipient'), spinner: false, accent: false }
     if (assetFrom && !selectedAccount && !instantSwapSupported) {
       return { text: t('button.connectWallet', { chain: chainLabel(assetFrom.chain) }), spinner: false, accent: true, onClick: connectSource }
     }

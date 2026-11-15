@@ -13,6 +13,7 @@ import {
   utf8ToBin
 } from '@bitauth/libauth'
 import { BridgeConfig } from '@/config'
+import { sameSourceTransaction, sourceIdFromMemo } from '@/lib/source-transaction'
 
 // BCH-side lookups and checks for the bridge. Nothing here trusts a server's decoding: raw
 // transactions are fetched, decoded and hashed locally, and outputs are matched by locking script.
@@ -24,7 +25,7 @@ const isHex = (value: unknown, bytes?: number): value is string =>
 
 export const isTxid = (value: unknown): value is string => isHex(value, 32)
 
-// THORNode and wallets disagree on case and on a 0x prefix; transaction ids are compared bare and lower-case.
+// BCH hashes only. Source-chain identifiers use source-transaction.ts instead.
 export const normalizeTxid = (hash: string) => (hash.startsWith('0x') || hash.startsWith('0X') ? hash.slice(2) : hash).toLowerCase()
 
 // --- Addresses ---------------------------------------------------------------------------------
@@ -355,9 +356,9 @@ export const checkOutbound = (
   { tip, utxos }: { tip: number; utxos: ScriptUtxo[] }
 ): ReceiptCheck => {
   const txid = txidOf(raw.hex)
-  const memo = `${action}:${normalizeTxid(inboundHash)}`.toUpperCase()
   const memos = raw.tx.outputs.map(o => opReturnText(o.lockingBytecode)).filter((m): m is string => m !== undefined)
-  if (!memos.some(m => m.toUpperCase() === memo)) return { kind: 'invalid', reason: 'The BCH transaction is not THORChain’s outbound for this swap (memo mismatch)' }
+  if (!memos.some(m => sameSourceTransaction(sourceIdFromMemo(m, action), inboundHash)))
+    return { kind: 'invalid', reason: 'The BCH transaction is not THORChain’s outbound for this swap (memo mismatch)' }
 
   const script = hexToBin(lockingBytecode)
   const ours = raw.tx.outputs.map((o, vout) => ({ o, vout })).filter(({ o }) => binsAreEqual(o.lockingBytecode, script))

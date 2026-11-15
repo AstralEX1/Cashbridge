@@ -6,6 +6,9 @@ import { TransactionHistoryDialog } from '@/components/header/transaction-histor
 import { Icon } from '@/components/icons'
 import { GenericButton } from '@/components/generic-button'
 import { useHasTransactions, usePendingTransactions } from '@/store/transaction-store'
+import { autoBridgeStore } from '@/store/auto-bridge-store'
+import { isTerminal } from '@/lib/auto-bridge-contract'
+import { useAutomaticHydrated } from '@/hooks/use-automatic-bridge'
 
 export const TransactionHistoryButton = () => {
   const t = useTranslations('header')
@@ -13,8 +16,11 @@ export const TransactionHistoryButton = () => {
 
   const hasTransactions = useHasTransactions()
   const pendingTransactions = usePendingTransactions()
+  const automatic = autoBridgeStore(state => state.orders)
+  const hydrated = useAutomaticHydrated()
+  const pendingAutomatic = hydrated && automatic.some(ref => ref.sourceAttempted && (!ref.order || !isTerminal(ref.order.state)))
 
-  if (!hasTransactions) {
+  if (!hasTransactions && !(hydrated && automatic.length)) {
     return null
   }
 
@@ -27,9 +33,9 @@ export const TransactionHistoryButton = () => {
       <GenericButton size="medium" className="hidden md:flex" onClick={onClick}>
         {t('history')}
       </GenericButton>
-      <GenericButton size="medium" icon={<Icon name="clock" />} className="flex md:hidden" onClick={onClick} />
+      <GenericButton size="medium" aria-label={t('history')} icon={<Icon name="clock" />} className="flex md:hidden" onClick={onClick} />
 
-      {pendingTransactions.length > 0 && <div className="bg-green-default absolute top-0 right-0 -mr-1 size-3 rounded-full" />}
+      {(pendingTransactions.length > 0 || pendingAutomatic) && <div className="bg-green-default absolute top-0 right-0 -mr-1 size-3 rounded-full" />}
     </div>
   )
 }

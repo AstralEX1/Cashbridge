@@ -36,7 +36,7 @@ export const inboundHash = 'E3A1B0C2D4F6A8B0C2D4E6F8A0B2C4D6E8F0A2B4C6D8E0F2A4B6
 
 const opReturn = text => {
   const data = utf8ToBin(text)
-  return Uint8Array.from([0x6a, data.length, ...data])
+  return Uint8Array.from([0x6a, ...(data.length < 76 ? [data.length] : [0x4c, data.length]), ...data])
 }
 
 export const outboundTx = ({ to, amount, memo = `OUT:${inboundHash}`, token }) => {

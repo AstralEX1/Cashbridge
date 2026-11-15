@@ -22,7 +22,8 @@ import { BridgeConfig } from '@/config'
 import { useQuote } from '@/hooks/use-quote'
 import { useRates } from '@/hooks/use-rates'
 import { getMidgardActions, getTrack, getTxStatus } from '@/lib/api'
-import { checkUnspent, findThorchainOutbound, getTransactionState, historyIncludes, isTxid, normalizeTxid, verifyThorchainOutbound } from '@/lib/bch'
+import { checkUnspent, findThorchainOutbound, getTransactionState, historyIncludes, verifyThorchainOutbound } from '@/lib/bch'
+import { sourceTransactionId } from '@/lib/source-transaction'
 import { firstLegFromChain, formatStepTime, type SourceReceipt, stepTime } from '@/lib/bridge-tracking'
 import { bridgeCompletionTransactions } from '@/lib/bridge-completion'
 import {
@@ -445,7 +446,7 @@ export const TxLink = ({ href, className, label, title, children }: { href?: str
 
 // Where a step's transaction is shown: a THORChain swap (inbound hash) on THORChain's explorer, which
 // follows it through to the payout; anything else on its own chain's explorer.
-export const thorchainTxUrl = (hash: string) => `https://thorchain.net/tx/${normalizeTxid(hash).toUpperCase()}`
+export const thorchainTxUrl = (hash: string) => `https://thorchain.net/tx/${encodeURIComponent(sourceTransactionId(hash) ?? hash.trim())}`
 export const chainTxUrl = (chain: Chain, hash: string) => getExplorerTxUrl({ chain, txHash: hash })
 
 const FlowAmount = ({ token }: { token: FlowToken }) => (
@@ -1033,8 +1034,8 @@ const UnknownFirstLeg = ({ tx }: { tx: BridgeTx }) => {
 
   const resume = async () => {
     setError(undefined)
-    const bare = normalizeTxid(hash.trim())
-    if (!isTxid(bare)) return setError(t('unknown.badHash'))
+    const bare = sourceTransactionId(hash)
+    if (!bare) return setError(t('unknown.badHash'))
     setChecking(true)
     try {
       const status = await getTxStatus(bare)

@@ -17,6 +17,9 @@ import { SwapHaltBanner } from '@/components/swap/swap-halt-banner'
 import { SwapInputFrom } from '@/components/swap/swap-input-from'
 import { SwapInputTo } from '@/components/swap/swap-input-to'
 import { SwapSettings } from '@/components/swap/swap-settings'
+import { AutomaticModeSelector } from '@/components/swap/automatic-bridge-controls'
+import { AutomaticOrders } from '@/components/swap/auto-bridge-progress'
+import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
 import { isAssetInMode, useAssets } from '@/hooks/use-assets'
 import { useQuote } from '@/hooks/use-quote'
 import { useSwapRates } from '@/hooks/use-rates'
@@ -44,6 +47,7 @@ const DEFAULT_REVERSE_TARGETS = ['BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BD
 
 export const Swap = () => {
   const tBridge = useTranslations('bridge.form')
+  const { automatic } = useAutomaticBridge()
   const [picker, setPicker] = useState<'from' | 'to'>()
   const activeBridge = useActiveBridge()
   const [progressId, setProgressId] = useState<string>()
@@ -131,6 +135,7 @@ export const Swap = () => {
       {/* Forward: THORChain swap to native BCH, then a separately signed Cauldron swap to the token.
             Reverse: a Cauldron sale of the token for BCH, then a BCH deposit to THORChain. No limit,
             private or memoless entry points. */}
+      <AutomaticModeSelector />
       <div className="bridge-card">
         {reverse ? (
           <BchInputFrom selecting={picker === 'from'} onSelectOpenChange={open => setPicker(open ? 'from' : undefined)} />
@@ -162,9 +167,10 @@ export const Swap = () => {
       ) : (
         <SwapButton instantSwapSupported={false} instantSwapAvailable={false} onShowBridge={() => setProgressId(activeBridge?.uid)} />
       )}
-      <BchWalletStatus />
+      {!automatic && <BchWalletStatus />}
 
       <BridgeOperationPanel uid={progressId} onClose={() => setProgressId(undefined)} />
+      <AutomaticOrders />
       {flowPreview && <BridgeFlowPreview stage={flowPreview} />}
 
       {isHalted && !isPrivateTab && (

@@ -7,7 +7,7 @@ import { format, formatDuration, intervalToDuration, isSameDay, isToday, isYeste
 import { CircleAlert, CircleCheck, ClockFading, SendHorizontal, Undo2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslations } from 'next-intl'
-import { Credenza, CredenzaContent, CredenzaHeader, CredenzaTitle } from '@/components/ui/credenza'
+import { Credenza, CredenzaContent, CredenzaDescription, CredenzaHeader, CredenzaTitle } from '@/components/ui/credenza'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { AssetIcon } from '@/components/asset-icon'
 import { CopyButton } from '@/components/button-copy'
@@ -25,6 +25,9 @@ import { useAccounts, useSelectAccount } from '@/hooks/use-wallets'
 import { formatExpiration } from '@/lib/swap-helpers'
 import { cn, toCurrencyFixed, truncate } from '@/lib/utils'
 import { hasDepositArrived, isTxPending, Transaction, useTransactions } from '@/store/transaction-store'
+import { autoBridgeStore } from '@/store/auto-bridge-store'
+import { AutomaticHistoryRow } from '@/components/swap/auto-bridge-progress'
+import { useAutomaticHydrated } from '@/hooks/use-automatic-bridge'
 
 interface HistoryDialogProps {
   isOpen: boolean
@@ -33,6 +36,12 @@ interface HistoryDialogProps {
 
 export const TransactionHistoryDialog = ({ isOpen, onOpenChange }: HistoryDialogProps) => {
   const transactions = useTransactions()
+  const automatic = autoBridgeStore(state => state.orders)
+  const hydrated = useAutomaticHydrated()
+  const entries = useMemo(() => [
+    ...transactions.map(tx => ({ kind: 'manual' as const, tx, timestamp: new Date(tx.timestamp).getTime() })),
+    ...(hydrated ? automatic.map(reference => ({ kind: 'automatic' as const, reference, timestamp: reference.order?.createdAt ?? reference.createdAt ?? 0 })) : [])
+  ].sort((a, b) => b.timestamp - a.timestamp), [transactions, automatic, hydrated])
   const accounts = useAccounts()
   const selectAccount = useSelectAccount()
   const [expandTx, setExpandTx] = useState<string | null>(null)
@@ -100,14 +109,20 @@ export const TransactionHistoryDialog = ({ isOpen, onOpenChange }: HistoryDialog
       <CredenzaContent className="flex h-auto max-h-5/6 flex-col md:max-w-xl">
         <CredenzaHeader>
           <CredenzaTitle className="text-txt-high-contrast text-base font-semibold md:text-2xl">{t('title')}</CredenzaTitle>
+          <CredenzaDescription className="sr-only">{tBridge('completion.history')}</CredenzaDescription>
         </CredenzaHeader>
 
         <ScrollArea className="flex min-h-0 flex-1 px-4 md:px-8" classNameViewport="flex-1 h-auto">
           <div className="pb-4">
-            {transactions.map((tx, i) => {
-              const txDate = new Date(tx.timestamp)
+            {entries.map((entry, i) => {
+              const txDate = new Date(entry.timestamp)
               const shouldRenderHeader = !lastDate || !isSameDay(txDate, lastDate)
               lastDate = txDate
+              if (entry.kind === 'automatic') return <Fragment key={`auto-${entry.reference.id}`}>
+                {shouldRenderHeader && <div className={cn('text-txt-med-contrast px-4 pb-3 text-sm font-semibold', { 'pt-3': i !== 0 })}>{formatDate(txDate)}</div>}
+                <AutomaticHistoryRow reference={entry.reference} />
+              </Fragment>
+              const tx = entry.tx
 
               const details = tx.details
               const status = tx.status
