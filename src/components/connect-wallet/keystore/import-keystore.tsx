@@ -106,7 +106,7 @@ export function ImportKeystore({ chains, onBack, onConnect }: { chains: Chain[];
                 if (!file) fileInputRef.current?.click()
               }}
               className={cn(
-                'flex h-40 flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed px-8 text-center transition-all duration-200 ease-in-out',
+                'flex h-40 flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed px-8 text-center transition-[background-color,border-color] duration-200 ease-in-out',
                 { 'hover:bg-sub-container-modal/50 cursor-pointer': !file },
                 { 'bg-sub-container-modal/50': isDragging }
               )}

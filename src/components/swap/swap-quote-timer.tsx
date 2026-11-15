@@ -95,7 +95,7 @@ export const SwapQuoteTimer = ({ quote, isLoading, refetch }: SwapQuoteTimerProp
             strokeDasharray={strokeDasharray}
             strokeDashoffset={strokeDashoffset}
             strokeLinecap="round"
-            className="stroke-txt-med-contrast transition-all duration-100"
+            className="stroke-txt-med-contrast transition-[stroke-dashoffset] duration-100"
           />
         </svg>
         <span className="text-txt-label-small absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform text-[10px] font-semibold">

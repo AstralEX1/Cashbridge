@@ -20,7 +20,7 @@ function Switch({
         'peer group/switch',
         'inline-flex shrink-0 items-center rounded-full',
         'border border-transparent shadow-xs',
-        'transition-all outline-none',
+        'transition-[background-color,border-color,box-shadow,opacity] outline-none',
         'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]',
         'disabled:cursor-not-allowed disabled:opacity-50',
         'data-[state=checked]:bg-primary',
