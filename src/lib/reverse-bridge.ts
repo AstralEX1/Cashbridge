@@ -5,7 +5,7 @@ import { getProvider } from '@tcswap/toolboxes/evm'
 import type { DappConnectionManager } from '@wizardconnect/dapp'
 import type { Asset } from '@/components/swap/asset'
 import { BridgeConfig } from '@/config'
-import { getInboundAddresses, getQuotes, isBridgeRoute } from '@/lib/api'
+import { getInboundAddresses, getQuotes, getTxStatus, isBridgeRoute } from '@/lib/api'
 import { type BchBinding, listWalletCoins, type ScriptUtxo } from '@/lib/bch'
 import { formatBaseUnits, minOutputFor } from '@/lib/bridge'
 import { withLock } from '@/lib/bridge-first-leg'
@@ -227,4 +227,28 @@ export const findPayout = async (op: BridgeOperation) => {
     from = to + 1
   }
   return { scannedBlock: from }
+}
+
+// Gap filler when the log search finds nothing (a router that changed, an RPC that limits log
+// queries): THORNode names the payout's hash, and it counts only once the destination chain's own
+// receipt shows a successful transaction whose TransferOut pays the destination for this deposit.
+export const confirmReportedPayout = async (op: BridgeOperation) => {
+  const reverse = op.reverse
+  const depositTxid = reverse?.deposit?.txid
+  if (!reverse || !depositTxid) return undefined
+  const chain = destinationChainOf(reverse.buyAsset)
+  const status = await getTxStatus(depositTxid)
+  const outs = (status.out_txs ?? []).filter(o => o.chain?.toUpperCase() === chain && o.memo?.toUpperCase().startsWith('OUT:'))
+  if (outs.length === 0) return undefined
+  const provider = await getProvider(chain as EVMChain)
+  for (const out of outs) {
+    const receipt = await provider.getTransactionReceipt(out.id.startsWith('0x') ? out.id : `0x${out.id}`)
+    if (!receipt || receipt.status !== 1) continue
+    const match = matchPayout(
+      receipt.logs.map(l => ({ topics: [...l.topics], data: l.data, transactionHash: receipt.hash, blockNumber: receipt.blockNumber })),
+      { destination: reverse.destination, depositTxid }
+    )
+    if (match) return { hash: match.hash, amount: match.amount }
+  }
+  return undefined
 }

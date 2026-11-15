@@ -42,6 +42,7 @@ import { readableError } from '@/lib/errors'
 import {
   bchAsset,
   blockHeight,
+  confirmReportedPayout,
   destinationChainOf,
   findPayout,
   pickBchFunding,
@@ -78,6 +79,8 @@ type Update = ReturnType<typeof useUpdateBridge>
 const formatBch = (sats: bigint | string) => formatBaseUnits(sats, 8)
 // A prepared deposit is signed only while this fresh; after that it is quoted and built again.
 const DEPOSIT_TTL_MS = 60_000
+// How long the payout is looked for in the router's logs alone before THORNode's report is also read.
+const REPORTED_PAYOUT_AFTER_MS = 3 * 60_000
 const toNumber = (value?: USwapNumber) => (value ? Number(value.toSignificant(12)) : undefined)
 const usdText = (value?: number) => (value === undefined || !Number.isFinite(value) ? undefined : formatUsd(value))
 
@@ -211,6 +214,10 @@ export const syncReverse = async (tx: BridgeTx, update: Update) => {
         findPayout(op).catch(() => undefined),
         findThorchainOutbound(deposit.txid, op.binding.lockingBytecode, 'REFUND').catch(() => undefined)
       ])
+      // THORChain's own report fills the gap after a while, still checked on the destination chain.
+      const reported =
+        !found?.payout && Date.now() - (deposit.signedAt ?? 0) > REPORTED_PAYOUT_AFTER_MS ? await confirmReportedPayout(op).catch(() => undefined) : undefined
+      if (reported) return update(tx.uid, current => ({ stage: 'completed', reverse: { ...current.reverse!, payout: reported } }))
       if (found?.payout) {
         return update(tx.uid, current => ({
           stage: 'completed',
@@ -368,10 +375,16 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
   const slippage = useSwapStore(state => state.slippage)
   const wallet = useBchWallet()
   const update = useUpdateBridge()
-  const { quote } = useQuote()
+  const live = useQuote().quote
   const sale = useTokenSale(token, amount)
   const [open, setOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  // The form refreshes its quote on a timer, and a refreshing quote reads as none: the dialog keeps
+  // the last one it showed (the deposit itself is always quoted again right before signing).
+  const [quote, setQuote] = useState(live)
+  useEffect(() => {
+    if (live && !submitting) setQuote(live)
+  }, [live, submitting])
 
   const identifiers = useMemo(() => [...new Set([BridgeConfig.buyAsset, ...(asset ? [asset.identifier] : []), ...(quote?.fees.map(f => f.asset) ?? [])])].sort(), [asset, quote])
   const { rates } = useRates(identifiers, quote?.providers[0])
