@@ -157,6 +157,20 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
   }, [wc.state, wc.manager, liveness.lost])
   const state = wc.state === 'reconnecting' && liveness.heard > liveness.lost ? 'connected' : wc.state
 
+  // WizardConnect closes the relay whenever the tab is hidden, which is exactly when the user turns to
+  // the wallet to approve: a sign request still in flight fails with "relay connection closed by us"
+  // although the wallet may already have it. While a session is open, the hidden transition is kept
+  // from reaching document listeners (window capture runs first), so the relay stays up. A socket the
+  // browser itself kills still goes through the library's reconnect loop. visibilityState is untouched.
+  useEffect(() => {
+    if (!wc.manager) return
+    const keepRelay = (event: Event) => {
+      if (document.visibilityState === 'hidden') event.stopImmediatePropagation()
+    }
+    window.addEventListener('visibilitychange', keepRelay, true)
+    return () => window.removeEventListener('visibilitychange', keepRelay, true)
+  }, [wc.manager])
+
   // 'reconnecting' keeps the binding: the manager still holds the wallet's xpubs, and a phone wallet
   // drops to it whenever its app is backgrounded (no pong for 75 s). Only signing needs it live.
   useEffect(() => {

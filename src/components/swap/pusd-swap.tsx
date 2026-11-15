@@ -118,24 +118,32 @@ export const useTokenEstimate = () => {
 
 // --- BCH wallet --------------------------------------------------------------------------------
 
+// A silent wallet app matters only when the wallet is needed: a stored session resumes without it
+// and the saved address stands in, so the form does not warn about it. The stored session stays
+// until the user picks a new QR.
+const BchStalledNotice = ({ className }: { className?: string }) => {
+  const t = useTranslations('bridge')
+  const { walletName, pairAgain } = useBchWallet()
+  return (
+    <p className={className}>
+      {t('wallet.reconnectStalled', { name: walletName ?? t('wallet.yourWallet') })}{' '}
+      <button type="button" className="cursor-pointer underline" onClick={pairAgain}>
+        {t('wallet.pairAgain')}
+      </button>
+    </p>
+  )
+}
+
 export const BchWalletStatus = () => {
   const t = useTranslations('bridge')
-  const { mismatch, error, reconnectStalled, walletName, pairAgain } = useBchWallet()
-  if (!mismatch && !error && !reconnectStalled) return null
+  const { mismatch, error, binding, reconnectStalled } = useBchWallet()
+  const stalled = reconnectStalled && !binding
+  if (!mismatch && !error && !stalled) return null
   return (
     <div className="bridge-wallet">
       {mismatch && <SwapError error={new Error(t('wallet.mismatch'))} />}
       {error && <SwapError error={new Error(error)} />}
-      {/* The kept binding moves the main button past the BCH step, so a fresh pairing is offered
-          here. The stored session stays until the user picks it. */}
-      {reconnectStalled && (
-        <p>
-          {t('wallet.reconnectStalled', { name: walletName ?? t('wallet.yourWallet') })}{' '}
-          <button type="button" className="cursor-pointer underline" onClick={pairAgain}>
-            {t('wallet.pairAgain')}
-          </button>
-        </p>
-      )}
+      {stalled && <BchStalledNotice />}
     </div>
   )
 }
@@ -959,6 +967,7 @@ const ReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: number; com
   const t = useTranslations('bridge')
   const leg = useSecondLeg(tx)
   const token = leg.token
+  const { reconnectStalled } = useBchWallet()
   // Shown from the live trade at once; the reviewed build (exact figures) replaces it when ready.
   const live = useTokenQuoteFor(leg.reviewed ? undefined : formatBch(leg.total), token)
   const figures = leg.reviewed
@@ -985,7 +994,12 @@ const ReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: number; com
       details={
         <>
           {quote && <CauldronQuoteBlock quote={quote} />}
-          {!leg.walletMatches && <p className="bridge-flow-message">{t('progress.reconnectBch')}</p>}
+          {!leg.walletMatches &&
+            (reconnectStalled ? (
+              <BchStalledNotice className="bridge-flow-message" />
+            ) : (
+              <p className="bridge-flow-message">{t('progress.reconnectBch')}</p>
+            ))}
           {leg.error && <SwapError error={new Error(leg.error)} />}
         </>
       }

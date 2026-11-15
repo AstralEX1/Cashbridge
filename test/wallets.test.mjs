@@ -293,12 +293,12 @@ test('BCH session migration and clearing do not throw when storage is blocked', 
 })
 
 test('the source badge shows a connect action while disconnected and a short address with actions after connection', () => {
-  const disconnected = render(BridgeWalletBadge, { side: 'from' })
+  const disconnected = render(BridgeWalletBadge, { kind: 'other' })
   assert.match(disconnected.html, /Connect wallet/)
   disconnected.tree.props.onClick()
   assert.deepEqual(controls.dialogs, [{ chain: Chain.Ethereum }])
   controls.account = account()
-  const connected = render(BridgeWalletBadge, { side: 'from' })
+  const connected = render(BridgeWalletBadge, { kind: 'other' })
   assert.match(connected.html, /0x1111…1111/)
   assert.match(connected.html, /bridge-wallet-dot/)
   assert.match(connected.html, /Copy|copy/)
@@ -309,7 +309,7 @@ test('the source badge shows a connect action while disconnected and a short add
 test('a remembered BCH address is never shown as connected and a stalled reconnect offers a fresh pairing', () => {
   let paired = false
   controls.bch = { state: 'reconnecting', remembered: { cashAddress: 'bitcoincash:qfixture' }, reconnectStalled: true, pairAgain() { paired = true } }
-  const { tree, html } = render(BridgeWalletBadge, { side: 'to' })
+  const { tree, html } = render(BridgeWalletBadge, { kind: 'bch' })
   assert.match(html, /Connect BCH wallet/)
   assert.doesNotMatch(html, /bridge-wallet-dot|qfixture/)
   assert.equal(tree.props.disabled, false)
@@ -343,7 +343,7 @@ test('disconnecting one provider keeps another provider on the same chain usable
 
 test('the BCH badge shows the connected destination and removes the connect action', () => {
   controls.bch = { state: 'connected', binding: { cashAddress: 'bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a' } }
-  const { html } = render(BridgeWalletBadge, { side: 'to' })
+  const { html } = render(BridgeWalletBadge, { kind: 'bch' })
   assert.match(html, /bridge-wallet-dot/)
   assert.match(html, /qpm2qs…dx6a/)
   assert.doesNotMatch(html, /Connect BCH wallet/)
