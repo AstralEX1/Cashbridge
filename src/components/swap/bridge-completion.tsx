@@ -22,7 +22,7 @@ export interface BridgeCompletionProps {
 
 const CauldronEarn = ({ category }: { category: string }) => {
   const t = useTranslations('bridge.completion')
-  const { data: apy } = useQuery({
+  const { data: apy, isPending } = useQuery({
     queryKey: ['cauldron-apy', category],
     queryFn: () => getCauldronApy(category),
     staleTime: 5 * 60_000,
@@ -30,9 +30,12 @@ const CauldronEarn = ({ category }: { category: string }) => {
   })
   return (
     <a className="bridge-complete-earn" href={cauldronLiquidityUrl(category)} target="_blank" rel="noopener noreferrer" title={t('apySource')}>
+      {/* The APY reads as pending while it loads; only a failed or empty answer falls back. */}
       {typeof apy === 'number'
         ? t('earn', { apy: apy.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })
-        : t('provideLiquidity')}
+        : isPending
+          ? t('earn', { apy: '…' })
+          : t('provideLiquidity')}
       <ExternalLink size={15} aria-hidden="true" />
     </a>
   )
