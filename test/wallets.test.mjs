@@ -405,6 +405,27 @@ test('balances are scoped to the account address and cached funds disappear imme
   assert.equal(controls.queryOptions.enabled, false)
 })
 
+test('EVM calls switch the wallet to the transaction\'s chain first', async () => {
+  // The SDK wraps every toolbox call this app makes (approve, call, sendTransaction, ...) with a
+  // network switch; this keeps that true across SDK updates.
+  const { prepareNetworkSwitch } = await import('@tcswap/helpers')
+  let chainId = 1n
+  const switched = []
+  const provider = {
+    getNetwork: async () => ({ chainId }),
+    request: async ({ method, params }) => {
+      if (method === 'wallet_switchEthereumChain') (switched.push(params[0].chainId), (chainId = BigInt(params[0].chainId)))
+      return null
+    }
+  }
+  provider.send = (method, params) => provider.request({ method, params })
+  const toolbox = { approve: async () => chainId, sendTransaction: async () => chainId }
+  const wallet = prepareNetworkSwitch({ chain: Chain.Base, provider, toolbox, networkParams: { chainId: '0x2105' } })
+  assert.equal(await wallet.approve({}), 8453n)
+  assert.equal(await wallet.sendTransaction({}), 8453n)
+  assert.deepEqual(switched, ['0x2105'])
+})
+
 test('on a phone MetaMask opens this page in its app, keeping the path and query', async () => {
   const { isMobileBrowser, metaMaskAppLink } = await import('../src/lib/metamask-link.ts')
   assert.equal(metaMaskAppLink({ host: 'www.cashbridge.space', pathname: '/sell-base.usdc-buy-bch.bch', search: '?amount=5' }), 'https://metamask.app.link/dapp/www.cashbridge.space/sell-base.usdc-buy-bch.bch?amount=5')
