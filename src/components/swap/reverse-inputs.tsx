@@ -8,6 +8,7 @@ import { USwapNumber } from '@tcswap/core'
 import { DecimalInput } from '@/components/decimal/decimal-input'
 import { DecimalText } from '@/components/decimal/decimal-text'
 import { useBchWallet } from '@/components/bch-wallet'
+import { AmountPresets, useRevealOnHover } from '@/components/swap/amount-presets'
 import { BridgeAssetButton, BridgeAssetPicker, type BridgeInputProps } from '@/components/swap/bridge-asset-picker'
 import { BridgeInputSwitcher } from '@/components/swap/bridge-input-switcher'
 import { BridgeWalletBadge } from '@/components/swap/bridge-wallet-badge'
@@ -21,6 +22,7 @@ import { useAssetFrom } from '@/hooks/use-swap'
 import { useTokenSale } from '@/hooks/use-token-sale'
 import { listWalletCoins } from '@/lib/bch'
 import { formatBaseUnits } from '@/lib/bridge'
+import { percentOfUnits } from '@/lib/amount-presets'
 import { formatUsd, valueImpact } from '@/lib/bridge-summary'
 import type { CauldronToken } from '@/lib/cauldron-tokens'
 import { checkInbound, DepositError, type InboundAddress, maxBchDeposit } from '@/lib/thorchain-deposit'
@@ -89,6 +91,7 @@ export const BchInputFrom = ({ selecting, onSelectOpenChange }: BridgeInputProps
   const sale = useTokenSale(token, amountFrom)
   const bchUsd = useBchUsd()
   const trigger = useRef<HTMLButtonElement>(null)
+  const reveal = useRevealOnHover()
   const close = () => {
     onSelectOpenChange(false)
     requestAnimationFrame(() => trigger.current?.focus())
@@ -103,7 +106,7 @@ export const BchInputFrom = ({ selecting, onSelectOpenChange }: BridgeInputProps
   return (
     <BridgeInputSwitcher selecting={selecting}>
       <div className="bridge-input-switcher__slot" aria-hidden={selecting} inert={selecting}>
-        <section className="bridge-input" aria-label={t('from')}>
+        <section className="bridge-input" aria-label={t('from')} {...reveal.handlers}>
           <div className="bridge-input-heading">
             <BridgeAssetButton ref={trigger} bch token={token} aria-label={t('from')} aria-expanded={selecting} onClick={() => onSelectOpenChange(true)} />
             <BridgeWalletBadge kind="bch" />
@@ -134,6 +137,14 @@ export const BchInputFrom = ({ selecting, onSelectOpenChange }: BridgeInputProps
           </div>
           <div className="bridge-input-meta">
             <span>{usd}</span>
+            {max !== undefined && max > 0n && (
+              <AmountPresets
+                revealed={reveal.revealed}
+                inputId="swap-sell-amount"
+                onPercent={percent => setAmountFrom(formatBaseUnits(percentOfUnits(max, percent), balance.decimals))}
+                onMax={() => setAmountFrom(formatBaseUnits(max, balance.decimals))}
+              />
+            )}
           </div>
         </section>
       </div>

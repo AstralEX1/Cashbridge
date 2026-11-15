@@ -286,6 +286,74 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 25 / 50 / 75 / MAX chips: out of flow on the right of the meta row, so revealing them never moves the form. */
+.bridge-input-meta {
+  position: relative;
+}
+.bridge-presets {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  transform: translateY(-50%);
+}
+.bridge-presets.is-leaving {
+  pointer-events: none;
+}
+.bridge-preset {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid #0f182010;
+  border-radius: 10px;
+  background: #0f182010;
+  color: #0f1820c7;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+  animation: bridge-preset-in 220ms cubic-bezier(0.22, 0.9, 0.32, 1) both;
+  animation-delay: var(--bridge-preset-delay, 0ms);
+}
+.bridge-presets.is-leaving .bridge-preset {
+  animation-name: bridge-preset-out;
+}
+.bridge-preset:hover {
+  background: #0f18201a;
+  color: #0f1820;
+}
+.bridge-preset:active {
+  background: #0ac18e29;
+  color: #0f1820;
+}
+@keyframes bridge-preset-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.95);
+  }
+}
+@keyframes bridge-preset-out {
+  to {
+    opacity: 0;
+    transform: translateY(2px) scale(0.96);
+  }
+}
+@media (max-width: 380px) {
+  .bridge-preset {
+    padding: 0 8px;
+    font-size: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bridge-preset {
+    animation: none;
+  }
+}
 .bridge-divider {
   display: flex;
   align-items: center;
