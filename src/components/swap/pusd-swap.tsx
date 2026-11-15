@@ -460,7 +460,7 @@ const FlowAmount = ({ token }: { token: FlowToken }) => (
   <div className="bridge-flow-token">
     <div>
       {token.icon}
-      <strong>{token.amount}</strong>
+      <strong title={token.amount}>{token.amount}</strong>
     </div>
     <span>
       {token.ticker}

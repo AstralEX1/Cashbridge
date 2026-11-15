@@ -44,7 +44,7 @@ export const BridgeFlowPreview = ({ stage = 'bridging' }: { stage?: string }) =>
             ? pusd
               ? { amount: '2.04', ticker: 'PUSD', usd: '$2.03', icon: <TokenMark token={PUSD_TOKEN} size={30} /> }
               : { amount: '0.0073', ticker: 'BCH', usd: '$2.05', icon: <BchMark size={30} /> }
-            : { amount: '0.001', ticker: 'ETH', usd: '$2.31', icon: ETH_ICON }
+            : { amount: '0.000546306', ticker: 'ETH', usd: '$1.29', icon: ETH_ICON }
         }
         bch={
           reverse && !pusd
