@@ -2018,9 +2018,22 @@ button.bridge-flow-primary:disabled {
 .bridge-switch:disabled { cursor: default; }
 .bridge-switch:focus-visible, .bridge-auto-history:focus-visible { outline: 2px solid #0ac18e; outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { .bridge-switch, .bridge-switch > span { transition: none; } }
-.bridge-paste-row { display: flex; justify-content: flex-end; margin-top: 6px; }
-.bridge-paste-link { color: #5d6e73; font-size: 12px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
-.bridge-paste-link:hover { color: #0f1820; }
+/* BCH receiving address menu (router and plain BCH): the wallet pill opens connect / paste options. */
+.bridge-wallet-menu { cursor: pointer; }
+.bridge-wallet-menu[data-state='open'] { background: #eaf0ef; }
+.bridge-wallet-chevron { margin: -2px -2px -2px 0; color: #617571; transition: transform .2s; }
+.bridge-wallet-menu[data-state='open'] .bridge-wallet-chevron { transform: rotate(180deg); }
+.bridge-wallet-dot.is-invalid { background: #e0a32e; }
+.bridge-wallet-dropdown { min-width: 240px; padding: 8px; border: 1px solid #d5e1de; border-radius: 20px; background: #f7fbfa; color: #0f1820; box-shadow: 0 16px 40px #0f182033; }
+.bridge-wallet-dropdown .bridge-wallet-option { gap: 12px; padding: 12px 14px; border-radius: 14px; color: #0f1820; font-size: 14px; font-weight: 600; cursor: pointer; }
+.bridge-wallet-dropdown .bridge-wallet-option[data-highlighted] { background: #eaf0ef; }
+.bridge-wallet-dropdown .bridge-wallet-option[data-active] { background: #e3f5ee; }
+.bridge-wallet-dropdown .bridge-wallet-option svg { color: #617571; }
+.bridge-wallet-dropdown .bridge-wallet-option.is-muted { color: #617571; }
+.bridge-wallet-option-text { display: grid; gap: 2px; min-width: 0; }
+.bridge-wallet-option-text small { color: #617571; font-size: 12px; font-weight: 500; }
+.bridge-wallet-dropdown .bridge-wallet-option .bridge-wallet-check { margin-left: auto; color: #0ac18e; }
+.bridge-wallet-separator { margin: 6px 4px; background: #dce6e8; }
 .bridge-paste-field { position: relative; }
 .bridge-paste-field input { padding-right: 40px; }
 .bridge-paste-clear { position: absolute; top: 50%; right: 8px; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 999px; color: #5d6e73; transform: translateY(-50%); cursor: pointer; }
