@@ -876,7 +876,8 @@
       "poolImpact": "Pool price impact",
       "learnFees": "Learn more about the fees",
       "send": "Send {amount} {ticker}",
-      "sendFirst": "Send {amount} {ticker} (1/2)"
+      "sendFirst": "Send {amount} {ticker} (1/2)",
+      "approveInWallet": "Open your {chain} wallet and approve the transaction."
     },
     "cancelledInWallet": "Transaction cancelled in wallet",
     "reverse": {
@@ -919,7 +920,17 @@
         "kept_bch": "Kept BCH",
         "refunded": "Refunded",
         "failed": "Failed"
-      }
+      },
+      "openWallet": "Open {wallet} and approve the swap. It is waiting for you there.",
+      "cancel": "Cancel",
+      "waitingWallet": "Waiting for {wallet}…",
+      "preparing": "Preparing the transaction…",
+      "sending": "Sending…",
+      "prepareFailed": "Could not prepare the transaction. Try again.",
+      "signCancelled": "Cancelled. Nothing was sent.",
+      "signDeclined": "You declined it in {wallet}. Nothing was sent; you can try again.",
+      "signTimedOut": "{wallet} did not answer in time, so the request was withdrawn. Nothing was sent; try again.",
+      "signUndelivered": "The request did not reach {wallet}. Open the wallet app, then try again."
     }
   }
 }

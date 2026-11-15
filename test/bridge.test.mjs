@@ -708,3 +708,45 @@ test('a BCH refund of a deposit is recognised by its REFUND memo', () => {
   assert.equal(checkOutbound(raw, ctx, { tip: 1, utxos: [] }).kind, 'invalid', 'an OUT check does not accept a refund')
   assert.equal(checkOutbound(raw, { ...ctx, action: 'REFUND' }, { tip: 1, utxos: [] }).kind, 'ok')
 })
+
+// --- BCH wallet signing outcomes ----------------------------------------------------------------
+
+test('a wallet request ends as declined, timed out, cancelled or undelivered, and is re-sent only if it never left', async () => {
+  const { signInWallet, SignCancelled, SignDeclined, SignTimedOut, SignUndelivered } = await import('../src/lib/bch-signing.ts')
+  const tx = { unsignedHex: '00', sourceOutputs: [], ownIndexes: [] }
+  const manager = handler => {
+    const calls = []
+    return {
+      calls,
+      signTransaction: (request, { signal }) => {
+        calls.push(request)
+        return new Promise((resolve, reject) => {
+          signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true })
+          handler(calls.length, resolve, reject)
+        })
+      }
+    }
+  }
+  const declined = manager((n, resolve, reject) => reject(new Error('User rejected')))
+  await assert.rejects(signInWallet(declined, binding, tx, 'x'), SignDeclined)
+
+  // AbortSignal.timeout does not keep Node's event loop alive on its own.
+  const keepAlive = setInterval(() => {}, 1_000)
+  const silent = manager(() => {})
+  await assert.rejects(signInWallet(silent, binding, tx, 'x', { timeoutMs: 20 }), SignTimedOut).finally(() => clearInterval(keepAlive))
+
+  const controller = new AbortController()
+  const cancelled = signInWallet(manager(() => {}), binding, tx, 'x', { signal: controller.signal })
+  controller.abort()
+  await assert.rejects(cancelled, SignCancelled)
+
+  // A failed publish may still have reached the wallet: not sent twice.
+  const lost = manager((n, resolve, reject) => reject(new Error('Failed to publish sign_transaction_request to all relays')))
+  await assert.rejects(signInWallet(lost, binding, tx, 'x'), SignUndelivered)
+  assert.equal(lost.calls.length, 1)
+
+  // No relay connection at all: it never left, so it is sent once more.
+  const offline = manager((n, resolve, reject) => reject(new Error('[wizardconnect/dapp] Not connected')))
+  await assert.rejects(signInWallet(offline, binding, tx, 'x'), SignUndelivered)
+  assert.equal(offline.calls.length, 2)
+})

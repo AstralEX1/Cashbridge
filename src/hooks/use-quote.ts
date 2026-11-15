@@ -4,7 +4,7 @@ import { ProviderName, USwapError } from '@tcswap/helpers'
 import { QuoteResponseRoute } from '@tcswap/helpers/api'
 import { AppConfig } from '@/config'
 import { useAssetFrom, useAssetTo, useCustomInterval, useCustomQuantity, useSlippage, useSwap } from '@/hooks/use-swap'
-import { getQuotes } from '@/lib/api'
+import { getQuotes, QuoteTimeoutError } from '@/lib/api'
 import { BelowMinimumError, resolveQuoteError } from '@/lib/errors'
 import { isHoudiniProvider } from '@/lib/swap-helpers'
 import { useIsPrivateSend, useIsPrivateSwap } from '@/store/private-swap-store'
@@ -103,7 +103,9 @@ export const useQuote = (): UseQuote => {
         ? previous
         : undefined,
     enabled: !!(sellAmount && sellAsset && buyAsset && (reverse || (assetTo?.identifier && pairMatchesMode))),
-    retry: false,
+    // A THORChain timeout is transient: asked again a few seconds later, quietly.
+    retry: (count, error) => error instanceof QuoteTimeoutError && count < 2,
+    retryDelay: 3_000,
     refetchOnMount: false
   })
 

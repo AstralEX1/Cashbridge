@@ -25,6 +25,7 @@ import { BridgeBlocked, FirstLegRejected, startBridgeFirstLeg } from '@/componen
 import { useIsLimitSwap, useLimitSwapBuyAmount } from '@/store/limit-swap-store'
 import { useReplacementOrderStore, useSetReplacementOrder } from '@/store/replacement-order-store'
 import { useSwapStore } from '@/store/swap-store'
+import { chainLabel } from '@/components/connect-wallet/config'
 
 interface SwapDialogProps {
   provider: ProviderName
@@ -186,6 +187,11 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
                   </span>
                 )}
               </GenericButton>
+              {submitting && (
+                <p className="bridge-sign-hint" role="status">
+                  {tConfirm('approveInWallet', { chain: assetFrom ? chainLabel(assetFrom.chain) : '' })}
+                </p>
+              )}
             </div>
           </>
         ) : (

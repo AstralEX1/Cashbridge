@@ -19,7 +19,7 @@ import { GenericButton } from '@/components/generic-button'
 import { SwapError } from '@/components/swap/swap-error'
 import { BridgeConfig } from '@/config'
 import { useQuote } from '@/hooks/use-quote'
-import { useRates, useSwapRates } from '@/hooks/use-rates'
+import { useRates } from '@/hooks/use-rates'
 import { getMidgardActions, getTrack, getTxStatus } from '@/lib/api'
 import { checkUnspent, findThorchainOutbound, getTransactionState, historyIncludes, isTxid, normalizeTxid, verifyThorchainOutbound } from '@/lib/bch'
 import { firstLegFromChain, formatStepTime, type SourceReceipt, stepTime } from '@/lib/bridge-tracking'
@@ -36,15 +36,10 @@ import {
   BroadcastRejected,
   BroadcastUnknown,
   broadcastBchTransaction,
-  buildTokenTrade,
   CauldronError,
-  checkPoolCovenants,
-  checkPoolsLive,
-  checkSigned,
+  prepareTokenTrade,
   quoteToken,
-  type ReviewedSwap,
-  reviewBuild,
-  sourcesOf
+  type ReviewedSwap
 } from '@/lib/cauldron'
 import { type CauldronToken, PUSD_TOKEN } from '@/lib/cauldron-tokens'
 import { generateId } from '@/lib/utils'
@@ -72,12 +67,12 @@ const tokenAmount = (units: bigint | string, token: Pick<CauldronToken, 'decimal
 
 // A reviewed second-leg transaction is signed only while this fresh; after that it is rebuilt.
 const REVIEW_TTL_MS = 60_000
-const SIGN_TIMEOUT_MS = 5 * 60_000
 // The chains are polled often: a BCH outbound shows up in the mempool within seconds.
 const POLL_MS = 8_000
 
 import { withLock } from '@/lib/bridge-first-leg'
-import { ReverseOperationPanel, syncReverse } from '@/components/swap/reverse-bridge'
+import { ReverseOperationPanel, SignHint, type SignPhase, syncReverse } from '@/components/swap/reverse-bridge'
+import { SignCancelled, SignDeclined, signInWallet, SignTimedOut, SignUndelivered } from '@/lib/bch-signing'
 
 // The persisted operation as every tab sees it right now (another tab may have moved it on).
 const freshOperation = async (uid: string) => {
@@ -954,8 +949,13 @@ const ReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: number; com
             disabled={!leg.reviewed || !!leg.busy || !leg.walletMatches}
           >
             {leg.busy && <LoaderCircle size={18} className="animate-spin" />}
-            {t('progress.swapAction', { ticker: token.ticker })}
+            {leg.phase === 'signing'
+              ? t('reverse.waitingWallet', { wallet: leg.walletName })
+              : leg.phase === 'sending'
+                ? t('reverse.sending')
+                : t('progress.swapAction', { ticker: token.ticker })}
           </GenericButton>
+          <SignHint dark phase={leg.phase} walletName={leg.walletName} note={leg.note} onCancel={leg.cancel} />
           {!leg.reviewed && !leg.busy && leg.error && (
             <button type="button" className="bridge-flow-link" onClick={leg.prepare}>
               {t('progress.retry')}
@@ -1030,10 +1030,15 @@ const useSecondLeg = (tx: BridgeTx) => {
   const { binding, manager, state: walletState } = useBchWallet()
   const [review, setReview] = useState<Review>()
   const [busy, setBusy] = useState<'quote' | 'sign'>()
+  const [phase, setPhase] = useState<SignPhase>('idle')
   const [error, setError] = useState<string>()
+  const [note, setNote] = useState<string>()
   const [now, setNow] = useState(Date.now())
+  const abort = useRef<AbortController | undefined>(undefined)
+  useEffect(() => () => abort.current?.abort(), [])
   const op = tx.bridge
   const token = operationToken(op) ?? PUSD_TOKEN
+  const walletName = useBchWallet().walletName ?? op.walletName ?? t('wallet.yourWallet')
   const total = (op.received ?? []).reduce((sum, o) => sum + BigInt(o.value), 0n)
   // The binding outlives a wallet that is briefly away (see bch-wallet.tsx); signing needs it live.
   const walletMatches = walletState === 'connected' && !!binding && binding.pubkey === op.binding.pubkey
@@ -1065,24 +1070,12 @@ const useSecondLeg = (tx: BridgeTx) => {
         const sellSats = secondLegSellAmount(total, attempt)
         if (sellSats <= 0n) throw new Error(t('second.tooSmall', { ticker: token.ticker }))
         try {
-          const quote = await quoteToken({ category: token.category, side: 'buy', amount: sellSats })
-          const minOutput = minOutputFor(quote.output)
-          if (minOutput <= 0n) throw new Error(t('second.tooSmall', { ticker: token.ticker }))
-          const intent = {
-            category: token.category,
-            side: 'buy' as const,
-            funding,
-            lockingBytecode: op.binding.lockingBytecode,
-            tokenAddress: op.binding.tokenAddress,
-            cashAddress: op.binding.cashAddress,
-            // Build exactly what the route priced (it may round the requested amount down).
-            sell: quote.sell,
-            minOutput
-          }
-          const build = await buildTokenTrade(intent)
-          const reviewed = reviewBuild(build, intent)
-          checkPoolCovenants(reviewed)
-          await checkPoolsLive(reviewed)
+          // Quote, build and review in one pass over the pools (the trade priced is the one built).
+          const reviewed = await prepareTokenTrade(
+            { category: token.category, side: 'buy', funding, lockingBytecode: op.binding.lockingBytecode, tokenAddress: op.binding.tokenAddress, cashAddress: op.binding.cashAddress },
+            sellSats,
+            output => minOutputFor(output)
+          )
           if (request === preparation.current) setReview({ reviewed, at: Date.now() })
           return
         } catch (e) {
@@ -1113,24 +1106,24 @@ const useSecondLeg = (tx: BridgeTx) => {
   }, [expired])
 
   const sign = async () => {
-    if (!review || expired || !manager || !walletMatches || signing.current) return
+    if (!review || expired || !manager || !binding || !walletMatches || signing.current) return
     signing.current = true
+    const controller = new AbortController()
+    abort.current = controller
     setBusy('sign')
+    setPhase('signing')
     setError(undefined)
+    setNote(undefined)
+    let signed = false
     try {
       const done = await withLock(`bch-bridge-sign-${tx.uid}`, async () => {
         const current = await freshOperation(tx.uid)
         if (current?.bridge.stage !== 'bch_ready') throw new Error(t('second.movedOn'))
 
         const { reviewed } = review
-        const unsigned = reviewed.unsignedHex
-        const { ownIndexes } = reviewed
-        const inputPaths = ownIndexes.map(i => [i, op.binding.path, op.binding.addressIndex] as [number, string, number])
-        const attempt = generateId()
-
         update(tx.uid, () => ({
           secondLeg: {
-            attempt,
+            attempt: generateId(),
             category: token.category,
             sellSats: reviewed.sell.toString(),
             minOutput: reviewed.minOutput.toString(),
@@ -1140,43 +1133,57 @@ const useSecondLeg = (tx: BridgeTx) => {
           }
         }))
 
-        const response = await manager.signTransaction(
-          {
-            transaction: {
-              transaction: unsigned,
-              sourceOutputs: reviewed.sourceOutputs as never,
-              broadcast: false,
-              userPrompt: `Swap ${formatBch(reviewed.sell)} BCH for at least ${formatToken(reviewed.minOutput, token)} ${token.ticker}`
-            },
-            inputPaths
-          },
-          { signal: AbortSignal.timeout(SIGN_TIMEOUT_MS) }
+        const { txid, signedHex } = await signInWallet(
+          manager,
+          op.binding,
+          reviewed,
+          `Swap ${formatBch(reviewed.sell)} BCH for at least ${formatToken(reviewed.minOutput, token)} ${token.ticker}`,
+          { signal: controller.signal }
         )
-        if (response.error || !response.signedTransaction) throw new Error(response.error || t('second.rejected'))
-
-        const txid = checkSigned(unsigned, response.signedTransaction, ownIndexes, sourcesOf(reviewed), op.binding.pubkey)
+        signed = true
+        setPhase('sending')
 
         // Saved before broadcasting, so a lost broadcast answer is reconciled by this id.
-        update(tx.uid, op => ({
-          stage: 'second_leg_signed',
-          secondLeg: { ...op.secondLeg!, txid, signedHex: response.signedTransaction.toLowerCase() }
-        }))
+        update(tx.uid, op => ({ stage: 'second_leg_signed', secondLeg: { ...op.secondLeg!, txid, signedHex } }))
 
-        await broadcast(tx.uid, response.signedTransaction, txid, update)
+        await broadcast(tx.uid, signedHex, txid, update)
         return true
       })
       if (done === undefined) throw new Error(t('second.otherTab'))
     } catch (e) {
-      setError(e instanceof Error ? e.message : t('second.failed'))
+      // Not signed: the attempt is dropped, and the BCH stays ready for the next try.
+      if (!signed) update(tx.uid, current => (current.stage === 'bch_ready' ? { secondLeg: undefined } : {}))
+      if (e instanceof SignCancelled) setNote(t('reverse.signCancelled'))
+      else if (e instanceof SignDeclined) setNote(t('reverse.signDeclined', { wallet: walletName }))
+      else if (e instanceof SignTimedOut) setNote(t('reverse.signTimedOut', { wallet: walletName }))
+      else if (e instanceof SignUndelivered) setNote(t('reverse.signUndelivered', { wallet: walletName }))
+      else setError(e instanceof Error ? e.message : t('second.failed'))
       setReview(undefined)
+      void prepare()
     } finally {
       signing.current = false
+      abort.current = undefined
       setBusy(undefined)
+      setPhase('idle')
     }
   }
 
   const keep = () => update(tx.uid, current => (current.stage === 'bch_ready' ? { stage: 'kept_bch' } : {}))
-  return { token, reviewed: expired ? undefined : review?.reviewed, busy, error, walletMatches, prepare, sign, keep, total }
+  return {
+    token,
+    reviewed: expired ? undefined : review?.reviewed,
+    busy,
+    phase,
+    note,
+    walletName,
+    cancel: () => abort.current?.abort(),
+    error,
+    walletMatches,
+    prepare,
+    sign,
+    keep,
+    total
+  }
 }
 
 const rejectedAndFundingIntact = async (uid: string, txid: string) => {

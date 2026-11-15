@@ -2,14 +2,13 @@ import { Chain, EVMChain, getChainConfig } from '@tcswap/core'
 import { ProviderName } from '@tcswap/helpers'
 import type { QuoteResponseRoute } from '@tcswap/helpers/api'
 import { getProvider } from '@tcswap/toolboxes/evm'
-import type { DappConnectionManager } from '@wizardconnect/dapp'
 import type { Asset } from '@/components/swap/asset'
 import { BridgeConfig } from '@/config'
 import { getInboundAddresses, getQuotes, getTxStatus, isBridgeRoute } from '@/lib/api'
 import { type BchBinding, listWalletCoins, type ScriptUtxo } from '@/lib/bch'
 import { formatBaseUnits, minOutputFor } from '@/lib/bridge'
 import { withLock } from '@/lib/bridge-first-leg'
-import { buildTokenTrade, checkPoolCovenants, checkPoolsLive, checkSigned, quoteToken, type ReviewedSwap, reviewBuild, sourcesOf } from '@/lib/cauldron'
+import { prepareTokenTrade } from '@/lib/cauldron'
 import type { CauldronToken } from '@/lib/cauldron-tokens'
 import { buildDeposit, type BuiltDeposit, checkDepositMemo, checkInbound, DepositError, type InboundAddress, matchPayout, TRANSFER_OUT_TOPIC } from '@/lib/thorchain-deposit'
 import { generateId } from '@/lib/utils'
@@ -18,8 +17,6 @@ import { type BridgeOperation, getActiveBridge, type SwapTransaction, transactio
 // The reverse bridge: (token -> BCH on Cauldron, step 1) then a BCH deposit to THORChain paying an
 // EVM address (step 2). Both transactions are built here, checked, signed in the bound BCH wallet
 // without broadcasting, checked again, saved, and only then broadcast by this app.
-
-const SIGN_TIMEOUT_MS = 5 * 60_000
 
 export class ReverseBlocked extends Error {}
 
@@ -46,26 +43,7 @@ export const tokenAsset = (token: CauldronToken): Asset => ({
 
 export const destinationChainOf = (buyAsset: string) => buyAsset.split('.')[0].toUpperCase()
 
-// --- Signing ---------------------------------------------------------------------------------------
-
-export interface Signable {
-  unsignedHex: string
-  sourceOutputs: ReviewedSwap['sourceOutputs']
-  ownIndexes: number[]
-}
-
-// Asks the bound wallet to sign (never to broadcast) and checks that it only added signatures by the
-// bound key to our own inputs, and that the result verifies.
-export const signInWallet = async (manager: DappConnectionManager, binding: BchBinding, tx: Signable, prompt: string) => {
-  const inputPaths = tx.ownIndexes.map(i => [i, binding.path, binding.addressIndex] as [number, string, number])
-  const response = await manager.signTransaction(
-    { transaction: { transaction: tx.unsignedHex, sourceOutputs: tx.sourceOutputs as never, broadcast: false, userPrompt: prompt }, inputPaths },
-    { signal: AbortSignal.timeout(SIGN_TIMEOUT_MS) }
-  )
-  if (response.error || !response.signedTransaction) throw new Error(response.error || 'The wallet did not sign the transaction')
-  const txid = checkSigned(tx.unsignedHex, response.signedTransaction, tx.ownIndexes, sourcesOf(tx), binding.pubkey)
-  return { txid, signedHex: response.signedTransaction.toLowerCase() }
-}
+export { signInWallet, type Signable } from '@/lib/bch-signing'
 
 // --- Step 1: the Cauldron sale -------------------------------------------------------------------
 
@@ -87,22 +65,18 @@ export const prepareSale = async (token: CauldronToken, sellUnits: bigint, bindi
   const tokenCoins = utxos.filter(u => u.token?.category === token.category && !u.token.nft)
   const coins = pick(tokenCoins, u => u.token!.amount, sellUnits)
   if (!coins) throw new DepositError(`The BCH wallet holds less ${token.ticker} than this amount at the connected address`)
-  const quote = await quoteToken({ category: token.category, side: 'sell', amount: sellUnits })
-  const minOutput = minOutputFor(quote.output, slippageBps)
-  const intent = {
-    category: token.category,
-    side: 'sell' as const,
-    funding: coins.map(u => ({ txid: u.txid, vout: u.vout, value: u.value.toString(), token: { category: token.category, amount: u.token!.amount.toString() } })),
-    lockingBytecode: binding.lockingBytecode,
-    tokenAddress: binding.tokenAddress,
-    cashAddress: binding.cashAddress,
-    sell: quote.sell,
-    minOutput
-  }
-  const reviewed = reviewBuild(await buildTokenTrade(intent), intent)
-  checkPoolCovenants(reviewed)
-  await checkPoolsLive(reviewed)
-  return reviewed
+  return prepareTokenTrade(
+    {
+      category: token.category,
+      side: 'sell',
+      funding: coins.map(u => ({ txid: u.txid, vout: u.vout, value: u.value.toString(), token: { category: token.category, amount: u.token!.amount.toString() } })),
+      lockingBytecode: binding.lockingBytecode,
+      tokenAddress: binding.tokenAddress,
+      cashAddress: binding.cashAddress
+    },
+    sellUnits,
+    output => minOutputFor(output, slippageBps)
+  )
 }
 
 // --- Step 2: the THORChain deposit ---------------------------------------------------------------
@@ -174,6 +148,12 @@ export const pickBchFunding = (utxos: ScriptUtxo[], amountSats: bigint) => {
   )
   if (!coins) throw new DepositError('The BCH wallet holds less BCH than this amount and its fee at the connected address')
   return coins.map(u => ({ txid: u.txid, vout: u.vout, value: u.value.toString() }))
+}
+
+// A plain BCH deposit of `amountSats` from the bound address, quoted and built, ready to sign.
+export const prepareBchDeposit = async (args: { amountSats: bigint; binding: BchBinding; buyAsset: string; destination: string; slippage: number }) => {
+  const { utxos } = await listWalletCoins(args.binding.lockingBytecode)
+  return prepareDeposit({ ...args, funding: pickBchFunding(utxos, args.amountSats), payAll: false })
 }
 
 export const blockHeight = async (chain: string) => (await getProvider(chain as EVMChain)).getBlockNumber()

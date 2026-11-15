@@ -1772,3 +1772,19 @@ button.bridge-flow-primary:disabled {
   border-radius: 999px;
   object-fit: cover;
 }
+.bridge-sign-hint {
+  margin-top: 2px;
+  color: #5d6e73;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+}
+.bridge-sign-hint.is-dark {
+  color: #9bafb8;
+}
+.bridge-sign-cancel {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}

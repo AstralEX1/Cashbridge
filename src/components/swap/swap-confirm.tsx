@@ -3,7 +3,7 @@ import { useTranslations } from 'next-intl'
 import { USwapNumber } from '@tcswap/core'
 import { ArrowRight, ChevronDown, Clock, Fuel, Route, TrendingDown, Wallet } from 'lucide-react'
 import { QuoteResponseRoute } from '@tcswap/helpers/api'
-import { CredenzaHeader, CredenzaTitle } from '@/components/ui/credenza'
+import { CredenzaDescription, CredenzaHeader, CredenzaTitle } from '@/components/ui/credenza'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { AssetIcon } from '@/components/asset-icon'
 import { CopyButton } from '@/components/button-copy'
@@ -94,6 +94,7 @@ export const BridgeConfirm = ({ quote, token, bchAddress }: BridgeConfirmProps) 
     <>
       <CredenzaHeader>
         <CredenzaTitle>{t('title')}</CredenzaTitle>
+        <CredenzaDescription className="sr-only">{t('transfer')}</CredenzaDescription>
       </CredenzaHeader>
 
       <ScrollArea className="relative flex min-h-0 flex-1 px-4 md:px-7" classNameViewport="flex-1 h-auto">

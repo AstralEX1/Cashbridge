@@ -22,7 +22,7 @@ import { shortBridgeAddress } from '@/components/swap/bridge-wallet-badge'
 import { BridgeFlow, type FlowBar, type FlowStage, type FlowToast, type FlowToken } from '@/components/swap/pusd-swap'
 import { useBchSideBalance } from '@/components/swap/reverse-inputs'
 import { SwapError } from '@/components/swap/swap-error'
-import { CredenzaContent, CredenzaHeader, CredenzaTitle, Credenza } from '@/components/ui/credenza'
+import { Credenza, CredenzaContent, CredenzaDescription, CredenzaHeader, CredenzaTitle } from '@/components/ui/credenza'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { BridgeConfig } from '@/config'
@@ -31,12 +31,13 @@ import { useRates } from '@/hooks/use-rates'
 import { useAssetFrom } from '@/hooks/use-swap'
 import { useTokenSale } from '@/hooks/use-token-sale'
 import { useConnectedAccount, useSetExternalWalletMode } from '@/hooks/use-wallets'
-import { checkUnspent, findThorchainOutbound, getTransactionState, historyIncludes, listWalletCoins } from '@/lib/bch'
+import { checkUnspent, findThorchainOutbound, getTransactionState, historyIncludes } from '@/lib/bch'
 import { formatBaseUnits, toBaseUnits } from '@/lib/bridge'
 import { withLock } from '@/lib/bridge-first-leg'
 import { formatStepTime, stepTime } from '@/lib/bridge-tracking'
 import { formatAmount, formatMinutes, formatPercent, formatUsd, PUSD_LEG_SECONDS } from '@/lib/bridge-summary'
 import { BroadcastRejected, broadcastBchTransaction, type ReviewedSwap } from '@/lib/cauldron'
+import { SignCancelled, SignDeclined, SignTimedOut, SignUndelivered } from '@/lib/bch-signing'
 import type { CauldronToken } from '@/lib/cauldron-tokens'
 import { readableError } from '@/lib/errors'
 import {
@@ -45,7 +46,7 @@ import {
   confirmReportedPayout,
   destinationChainOf,
   findPayout,
-  pickBchFunding,
+  prepareBchDeposit,
   prepareDeposit,
   prepareSale,
   type PreparedDeposit,
@@ -77,8 +78,6 @@ type BridgeTx = SwapTransaction & { bridge: BridgeOperation }
 type Update = ReturnType<typeof useUpdateBridge>
 
 const formatBch = (sats: bigint | string) => formatBaseUnits(sats, 8)
-// A prepared deposit is signed only while this fresh; after that it is quoted and built again.
-const DEPOSIT_TTL_MS = 60_000
 // How long the payout is looked for in the router's logs alone before THORNode's report is also read.
 const REPORTED_PAYOUT_AFTER_MS = 3 * 60_000
 const toNumber = (value?: USwapNumber) => (value ? Number(value.toSignificant(12)) : undefined)
@@ -135,7 +134,7 @@ const broadcastDeposit = async (uid: string, signedHex: string, txid: string, up
 }
 
 // Signs a prepared deposit for the operation `uid` and broadcasts it.
-const sendDeposit = async (uid: string, prepared: PreparedDeposit, update: Update, wallet: ReturnType<typeof useBchWallet>) => {
+const sendDeposit = async (uid: string, prepared: PreparedDeposit, update: Update, wallet: ReturnType<typeof useBchWallet>, signal?: AbortSignal) => {
   const tx = await freshOperation(uid)
   const op = tx?.bridge
   if (!op?.reverse || !wallet.manager || !wallet.binding) throw new Error('The BCH wallet is not connected')
@@ -146,7 +145,8 @@ const sendDeposit = async (uid: string, prepared: PreparedDeposit, update: Updat
     wallet.manager,
     op.binding,
     built,
-    `Send ${formatBch(built.amountSats)} BCH to THORChain for at least ${route.expectedBuyAmountMaxSlippage ?? route.expectedBuyAmount} ${asset}`
+    `Send ${formatBch(built.amountSats)} BCH to THORChain for at least ${route.expectedBuyAmountMaxSlippage ?? route.expectedBuyAmount} ${asset}`,
+    { signal }
   )
   update(uid, current => ({
     stage: 'second_leg_signed',
@@ -320,6 +320,52 @@ export const ReverseSwapButton = ({ onShowBridge }: { onShowBridge: () => void }
 
 // --- Confirm dialog ------------------------------------------------------------------------------
 
+// Where a BCH-wallet signature stands: preparing the transaction, waiting for the wallet app,
+// sending what it signed. 'idle' is ready to (re)try.
+export type SignPhase = 'idle' | 'preparing' | 'signing' | 'sending'
+
+// A prepared transaction is used for signing only while this fresh; it is rebuilt in the background.
+const PREPARED_TTL_MS = 30_000
+
+interface Prepared {
+  sale?: ReviewedSwap
+  deposit?: PreparedDeposit
+}
+
+// The grey line under a button that waits on the BCH wallet: what to do in the wallet app while the
+// request is out (with Cancel), and afterwards what happened (declined, timed out, not delivered).
+export const SignHint = ({
+  phase,
+  walletName,
+  note,
+  onCancel,
+  dark = false
+}: {
+  phase: SignPhase
+  walletName: string
+  note?: string
+  onCancel: () => void
+  dark?: boolean
+}) => {
+  const t = useTranslations('bridge.reverse')
+  const className = `bridge-sign-hint${dark ? ' is-dark' : ''}`
+  if (phase === 'signing')
+    return (
+      <p className={className} role="status">
+        {t('openWallet', { wallet: walletName })}{' '}
+        <button type="button" className="bridge-sign-cancel" onClick={onCancel}>
+          {t('cancel')}
+        </button>
+      </p>
+    )
+  if (phase === 'preparing' || phase === 'sending') return null
+  return note ? (
+    <p className={className} role="status">
+      {note}
+    </p>
+  ) : null
+}
+
 const RouteSteps = ({ token, asset, thorMinutes, total }: { token: CauldronToken | null; asset: Asset; thorMinutes?: number; total: string }) => {
   const t = useTranslations('bridge.reverse')
   const tConfirm = useTranslations('bridge.confirm')
@@ -366,6 +412,7 @@ const RouteSteps = ({ token, asset, thorMinutes, total }: { token: CauldronToken
 export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean; onOpenChange: (open: boolean) => void }) => {
   const t = useTranslations('bridge.confirm')
   const tReverse = useTranslations('bridge.reverse')
+  const tBridge = useTranslations('bridge')
   const tSwap = useTranslations('swap')
   const asset = useAssetFrom()
   const account = useConnectedAccount(asset?.chain)
@@ -378,7 +425,38 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
   const live = useQuote().quote
   const sale = useTokenSale(token, amount)
   const [open, setOpen] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
+  const [phase, setPhase] = useState<SignPhase>('idle')
+  const [note, setNote] = useState<string>()
+  const submitting = phase !== 'idle'
+  // One request at a time, whatever the button sees: state updates land a render late.
+  const inFlight = useRef(false)
+  const abort = useRef<AbortController | undefined>(undefined)
+  // Closing the dialog withdraws a request still waiting in the wallet.
+  useEffect(() => () => abort.current?.abort(), [])
+  const walletName = wallet.walletName ?? tBridge('wallet.yourWallet')
+  const destination = account?.address
+  const binding = wallet.binding
+  const units = useMemo(() => {
+    try {
+      return amount ? toBaseUnits(amount, token ? token.decimals : 8) : undefined
+    } catch {
+      return undefined
+    }
+  }, [amount, token])
+  // The transaction is prepared while the dialog is open and kept fresh, so Confirm goes straight
+  // to the wallet. Nothing is refreshed while a request is out.
+  const prepared = useQuery({
+    queryKey: ['reverse-prepared', token?.category ?? 'BCH', units?.toString(), asset?.identifier, destination, binding?.pubkey],
+    queryFn: async (): Promise<Prepared> =>
+      token
+        ? { sale: await prepareSale(token, units!, binding!) }
+        : { deposit: await prepareBchDeposit({ amountSats: units!, binding: binding!, buyAsset: asset!.identifier, destination: destination!, slippage: slippage ?? 1 }) },
+    enabled: isOpen && !submitting && !!binding && !!destination && !!asset && !!units && units > 0n,
+    staleTime: PREPARED_TTL_MS,
+    refetchInterval: PREPARED_TTL_MS,
+    gcTime: 0,
+    retry: 1
+  })
   // The form refreshes its quote on a timer, and a refreshing quote reads as none: the dialog keeps
   // the last one it showed (the deposit itself is always quoted again right before signing).
   const [quote, setQuote] = useState(live)
@@ -415,13 +493,17 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
   const ticker = token?.ticker ?? 'BCH'
 
   const onConfirm = async () => {
-    if (submitting || !wallet.binding || !wallet.manager || !account) return
-    const binding = wallet.binding
-    setSubmitting(true)
-    const toastId = toast.loading(tSwap('toast.submittingTransaction'))
+    if (inFlight.current || !binding || !wallet.manager || !destination || !units) return
+    inFlight.current = true
+    const controller = new AbortController()
+    abort.current = controller
+    setNote(undefined)
     let uid: string | undefined
     try {
-      const units = toBaseUnits(amount, token ? token.decimals : 8)
+      setPhase('preparing')
+      const fresh = prepared.data && Date.now() - prepared.dataUpdatedAt < PREPARED_TTL_MS
+      const ready = fresh ? prepared.data! : (await prepared.refetch({ throwOnError: true })).data!
+      if (controller.signal.aborted) throw new SignCancelled('Cancelled')
       const record = {
         provider: ProviderName.THORCHAIN,
         chainId: getChainConfig(Chain.BitcoinCash).chainId,
@@ -432,11 +514,11 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
         amountFrom: amount,
         amountTo: quote.expectedBuyAmount,
         addressFrom: binding.cashAddress,
-        addressTo: account.address
+        addressTo: destination
       }
-      const reverse = { buyAsset: asset.identifier, destination: account.address }
-      if (token) {
-        const reviewed: ReviewedSwap = await prepareSale(token, units, binding)
+      const reverse = { buyAsset: asset.identifier, destination }
+      if (token && ready.sale) {
+        const reviewed = ready.sale
         uid = await startReverseOperation(record, {
           stage: 'first_leg_signing',
           destinationAsset: 'TOKEN',
@@ -454,48 +536,52 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
             }
           }
         })
-        const id = uid
+        setPhase('signing')
         const { txid, signedHex } = await signInWallet(
           wallet.manager,
           binding,
           reviewed,
-          `Swap ${formatBaseUnits(reviewed.tokensSold, token.decimals)} ${token.ticker} for at least ${formatBch(reviewed.minOutput)} BCH`
-        ).catch(error => {
-          // Not signed: nothing exists to broadcast, so the record goes.
-          transactionStore.getState().removeTransaction(id)
-          throw error
-        })
+          `Swap ${formatBaseUnits(reviewed.tokensSold, token.decimals)} ${token.ticker} for at least ${formatBch(reviewed.minOutput)} BCH`,
+          { signal: controller.signal }
+        )
+        setPhase('sending')
+        const id = uid
         update(id, op => ({
           stage: 'first_leg_pending',
           hash: txid,
           reverse: { ...op.reverse!, sale: { ...op.reverse!.sale!, txid, signedHex, outputs: reviewed.bchOutputs.map(o => ({ txid, vout: o.vout, value: o.value.toString() })) } }
         }))
         await broadcastSale(id, signedHex, txid, update)
+      } else if (!token && ready.deposit) {
+        uid = await startReverseOperation(record, { stage: 'first_leg_signing', destinationAsset: 'BCH', binding, walletName: wallet.walletName ?? undefined, reverse })
+        setPhase('signing')
+        await sendDeposit(uid, ready.deposit, update, wallet, controller.signal)
       } else {
-        const { utxos } = await listWalletCoins(binding.lockingBytecode)
-        const funding = pickBchFunding(utxos, units)
-        const prepared = await prepareDeposit({ funding, payAll: false, amountSats: units, binding, buyAsset: asset.identifier, destination: account.address, slippage: slippage ?? 1 })
-        uid = await startReverseOperation(record, {
-          stage: 'first_leg_signing',
-          destinationAsset: 'BCH',
-          binding,
-          walletName: wallet.walletName ?? undefined,
-          reverse
-        })
-        const id = uid
-        await sendDeposit(id, prepared, update, wallet).catch(error => {
-          const op = transactionStore.getState().transactions.find(x => x.uid === id)
-          if (op && op.kind !== 'send' && op.bridge?.stage === 'first_leg_signing') transactionStore.getState().removeTransaction(id)
-          throw error
-        })
+        throw new Error(tReverse('prepareFailed'))
       }
-      toast.success(tSwap('toast.transactionSubmitted'), { id: toastId })
+      toast.success(tSwap('toast.transactionSubmitted'))
       setAmountFrom('')
       onOpenChange(false)
     } catch (error) {
-      console.warn('Reverse bridge failed to start', error)
-      toast.error(error instanceof ReverseBlocked ? error.message : readableError(error, tSwap('toast.errorSubmitting')), { id: toastId })
-      setSubmitting(false)
+      // Nothing was signed: the record goes, and a fresh transaction is prepared for the next try.
+      if (uid) {
+        const id = uid
+        const op = transactionStore.getState().transactions.find(x => x.uid === id)
+        if (op && op.kind !== 'send' && op.bridge?.stage === 'first_leg_signing') transactionStore.getState().removeTransaction(id)
+      }
+      if (error instanceof SignCancelled) setNote(tReverse('signCancelled'))
+      else if (error instanceof SignDeclined) setNote(tReverse('signDeclined', { wallet: walletName }))
+      else if (error instanceof SignTimedOut) setNote(tReverse('signTimedOut', { wallet: walletName }))
+      else if (error instanceof SignUndelivered) setNote(tReverse('signUndelivered', { wallet: walletName }))
+      else {
+        console.warn('Reverse bridge failed to start', error)
+        setNote(error instanceof ReverseBlocked ? error.message : readableError(error, tSwap('toast.errorSubmitting')))
+      }
+      void prepared.refetch()
+    } finally {
+      inFlight.current = false
+      abort.current = undefined
+      setPhase('idle')
     }
   }
 
@@ -504,6 +590,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
       <CredenzaContent className="bridge-confirm-dialog flex h-auto max-h-5/6 flex-col md:max-w-[620px]">
         <CredenzaHeader>
           <CredenzaTitle>{t('title')}</CredenzaTitle>
+          <CredenzaDescription className="sr-only">{t('transfer')}</CredenzaDescription>
         </CredenzaHeader>
         <ScrollArea className="relative flex min-h-0 flex-1 px-4 md:px-7" classNameViewport="flex-1 h-auto">
           <div className="bridge-confirm">
@@ -642,13 +729,25 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
         </ScrollArea>
         <div className="space-y-3 p-4 pt-2 md:px-7 md:pb-7">
           <GenericButton colorType="3" size="large" className="w-full" onClick={onConfirm} disabled={submitting || !wallet.manager || wallet.state !== 'connected'}>
-            {submitting ? (
-              <LoaderCircle size={20} className="animate-spin" />
-            ) : (
-              <span>{token ? tReverse('swapFirst', { amount: formatAmount(sentAmount), ticker }) : t('send', { amount: formatAmount(sentAmount), ticker })}</span>
-            )}
+            {submitting && <LoaderCircle size={20} className="animate-spin" />}
+            <span>
+              {phase === 'signing'
+                ? tReverse('waitingWallet', { wallet: walletName })
+                : phase === 'preparing'
+                  ? tReverse('preparing')
+                  : phase === 'sending'
+                    ? tReverse('sending')
+                    : token
+                      ? tReverse('swapFirst', { amount: formatAmount(sentAmount), ticker })
+                      : t('send', { amount: formatAmount(sentAmount), ticker })}
+            </span>
           </GenericButton>
-          {wallet.state !== 'connected' && <p className="bridge-confirm-note">{tReverse('walletAway')}</p>}
+          <SignHint
+            phase={phase}
+            walletName={walletName}
+            note={note ?? (wallet.state !== 'connected' ? tReverse('walletAway') : undefined)}
+            onCancel={() => abort.current?.abort()}
+          />
         </div>
       </CredenzaContent>
     </Credenza>
@@ -662,17 +761,23 @@ const timeOf = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-di
 // Step 2 of a token operation, ready to sign: the deposit freshly quoted and built on the BCH the
 // sale paid, its figures shown, then signed in the BCH wallet.
 const useDepositStep = (tx: BridgeTx) => {
+  const t = useTranslations('bridge')
   const update = useUpdateBridge()
   const wallet = useBchWallet()
   const slippage = useSwapStore(state => state.slippage)
-  const [busy, setBusy] = useState(false)
+  const [phase, setPhase] = useState<SignPhase>('idle')
   const [error, setError] = useState<string>()
-  const signing = useRef(false)
+  const [note, setNote] = useState<string>()
+  const inFlight = useRef(false)
+  const abort = useRef<AbortController | undefined>(undefined)
+  useEffect(() => () => abort.current?.abort(), [])
   const op = tx.bridge
   const outputs = op.reverse?.sale?.outputs ?? []
   const fundingKey = outputs.map(o => `${o.txid}:${o.vout}:${o.value}`).join('|')
   const walletMatches = wallet.state === 'connected' && !!wallet.binding && wallet.binding.pubkey === op.binding.pubkey
+  const walletName = wallet.walletName ?? op.walletName ?? t('wallet.yourWallet')
 
+  // Quoted and built in the background and kept fresh, so the button goes straight to the wallet.
   const prepared = useQuery({
     queryKey: ['reverse-deposit', tx.uid, fundingKey],
     queryFn: () =>
@@ -684,38 +789,61 @@ const useDepositStep = (tx: BridgeTx) => {
         destination: op.reverse!.destination,
         slippage: slippage ?? 1
       }),
-    enabled: op.stage === 'bch_ready' && outputs.length > 0 && !!op.reverse,
-    refetchInterval: DEPOSIT_TTL_MS,
-    retry: false,
-    staleTime: DEPOSIT_TTL_MS
+    enabled: op.stage === 'bch_ready' && outputs.length > 0 && !!op.reverse && phase === 'idle',
+    refetchInterval: PREPARED_TTL_MS,
+    retry: 1,
+    staleTime: PREPARED_TTL_MS
   })
 
   const sign = async () => {
-    if (!prepared.data || signing.current || !walletMatches) return
-    if (Date.now() - prepared.dataUpdatedAt > DEPOSIT_TTL_MS) return void prepared.refetch()
-    signing.current = true
-    setBusy(true)
+    if (inFlight.current || !walletMatches) return
+    inFlight.current = true
+    const controller = new AbortController()
+    abort.current = controller
     setError(undefined)
+    setNote(undefined)
     try {
+      setPhase('preparing')
+      const fresh = prepared.data && Date.now() - prepared.dataUpdatedAt < PREPARED_TTL_MS
+      const ready = fresh ? prepared.data! : (await prepared.refetch({ throwOnError: true })).data!
+      if (controller.signal.aborted) throw new SignCancelled('Cancelled')
       const done = await withLock(`bch-bridge-sign-${tx.uid}`, async () => {
         const current = await freshOperation(tx.uid)
-        if (current?.bridge.stage !== 'bch_ready') throw new Error('This operation has moved on in another tab')
-        await sendDeposit(tx.uid, prepared.data!, update, wallet)
+        if (current?.bridge.stage !== 'bch_ready') throw new Error(t('second.movedOn'))
+        setPhase('signing')
+        await sendDeposit(tx.uid, ready, update, wallet, controller.signal)
         return true
       })
-      if (done === undefined) throw new Error('Another tab is signing this operation')
+      if (done === undefined) throw new Error(t('second.otherTab'))
     } catch (e) {
-      setError(readableError(e, 'Could not send the deposit'))
+      if (e instanceof SignCancelled) setNote(t('reverse.signCancelled'))
+      else if (e instanceof SignDeclined) setNote(t('reverse.signDeclined', { wallet: walletName }))
+      else if (e instanceof SignTimedOut) setNote(t('reverse.signTimedOut', { wallet: walletName }))
+      else if (e instanceof SignUndelivered) setNote(t('reverse.signUndelivered', { wallet: walletName }))
+      else setError(readableError(e, t('reverse.prepareFailed')))
       void prepared.refetch()
     } finally {
-      signing.current = false
-      setBusy(false)
+      inFlight.current = false
+      abort.current = undefined
+      setPhase('idle')
     }
   }
 
   const keep = () => update(tx.uid, current => (current.stage === 'bch_ready' ? { stage: 'kept_bch' } : {}))
-  const prepError = prepared.error instanceof Error ? prepared.error.message : undefined
-  return { prepared: prepared.data, preparing: prepared.isFetching, error: error ?? prepError, busy, sign, keep, walletMatches, retry: () => prepared.refetch() }
+  const prepError = !prepared.data && prepared.error instanceof Error ? prepared.error.message : undefined
+  return {
+    prepared: prepared.data,
+    preparing: !prepared.data && prepared.isFetching,
+    error: error ?? prepError,
+    note,
+    phase,
+    walletName,
+    cancel: () => abort.current?.abort(),
+    sign,
+    keep,
+    walletMatches,
+    retry: () => prepared.refetch()
+  }
 }
 
 const DepositQuoteBlock = ({ route, amountSats, minerFeeSats, ticker, bchUsd }: { route: QuoteResponseRoute; amountSats: bigint; minerFeeSats: bigint; ticker: string; bchUsd?: number }) => {
@@ -967,17 +1095,24 @@ const ReverseReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: numb
             className="bridge-flow-primary is-active w-full"
             colorType="3"
             onClick={step.sign}
-            disabled={!prepared || step.busy || step.preparing || !step.walletMatches}
+            disabled={step.phase !== 'idle' || step.preparing || !step.walletMatches}
           >
-            {(step.busy || step.preparing) && <LoaderCircle size={18} className="animate-spin" />}
-            {t('reverse.bridgeAction', { ticker: tx.assetTo.ticker })}
+            {(step.phase !== 'idle' || step.preparing) && <LoaderCircle size={18} className="animate-spin" />}
+            {step.phase === 'signing'
+              ? t('reverse.waitingWallet', { wallet: step.walletName })
+              : step.phase === 'sending'
+                ? t('reverse.sending')
+                : step.phase === 'preparing' || step.preparing
+                  ? t('reverse.preparing')
+                  : t('reverse.bridgeAction', { ticker: tx.assetTo.ticker })}
           </GenericButton>
+          <SignHint dark phase={step.phase} walletName={step.walletName} note={step.note} onCancel={step.cancel} />
           {!prepared && !step.preparing && step.error && (
             <button type="button" className="bridge-flow-link" onClick={step.retry}>
               {t('progress.retry')}
             </button>
           )}
-          <button type="button" className="bridge-flow-link" onClick={step.keep} disabled={step.busy}>
+          <button type="button" className="bridge-flow-link" onClick={step.keep} disabled={step.phase !== 'idle'}>
             {t('progress.keepBch')}
           </button>
         </>

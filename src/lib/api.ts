@@ -201,7 +201,15 @@ const sameBchScript = (a: string | undefined, b: string) => {
 // The SDK's request client logs every non-OK answer as a USwapError before throwing it, so an amount
 // under the minimum (an expected 404) would read as an error. Post the quote ourselves: that case
 // becomes a quiet BelowMinimumError; any other failure is the same USwapError the SDK raises.
-const postQuote = async (request: QuoteRequest, abortController?: AbortController): Promise<QuoteResponse> => {
+// THORChain answering the aggregator too slowly: the only provider timed out, a transient state.
+const providerTimedOut = (status: number, body: unknown) => {
+  const errors = (body as { providerErrors?: { errorCode?: string }[] } | null)?.providerErrors
+  return status === 404 && !!errors?.length && errors.every(e => e.errorCode === 'requestTimeOut')
+}
+
+export class QuoteTimeoutError extends Error {}
+
+const postQuote = async (request: QuoteRequest, abortController?: AbortController, attempt = 0): Promise<QuoteResponse> => {
   const response = await fetch(`${aggregatorApiUrl()}/quote`, {
     method: 'POST',
     headers: { ...referralHeaders(), 'Content-Type': 'application/json' },
@@ -213,6 +221,11 @@ const postQuote = async (request: QuoteRequest, abortController?: AbortControlle
   if (!response.ok) {
     const minimum = response.status === 404 ? minimumFromProviderErrors(body) : undefined
     if (minimum) throw new BelowMinimumError(minimum)
+    // Asked once more, then reported quietly like the minimum: it is not an error of this app.
+    if (providerTimedOut(response.status, body)) {
+      if (attempt === 0 && !abortController?.signal.aborted) return postQuote(request, abortController, 1)
+      throw new QuoteTimeoutError('THORChain did not answer in time')
+    }
 
     const errorData = { status: response.status, statusText: response.statusText }
     throw new USwapError({ errorKey: 'helpers_invalid_response', info: errorData }, { ...errorData, ...(body && { errorData: body }) })

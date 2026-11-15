@@ -223,6 +223,22 @@ interface BuildResult {
 
 export const buildTokenTrade = async (intent: BuildIntent) => tradeTransaction(await tradeOnLivePools(intent.sell, intent.category, intent.side), intent)
 
+// Quote, build and review in one pass over the pools: the trade that was priced is the one built,
+// on pools just checked unspent, with the floor `slippageBps` under its output. The pool covenants
+// are evaluated locally. Faster than quoting and building separately, which reads the pools twice.
+export const prepareTokenTrade = async (
+  intent: Omit<BuildIntent, 'sell' | 'minOutput'>,
+  amount: bigint,
+  minOutputOf: (output: bigint) => bigint
+): Promise<ReviewedSwap> => {
+  const trade = await tradeOnLivePools(amount, intent.category, intent.side)
+  const full = { ...intent, sell: trade.summary.supply, minOutput: minOutputOf(trade.summary.demand) }
+  if (full.minOutput <= 0n) throw new CauldronError('route_failed', 'This amount is too small for the Cauldron pools')
+  const reviewed = reviewBuild(tradeTransaction(trade, full), full)
+  checkPoolCovenants(reviewed)
+  return reviewed
+}
+
 // The unsigned transaction for `trade`: pool inputs first (each carrying its pool's redeem script),
 // then the funding outputs with empty unlocking scripts for the wallet to sign. Tokens and all BCH
 // change go to the bound address. @cashlab/cauldron only builds signed transactions, so the funding
