@@ -1811,3 +1811,31 @@ button.bridge-flow-primary:disabled {
     opacity: 1;
   }
 }
+.bridge-flow-tile.is-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.bridge-flow-tile.is-link:focus-visible {
+  outline: 2px solid #0ac18e;
+  outline-offset: 2px;
+}
+.bridge-flow-done-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+  text-decoration: none;
+}
+@media (hover: hover) {
+  .bridge-flow-tile.is-link:hover {
+    box-shadow: inset 0 0 0 2px rgba(10, 193, 142, 0.55);
+  }
+  .bridge-flow-tile.is-link:hover .bridge-flow-bar-link {
+    opacity: 1;
+  }
+  .bridge-flow-done-link:hover {
+    text-decoration: underline;
+  }
+}

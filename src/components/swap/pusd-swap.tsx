@@ -420,6 +420,29 @@ const ProgressBar = ({ label, bar }: { label: string; bar: FlowBar }) => {
   )
 }
 
+// The "Completed · …" line, linking to the transaction that delivered it.
+export const CompletedLink = ({ href, children }: { href?: string; children: ReactNode }) =>
+  href ? (
+    <a className="bridge-flow-done-link" href={href} target="_blank" rel="noopener noreferrer">
+      {children}
+      <ExternalLink size={14} aria-hidden="true" />
+    </a>
+  ) : (
+    <>{children}</>
+  )
+
+// `children` as a link to a transaction (new tab) when `href` is known, else as a plain block.
+export const TxLink = ({ href, className, label, title, children }: { href?: string; className: string; label: string; title?: string; children: ReactNode }) =>
+  href ? (
+    <a className={`${className} is-link`} href={href} target="_blank" rel="noopener noreferrer" aria-label={label} title={title}>
+      {children}
+    </a>
+  ) : (
+    <div className={className} role="img" aria-label={label}>
+      {children}
+    </div>
+  )
+
 // Where a step's transaction is shown: a THORChain swap (inbound hash) on THORChain's explorer, which
 // follows it through to the payout; anything else on its own chain's explorer.
 export const thorchainTxUrl = (hash: string) => `https://thorchain.net/tx/${normalizeTxid(hash).toUpperCase()}`
@@ -516,10 +539,12 @@ export const BridgeFlow = (props: BridgeFlowProps) => {
 
           {collapsed ? (
             <div className="bridge-flow-ready" data-stage={stage} data-animate={props.animateCollapse === false ? 'false' : undefined}>
-              <div
+              {/* The finished first step, opening its transaction like its bar did. */}
+              <TxLink
+                href={props.firstBar.href}
                 className="bridge-flow-tile"
-                role="img"
-                aria-label={t(reverse ? 'swapDone' : 'bridgeDone', { from: props.sent.ticker })}
+                label={t(reverse ? 'swapDone' : 'bridgeDone', { from: props.sent.ticker })}
+                title={t('openStepTx')}
               >
                 <div className="bridge-flow-tile-inner">
                   <span className="bridge-flow-tile-icons">
@@ -531,8 +556,9 @@ export const BridgeFlow = (props: BridgeFlowProps) => {
                   <span className="bridge-flow-check">
                     <Check size={14} strokeWidth={3} aria-hidden="true" />
                   </span>
+                  {props.firstBar.href && <ExternalLink size={12} className="bridge-flow-bar-link" aria-hidden="true" />}
                 </div>
-              </div>
+              </TxLink>
               <div className="bridge-flow-ready-body">
                 <div className="bridge-flow-tokens is-compact bridge-flow-slide">
                   <FlowAmount token={props.bch} />
@@ -877,9 +903,11 @@ const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => 
       {ended && <p className="bridge-flow-message">{t(`stage.${op.stage}`)}</p>}
       {completed && (
         <p className="bridge-flow-message is-success">
-          {token && pusdAmount !== undefined
-            ? t('progress.completedPusd', { amount: formatAmount(pusdAmount, 6), ticker: token.ticker })
-            : t('progress.completeTitle')}
+          <CompletedLink href={token ? swapHref : (op.received?.[0] ? chainTxUrl(Chain.BitcoinCash, op.received[0].txid) : bridgeHref)}>
+            {token && pusdAmount !== undefined
+              ? t('progress.completedPusd', { amount: formatAmount(pusdAmount, 6), ticker: token.ticker })
+              : t('progress.completeTitle')}
+          </CompletedLink>
         </p>
       )}
       {error}
