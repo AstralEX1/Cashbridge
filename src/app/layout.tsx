@@ -11,6 +11,7 @@ import { AppConfig } from '@/config'
 import { BchWalletProvider } from '@/components/bch-wallet'
 import { BridgeTracker } from '@/components/swap/pusd-swap'
 import { getLangDir, type Locale } from '@/i18n/config'
+import '@/components/tx-toast.css'
 import './globals.css'
 
 export const metadata: Metadata = {

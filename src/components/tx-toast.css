@@ -1,0 +1,328 @@
+/* Transaction toasts: a dark card whose icon is a ring around the token while the transaction is pending
+   and turns into a green ring with a check badge when it is done. Everything moves with transform,
+   opacity and stroke offsets only. */
+.tx-toast {
+  --tx-toast-accent: #84e0f7;
+  --tx-toast-success: #3cc88c;
+  --tx-toast-error: #e2004f;
+  --tx-toast-warning: #e2b341;
+  --tx-toast-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --tx-toast-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --tx-toast-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 12px;
+  width: min(360px, calc(100vw - 32px));
+  padding: 16px;
+  overflow: hidden;
+  border: 1px solid #ffffff0f;
+  border-radius: 20px;
+  background: #1b1b1b;
+  box-shadow: 0 16px 40px #00000059;
+  color: #fff;
+  animation: tx-toast-enter 360ms var(--tx-toast-ease-out) both;
+}
+.tx-toast.is-error {
+  animation:
+    tx-toast-enter 360ms var(--tx-toast-ease-out) both,
+    tx-toast-headshake 360ms var(--tx-toast-ease-out) 80ms both;
+}
+.tx-toast.is-leaving {
+  animation: tx-toast-exit 220ms var(--tx-toast-ease-in-out) forwards;
+}
+
+/* Status glyph without a token: a 40 px circle. */
+.tx-toast-icon {
+  position: relative;
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  line-height: 1;
+}
+.tx-toast-icon.is-loading {
+  background: #84e0f71a;
+}
+.tx-toast-icon.is-success {
+  background: #3cc88c26;
+  color: var(--tx-toast-success);
+}
+.tx-toast-icon.is-error {
+  border: 1px solid #e2004f4d;
+  background: #e2004f1f;
+  color: var(--tx-toast-error);
+}
+.tx-toast-icon.is-warning {
+  background: #e2b34126;
+  color: var(--tx-toast-warning);
+}
+.tx-toast-icon.is-info {
+  border: 1px solid #84e0f74d;
+  background: #84e0f71a;
+  color: var(--tx-toast-accent);
+}
+.tx-toast-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.tx-toast-icon.is-error svg {
+  width: 22px;
+  height: 22px;
+}
+.tx-toast-icon b {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+/* Token ring: pending turns the arc, done fills the ring green and pops a check badge. */
+.tx-toast-ring {
+  position: relative;
+  display: block;
+  width: 40px;
+  height: 40px;
+  flex: none;
+}
+.tx-toast-ring > svg {
+  position: absolute;
+  inset: 0;
+  width: 40px;
+  height: 40px;
+}
+.tx-toast-token {
+  position: absolute;
+  inset: 4px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 999px;
+}
+.tx-toast-token > * {
+  width: 32px;
+  height: 32px;
+}
+.tx-toast-token img,
+.tx-toast-token svg {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  object-fit: contain;
+}
+.tx-toast-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #161616;
+  border-radius: 999px;
+  background: var(--tx-toast-success);
+  color: #0a1f14;
+  box-sizing: border-box;
+  animation: tx-toast-badge-pop 360ms var(--tx-toast-ease-spring) 80ms both;
+}
+.tx-toast-badge svg {
+  width: 8px;
+  height: 8px;
+}
+.tx-toast-spinner,
+.tx-toast-icon.is-loading svg {
+  transform-origin: 50%;
+  animation: tx-toast-spin 900ms linear infinite;
+}
+.tx-toast-check {
+  stroke-dasharray: 14;
+  animation: tx-toast-check-draw 280ms var(--tx-toast-ease-out) 80ms both;
+}
+/* A ring that grows past the icon and fades. */
+.tx-toast-burst {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  box-shadow: 0 0 0 6px #3cc88c80;
+  pointer-events: none;
+  animation: tx-toast-burst 700ms var(--tx-toast-ease-out) 60ms forwards;
+}
+
+.tx-toast-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.tx-toast-title {
+  margin: 0;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+.tx-toast-description {
+  margin: 0;
+  color: #828282;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+.tx-toast-action {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0 -4px -8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: #84e0f7d9;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    transform 220ms var(--tx-toast-ease-spring),
+    background-color 140ms var(--tx-toast-ease-out),
+    color 140ms var(--tx-toast-ease-out);
+}
+.tx-toast-action:hover {
+  background: #84e0f71a;
+  color: var(--tx-toast-accent);
+}
+.tx-toast-action:active {
+  transform: scale(0.94);
+  transition-duration: 90ms;
+}
+.tx-toast-action svg {
+  width: 10px;
+  height: 10px;
+}
+.tx-toast-dismiss {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  margin-top: -2px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #ffffff66;
+  cursor: pointer;
+  transition:
+    background-color 140ms var(--tx-toast-ease-out),
+    color 140ms var(--tx-toast-ease-out);
+}
+.tx-toast-dismiss:hover {
+  background: #ffffff0f;
+  color: #fff;
+}
+.tx-toast-dismiss svg {
+  width: 12px;
+  height: 12px;
+}
+.tx-toast :is(a, button):focus-visible {
+  outline: 2px solid var(--tx-toast-accent);
+  outline-offset: 2px;
+}
+
+@keyframes tx-toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes tx-toast-exit {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+@keyframes tx-toast-headshake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2px);
+  }
+  55% {
+    transform: translateX(2px);
+  }
+  80% {
+    transform: translateX(-1px);
+  }
+}
+@keyframes tx-toast-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes tx-toast-check-draw {
+  from {
+    stroke-dashoffset: 14px;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes tx-toast-badge-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.18);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes tx-toast-burst {
+  from {
+    opacity: 0.9;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2.8);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tx-toast,
+  .tx-toast.is-error,
+  .tx-toast.is-leaving,
+  .tx-toast-badge,
+  .tx-toast-spinner,
+  .tx-toast-icon.is-loading svg,
+  .tx-toast-check,
+  .tx-toast-burst {
+    animation: none;
+  }
+  .tx-toast.is-leaving {
+    opacity: 0;
+  }
+  .tx-toast-burst {
+    display: none;
+  }
+}
