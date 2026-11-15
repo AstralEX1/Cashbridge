@@ -2016,6 +2016,8 @@ button.bridge-flow-primary:disabled {
 .bridge-switch[aria-checked='true'] { background: #0ac18e; box-shadow: none; }
 .bridge-switch[aria-checked='true'] > span { transform: translateX(22px); }
 .bridge-switch:disabled { cursor: default; }
+.bridge-router:not([data-hydrated]) .bridge-switch { visibility: hidden; }
+.bridge-router:not([data-animate]) .bridge-switch, .bridge-router:not([data-animate]) .bridge-switch > span { transition: none; }
 .bridge-switch:focus-visible, .bridge-auto-history:focus-visible { outline: 2px solid #0ac18e; outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { .bridge-switch, .bridge-switch > span { transition: none; } }
 /* BCH receiving address menu (router and plain BCH): the wallet pill opens connect / paste options. */

@@ -1,6 +1,6 @@
 'use client'
 
-import { useId } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { create } from 'zustand'
 import { Check, ChevronDown, ClipboardPaste, LoaderCircle, LogOut, Wallet, X } from 'lucide-react'
@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Tooltip } from '@/components/tooltip'
 import { useBchWallet } from '@/components/bch-wallet'
 import { shortBridgeAddress } from '@/components/swap/bridge-wallet-badge'
-import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
+import { useAutomaticBridge, useAutomaticHydrated } from '@/hooks/use-automatic-bridge'
 import { automaticPreference } from '@/store/auto-bridge-store'
 import { addressToLockingBytecode } from '@/lib/bch'
 
@@ -20,9 +20,18 @@ export const RouterToggle = () => {
   const id = useId()
   const { routerAvailable, routerOn } = useAutomaticBridge()
   const setMode = automaticPreference(state => state.setMode)
+  // The saved mode is only known after hydration: until then the switch is hidden, and it moves
+  // without animation on that first render, so a page load never shows it sliding from off to on.
+  const hydrated = useAutomaticHydrated()
+  const [animate, setAnimate] = useState(false)
+  useEffect(() => {
+    if (!hydrated) return
+    const timer = setTimeout(() => setAnimate(true), 50)
+    return () => clearTimeout(timer)
+  }, [hydrated])
   return (
     <Tooltip content={t(routerAvailable ? 'routerTip' : 'routerUnavailable')}>
-      <div className="bridge-router" data-disabled={!routerAvailable || undefined}>
+      <div className="bridge-router" data-disabled={!routerAvailable || undefined} data-hydrated={hydrated || undefined} data-animate={animate || undefined}>
         <label htmlFor={id}>{t('router')}</label>
         <button
           id={id}
