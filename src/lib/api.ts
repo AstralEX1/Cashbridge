@@ -160,23 +160,36 @@ export const getAssetBalance = async (chain: Chain, address: string, identifier:
 
 export class BridgeRouteError extends Error {}
 
-// Every aggregator quote goes through here, so this is where the bridge's first leg is enforced:
-// THORChain only, buying native BCH.BCH, with the aggregator's own streaming policy (no interval,
-// quantity or destination-memo overrides).
+// Every aggregator quote goes through here, so this is where the bridge's THORChain leg is enforced:
+// THORChain only, with native BCH.BCH on exactly one side (bought in the forward direction, sold in
+// the reverse one), with the aggregator's own streaming policy (no interval, quantity or
+// destination-memo overrides).
+export const isReverseBridgeRequest = (json: Pick<QuoteRequest, 'sellAsset'>) => json.sellAsset?.toUpperCase() === BridgeConfig.buyAsset
+
 export const assertBridgeQuoteRequest = (json: Pick<QuoteRequest, 'buyAsset' | 'sellAsset' | 'providers'>) => {
-  if (json.buyAsset?.toUpperCase() !== BridgeConfig.buyAsset) throw new BridgeRouteError(`Only ${BridgeConfig.buyAsset} can be bought`)
-  if (json.sellAsset?.toUpperCase().startsWith('BCH.')) throw new BridgeRouteError('BCH cannot be sold into the bridge')
+  const [bchSide, otherSide] = isReverseBridgeRequest(json) ? [json.sellAsset, json.buyAsset] : [json.buyAsset, json.sellAsset]
+  if (bchSide?.toUpperCase() !== BridgeConfig.buyAsset) throw new BridgeRouteError(`Only ${BridgeConfig.buyAsset} can be bought`)
+  if (!otherSide || otherSide.toUpperCase().startsWith('BCH.')) throw new BridgeRouteError('BCH cannot be on both sides of the bridge')
   if (!json.providers?.length || json.providers.some(p => p !== ProviderName.THORCHAIN)) throw new BridgeRouteError('Only the THORChain provider is supported')
 }
 
-// A returned route is only usable if it is still the bridge's: THORChain, selling what was asked,
-// buying BCH.BCH and (for an executable quote) paying the destination that was asked for.
-export const isBridgeRoute = (route: QuoteResponseRoute, request: Pick<QuoteRequest, 'sellAsset' | 'destinationAddress'>) =>
-  route.buyAsset?.toUpperCase() === BridgeConfig.buyAsset &&
-  route.sellAsset?.toUpperCase() === request.sellAsset.toUpperCase() &&
-  route.providers?.length === 1 &&
-  BridgeConfig.providers.includes(route.providers[0]) &&
-  (!request.destinationAddress || sameBchScript(route.destinationAddress, request.destinationAddress))
+// A returned route is only usable if it is still the bridge's: THORChain, trading exactly the asked
+// pair and (for an executable quote) paying the destination that was asked for.
+export const isBridgeRoute = (route: QuoteResponseRoute, request: Pick<QuoteRequest, 'sellAsset' | 'destinationAddress'> & { buyAsset?: string }) => {
+  const reverse = isReverseBridgeRequest(request)
+  const buyAsset = reverse ? request.buyAsset : BridgeConfig.buyAsset
+  return (
+    !!buyAsset &&
+    route.buyAsset?.toUpperCase() === buyAsset.toUpperCase() &&
+    route.sellAsset?.toUpperCase() === request.sellAsset.toUpperCase() &&
+    route.providers?.length === 1 &&
+    BridgeConfig.providers.includes(route.providers[0]) &&
+    (!request.destinationAddress ||
+      (reverse
+        ? route.destinationAddress?.toLowerCase() === request.destinationAddress.toLowerCase()
+        : sameBchScript(route.destinationAddress, request.destinationAddress)))
+  )
+}
 
 // The aggregator echoes a BCH destination without its `bitcoincash:` prefix, so the two are compared by the
 // script they pay, never as strings: a string match drops every route quoted to the bound wallet.
@@ -212,8 +225,9 @@ const postQuote = async (request: QuoteRequest, abortController?: AbortControlle
 export const getQuotes = async (json: QuoteRequest, abortController?: AbortController) => {
   assertBridgeQuoteRequest(json)
   const { sellAsset, sellAmount, sourceAddress, destinationAddress, refundAddress, slippage, dry } = json
+  const buyAsset = isReverseBridgeRequest(json) ? json.buyAsset : BridgeConfig.buyAsset
   const request: QuoteRequest = {
-    buyAsset: BridgeConfig.buyAsset,
+    buyAsset,
     sellAsset,
     sellAmount,
     slippage,
@@ -226,7 +240,7 @@ export const getQuotes = async (json: QuoteRequest, abortController?: AbortContr
 
   return postQuote(request, abortController).then(res =>
     res.routes
-      .map(route => ({ ...route, sellAsset: requestCase(route.sellAsset, sellAsset), buyAsset: requestCase(route.buyAsset, BridgeConfig.buyAsset) }))
+      .map(route => ({ ...route, sellAsset: requestCase(route.sellAsset, sellAsset), buyAsset: requestCase(route.buyAsset, buyAsset) }))
       .filter(route => isBridgeRoute(route, request))
   )
 }

@@ -246,7 +246,7 @@ interface ElectrumUnspent {
   tx_pos: number
   height: number
   value: number
-  token_data?: unknown
+  token_data?: { category?: unknown; amount?: unknown; nft?: unknown } | null
 }
 
 export interface RawTx {
@@ -273,6 +273,19 @@ export interface ScriptUtxo {
   value: bigint
   height: number
   hasToken: boolean
+  // The CashToken the output carries, as Fulcrum reports it (`nft` set when it carries an NFT).
+  token?: { category: string; amount: bigint; nft: boolean }
+}
+
+const tokenOf = (data: ElectrumUnspent['token_data']) => {
+  if (!data || typeof data.category !== 'string' || !/^[0-9a-f]{64}$/.test(data.category)) return undefined
+  let amount = 0n
+  try {
+    amount = BigInt(String(data.amount ?? '0'))
+  } catch {
+    return undefined
+  }
+  return { category: data.category, amount, nft: data.nft !== undefined && data.nft !== null }
 }
 
 const fetchUnspent = async (client: WsRpc, lockingBytecode: string): Promise<{ tip: number; utxos: ScriptUtxo[] }> => {
@@ -291,7 +304,8 @@ const fetchUnspent = async (client: WsRpc, lockingBytecode: string): Promise<{ t
       vout: Number(u.tx_pos),
       value: BigInt(u.value),
       height: Number(u.height),
-      hasToken: u.token_data !== undefined && u.token_data !== null
+      hasToken: u.token_data !== undefined && u.token_data !== null,
+      token: tokenOf(u.token_data)
     }))
   }
 }
@@ -337,11 +351,11 @@ export const verifyThorchainOutbound = async ({
 
 export const checkOutbound = (
   raw: RawTx,
-  { inboundHash, lockingBytecode, expectedSats }: { inboundHash: string; lockingBytecode: string; expectedSats: bigint },
+  { inboundHash, lockingBytecode, expectedSats, action = 'OUT' }: { inboundHash: string; lockingBytecode: string; expectedSats: bigint; action?: 'OUT' | 'REFUND' },
   { tip, utxos }: { tip: number; utxos: ScriptUtxo[] }
 ): ReceiptCheck => {
   const txid = txidOf(raw.hex)
-  const memo = `OUT:${normalizeTxid(inboundHash)}`.toUpperCase()
+  const memo = `${action}:${normalizeTxid(inboundHash)}`.toUpperCase()
   const memos = raw.tx.outputs.map(o => opReturnText(o.lockingBytecode)).filter((m): m is string => m !== undefined)
   if (!memos.some(m => m.toUpperCase() === memo)) return { kind: 'invalid', reason: 'The BCH transaction is not THORChain’s outbound for this swap (memo mismatch)' }
 
@@ -368,9 +382,10 @@ export const checkOutbound = (
 }
 
 // Watches the bound address itself: THORChain's outbound for `inboundHash` among its unspent
-// outputs (mempool included), found by the OUT:<inbound hash> memo and checked like any outbound.
-// Lets the BCH count as arrived without waiting for THORNode or the tracker to report it.
-export const findThorchainOutbound = (inboundHash: string, lockingBytecode: string): Promise<ReceiptCheck> =>
+// outputs (mempool included), found by the OUT:<inbound hash> memo (REFUND:<hash> for a refund of
+// a BCH deposit) and checked like any outbound. Lets the BCH count as arrived without waiting for
+// THORNode or the tracker to report it.
+export const findThorchainOutbound = (inboundHash: string, lockingBytecode: string, action: 'OUT' | 'REFUND' = 'OUT'): Promise<ReceiptCheck> =>
   withElectrum(async client => {
     const unspent = await fetchUnspent(client, lockingBytecode)
     // Newest first: the outbound is the latest payment, unconfirmed ones (height 0) before any block.
@@ -380,7 +395,7 @@ export const findThorchainOutbound = (inboundHash: string, lockingBytecode: stri
       if (!raw) continue
       const script = hexToBin(lockingBytecode)
       const paid = raw.tx.outputs.reduce((sum, o) => (binsAreEqual(o.lockingBytecode, script) ? sum + o.valueSatoshis : sum), 0n)
-      const check = checkOutbound(raw, { inboundHash, lockingBytecode, expectedSats: paid }, unspent)
+      const check = checkOutbound(raw, { inboundHash, lockingBytecode, expectedSats: paid, action }, unspent)
       if (check.kind === 'ok') return check
     }
     return { kind: 'not_found' }
@@ -394,6 +409,9 @@ export const historyIncludes = (lockingBytecode: string, txids: string[]) =>
     const seen = new Set((Array.isArray(history) ? history : []).map(h => normalizeTxid(String(h.tx_hash))))
     return txids.map(normalizeTxid).filter(id => seen.has(id))
   })
+
+// Every unspent output of `lockingBytecode` (mempool included), with the tokens it carries.
+export const listWalletCoins = (lockingBytecode: string) => withElectrum(client => fetchUnspent(client, lockingBytecode))
 
 // Whether each outpoint is still an unspent, token-free output of `lockingBytecode`.
 export const checkUnspent = (lockingBytecode: string, outpoints: { txid: string; vout: number; value: string }[]) =>
