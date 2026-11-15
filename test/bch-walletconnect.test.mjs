@@ -73,7 +73,7 @@ test('proving the key asks bch_signMessage once and yields the same binding as W
   const liar = { request: async args => walletSignMessage(args.request.params.message, otherKey) }
   await assert.rejects(proveWalletConnectKey(liar, 'topic', binding.cashAddress, 'Cash Bridge'), /not signed by the key/)
   const refuses = { request: async () => Promise.reject({ code: 5000, message: 'User rejected' }) }
-  await assert.rejects(proveWalletConnectKey(refuses, 'topic', binding.cashAddress, 'Cash Bridge'), /User rejected/)
+  await assert.rejects(proveWalletConnectKey(refuses, 'topic', binding.cashAddress, 'Cash Bridge'), /declined the connection message/)
 })
 
 const funding = [{ txid: 'cc'.repeat(32), vout: 0, value: '1000000' }]

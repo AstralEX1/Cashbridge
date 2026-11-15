@@ -153,7 +153,8 @@ export const proveWalletConnectKey = async (client: WalletConnectRequester, topi
       request: { method: 'bch_signMessage', params: { message, userPrompt: `Connect to ${appName}` } }
     })
   } catch (error) {
-    throw walletConnectError(error)
+    const reason = walletConnectError(error)
+    throw /reject|declin|denied|cancel/i.test(reason.message) ? new Error('The wallet declined the connection message, so it was not connected.', { cause: error }) : reason
   }
   if (typeof signature !== 'string') throw new Error('The wallet did not sign the connection message')
   return bindingFromWalletConnect(address, recoverMessageKey(message, signature, address))

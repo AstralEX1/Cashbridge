@@ -212,10 +212,13 @@ export function useBchWalletConnect() {
     }
   }, [session, state, getClient])
 
+  const clearError = useCallback(() => setError(null), [])
+
   return {
     state,
     uri,
     error,
+    clearError,
     binding: state === 'connected' ? binding : undefined,
     signer,
     walletName: session?.peer.metadata.name ?? null,

@@ -269,6 +269,8 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
   const choose = useCallback(
     (kind: BchConnection) => {
       setChoosing(false)
+      // A WalletConnect error from an earlier attempt must not stay on screen over another connection.
+      wc2.clearError()
       if (kind === 'walletconnect') {
         if (wc.state !== 'idle') void disconnectWizard()
         void wc2.connect()
