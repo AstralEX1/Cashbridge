@@ -74,7 +74,7 @@ export function useBchWalletConnect() {
         const origin = window.location.origin
         const instance = await Client.init({
           projectId: BridgeConfig.walletConnectProjectId,
-          metadata: { name: AppConfig.appName, description: AppConfig.description ?? AppConfig.appName, url: origin, icons: [`${origin}/favicon.ico`] }
+          metadata: { name: AppConfig.appName, description: AppConfig.description ?? AppConfig.appName, url: origin, icons: [`${origin}/icon.svg`] }
         })
         return instance
       })
@@ -183,7 +183,9 @@ export function useBchWalletConnect() {
     } catch (e) {
       if (run !== attempt.current) return
       reset()
-      setError(e instanceof Error ? e.message : 'Could not connect the wallet')
+      const message = e instanceof Error ? e.message : (e as { message?: string } | null)?.message
+      // A pairing link is valid for five minutes; WalletConnect's own wording is just "Proposal expired".
+      setError(message && /expired/i.test(message) ? 'The WalletConnect link expired. Connect again for a new QR code.' : message || 'Could not connect the wallet')
     }
   }, [bind, getClient, reset])
 
