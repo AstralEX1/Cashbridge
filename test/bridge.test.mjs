@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { binToHex, decodeTransaction, encodeTransaction, hash160, hexToBin } from '@bitauth/libauth'
 import { addressPaysScript, bindingFromAddress, bindingFromPubkey, checkOutbound, decodeTx, isValidBinding, opReturnText, txidOf } from '../src/lib/bch.ts'
-import { bestTrade, checkPoolCovenants, checkSigned, poolLockingBytecode, reviewBuild, sourcesOf, tradeTransaction } from '../src/lib/cauldron.ts'
+import { bestTrade, CauldronError, checkPoolCovenants, checkSigned, fitSale, poolLockingBytecode, reviewBuild, sourcesOf, tradeTransaction } from '../src/lib/cauldron.ts'
 import { formatBaseUnits, inboundMatchesBinding, interpretMidgard, interpretTxStatus, minOutputFor, secondLegSellAmount, toBaseUnits } from '../src/lib/bridge.ts'
 import { assertBridgeQuoteRequest, getQuotes, isBridgeRoute } from '../src/lib/api.ts'
 import { BelowMinimumError, minimumFromProviderErrors, resolveQuoteError } from '../src/lib/errors.ts'
@@ -515,6 +515,58 @@ test('the pool covenant refuses a trade that takes more PUSD than the pool pays'
 test('a sale the funding cannot cover is reported as insufficient funds', () => {
   const { trade, localIntent } = localTrade()
   assert.throws(() => tradeTransaction(trade, { ...localIntent, funding: [{ ...localFunding[0], value: '500000' }] }), e => e.code === 'insufficient_funds')
+})
+
+// --- A sale fitted to its funding --------------------------------------------------------------
+
+const short = () => new CauldronError('insufficient_funds', 'short')
+
+test('fitSale takes the ceiling when it is funded and narrows to the largest funded sale otherwise', async () => {
+  let calls = 0
+  assert.equal(await fitSale(1_000n, async sell => (calls++, sell)), 1_000n)
+  assert.equal(calls, 1)
+  for (const limit of [999n, 1_000n, 1_337n, 5_000n, 50_000n, 123_456n]) {
+    const ceiling = 1_000_000n
+    const sold = await fitSale(ceiling, async sell => {
+      if (sell > ceiling - limit) throw short()
+      return sell
+    })
+    assert.ok(sold <= ceiling - limit && sold > ceiling - limit - 64n, `shortfall ${limit}: sold ${sold}`)
+  }
+})
+
+test('fitSale fails like the first attempt when nothing can be funded and never swallows other errors', async () => {
+  await assert.rejects(fitSale(10_000n, async () => { throw short() }), e => e.code === 'insufficient_funds')
+  await assert.rejects(fitSale(10_000n, async sell => { if (sell === 10_000n) throw short(); throw new CauldronError('route_failed', 'pools') }), e => e.code === 'route_failed')
+  await assert.rejects(fitSale(10_000n, async () => { throw new Error('network') }), /network/)
+})
+
+test('a purchase fitted to its funding sells all the funding can pay for and still passes every check', async () => {
+  const pool = cauldronPool(108_000_000n, 30_000n)
+  const fit = async (funding, payout) => {
+    const total = funding.reduce((sum, f) => sum + BigInt(f.value), 0n)
+    return fitSale(total, async sell => {
+      const trade = bestTrade([pool], sell)
+      const intent = {
+        category: PUSD, side: 'buy', funding, lockingBytecode: binding.lockingBytecode, tokenAddress: binding.tokenAddress, cashAddress: binding.cashAddress,
+        sell: trade.summary.supply, minOutput: minOutputFor(trade.summary.demand), ...(payout && { payout })
+      }
+      const build = tradeTransaction(trade, intent)
+      const reviewed = reviewBuild(build, intent)
+      checkPoolCovenants(reviewed)
+      return { trade, reviewed, total }
+    })
+  }
+  for (const payout of [undefined, { tokenScript: otherBinding.lockingBytecode, changeScript: otherBinding.lockingBytecode }]) {
+    for (const funding of [[{ txid: 'ee'.repeat(32), vout: 0, value: '1010000' }], [{ txid: 'ee'.repeat(32), vout: 0, value: '600000' }, { txid: 'ef'.repeat(32), vout: 1, value: '410000' }], [{ txid: 'ee'.repeat(32), vout: 0, value: '25000' }]]) {
+      const { trade, reviewed, total } = await fit(funding, payout)
+      // Little is left over: the fee, the token's dust and at most one pool step (~3,700 sats a PUSD unit).
+      assert.ok(total - trade.summary.supply < 6_000n, `left ${total - trade.summary.supply} of ${total}`)
+      // That is more than the fixed reserve sold, and the wallet never spends beyond the funding.
+      assert.ok(trade.summary.supply > secondLegSellAmount(total))
+      assert.ok(reviewed.debitSats <= total)
+    }
+  }
 })
 
 // Selling the token back for BCH: the funding carries the tokens on the bound address, as a wallet holds them.

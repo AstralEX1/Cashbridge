@@ -1,7 +1,7 @@
 import { binToHex, binsAreEqual, hexToBin, type Output } from '@bitauth/libauth'
 import type { TxStatusResponse } from '@/lib/api'
 import { checkOutbound, decodeTx, isTxid, normalizeTxid, opReturnText, txidOf } from '@/lib/bch'
-import { inboundMatchesBinding, interpretTxStatus, secondLegSellAmount } from '@/lib/bridge'
+import { inboundMatchesBinding, interpretTxStatus } from '@/lib/bridge'
 import { BroadcastRejected, buildTokenTrade, type BuildIntent, type BuildResult } from '@/lib/cauldron'
 import { OrderStore } from '@/server/auto-bridge/store'
 import { isTerminal, type Attempt, type Order } from '@/server/auto-bridge/types'
@@ -25,28 +25,19 @@ export interface Policy {
 }
 export type TradeBuilder = (order: Order) => Promise<{ build: BuildResult; intent: BuildIntent }>
 
-export const buildOrderTrade: TradeBuilder = async order => {
-  const total = order.funding.reduce((sum, coin) => sum + BigInt(coin.value), 0n)
-  for (let reserve = 0; reserve < 3; reserve++) {
-    const intent: BuildIntent = {
-      category: BridgeConfig.pusd.category,
-      side: 'buy',
-      funding: order.funding,
-      lockingBytecode: order.binding.lockingBytecode,
-      payout: { tokenScript: order.recipientScript, changeScript: order.refundScript },
-      tokenAddress: order.recipientAddress,
-      cashAddress: order.refundAddress,
-      sell: secondLegSellAmount(total, reserve),
-      minOutput: BigInt(order.minPusd)
-    }
-    try {
-      return { build: await buildTokenTrade(intent), intent }
-    } catch (error) {
-      if (reserve === 2 || !(error instanceof Error) || !('code' in error) || error.code !== 'insufficient_funds') throw error
-    }
-  }
-  throw new Error('No funded trade')
-}
+// Sells as much of the order's BCH as pays for the trade's own miner fee and dust; no reserve is held back.
+export const buildOrderTrade: TradeBuilder = async order =>
+  buildTokenTrade({
+    category: BridgeConfig.pusd.category,
+    side: 'buy',
+    funding: order.funding,
+    lockingBytecode: order.binding.lockingBytecode,
+    payout: { tokenScript: order.recipientScript, changeScript: order.refundScript },
+    tokenAddress: order.recipientAddress,
+    cashAddress: order.refundAddress,
+    sell: order.funding.reduce((sum, coin) => sum + BigInt(coin.value), 0n),
+    minOutput: BigInt(order.minPusd)
+  })
 
 // Recheck actual prevouts from the validating node after construction; indexer metadata is not evidence.
 export const assertInputsLive = async (gateway: Gateway, hex: string, sources: Output[], order?: Order, depth = 0) => {

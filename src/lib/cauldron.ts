@@ -171,47 +171,104 @@ export const poolLockingBytecode = (withdrawPubkeyHash: Uint8Array) => lab.gener
 
 const outpointOf = (pool: PoolV0) => `${binToHex(pool.outpoint.txhash)}:${pool.outpoint.index}`
 
-// The best trade on pools that are unspent on chain right now: each pool the trade picks is checked
-// and the trade is redone without the spent ones. The pools come from the live Rostrum feed, which
-// follows the chain, and from the indexer when the feed is unavailable or its pools turn out unusable.
-const tradeOnLivePools = async (amount: bigint, category: string, side: TradeSide) => {
-  if (amount <= 0n) throw new CauldronError('bad_request', 'Nothing to sell')
-  const fromFeed = await feedPools(category)
-  if (fromFeed) {
-    try {
-      return await tradeOnPools(fromFeed, amount, category, side, true)
-    } catch (error) {
-      if (error instanceof CauldronError && error.code === 'bad_request') throw error
-      // The indexer may still hold a route the feed's list did not.
+// Trades against one token's pools that are unspent on chain right now. The list is loaded once, from
+// the live Rostrum feed or, when the feed is off, unreachable or its pools cannot fill the trade, from
+// the indexer. Each pool a trade picks is checked on chain and the trade redone without the spent
+// ones; the pools found live and the ones dropped carry over to the session's next trade.
+const poolSession = (category: string) => {
+  const live = new Set<string>()
+  let pools: PoolV0[] | undefined
+  let fromFeed = false
+
+  const load = async (useFeed: boolean) => {
+    const listed = useFeed ? await feedPools(category) : undefined
+    fromFeed = !!listed
+    pools = listed ?? (await fetchIndexedPools(category))
+  }
+
+  const run = async (amount: bigint, side: TradeSide) => {
+    for (let round = 0; round < 4; round++) {
+      const trade = bestTrade(pools!, amount, category, side)
+      const unchecked = trade.entries.filter(e => !live.has(outpointOf(e.pool)))
+      const checked = await checkOutpointsLive(
+        unchecked.map(e => ({
+          txid: binToHex(e.pool.outpoint.txhash),
+          vout: e.pool.outpoint.index,
+          value: e.pool.output.amount,
+          token: { category: e.pool.output.token.token_id, amount: e.pool.output.token.amount }
+        }))
+      )
+      const spent = new Set(checked.filter(c => !c.live).map(c => `${c.txid}:${c.vout}`))
+      checked.filter(c => c.live).forEach(c => live.add(`${c.txid}:${c.vout}`))
+      if (spent.size === 0) {
+        if (trade.summary.demand <= 0n) throw new CauldronError('route_failed', 'The Cauldron pools cannot fill this amount')
+        return trade
+      }
+      if (fromFeed) checked.filter(c => !c.live).forEach(c => poolFeed.forget(category, c.txid, c.vout))
+      pools = pools!.filter(p => !spent.has(outpointOf(p)))
+    }
+    throw new CauldronError('pools_unavailable', "Cauldron's pool list is behind the chain; try again shortly")
+  }
+
+  return {
+    async trade(amount: bigint, side: TradeSide): Promise<TradeResult> {
+      if (amount <= 0n) throw new CauldronError('bad_request', 'Nothing to sell')
+      if (!pools) await load(true)
+      try {
+        return await run(amount, side)
+      } catch (error) {
+        if (!fromFeed || (error instanceof CauldronError && error.code === 'bad_request')) throw error
+        // The indexer may still hold a route the feed's list did not.
+        await load(false)
+        return run(amount, side)
+      }
     }
   }
-  return tradeOnPools(await fetchIndexedPools(category), amount, category, side, false)
 }
 
-const tradeOnPools = async (indexed: PoolV0[], amount: bigint, category: string, side: TradeSide, fromFeed: boolean) => {
-  let pools = indexed
-  const live = new Set<string>()
-  for (let round = 0; round < 4; round++) {
-    const trade = bestTrade(pools, amount, category, side)
-    const unchecked = trade.entries.filter(e => !live.has(outpointOf(e.pool)))
-    const checked = await checkOutpointsLive(
-      unchecked.map(e => ({
-        txid: binToHex(e.pool.outpoint.txhash),
-        vout: e.pool.outpoint.index,
-        value: e.pool.output.amount,
-        token: { category: e.pool.output.token.token_id, amount: e.pool.output.token.amount }
-      }))
-    )
-    const spent = new Set(checked.filter(c => !c.live).map(c => `${c.txid}:${c.vout}`))
-    checked.filter(c => c.live).forEach(c => live.add(`${c.txid}:${c.vout}`))
-    if (spent.size === 0) {
-      if (trade.summary.demand <= 0n) throw new CauldronError('route_failed', 'The Cauldron pools cannot fill this amount')
-      return trade
+const tradeOnLivePools = (amount: bigint, category: string, side: TradeSide) => poolSession(category).trade(amount, side)
+
+// --- A sale fitted to its funding ----------------------------------------------------------------
+
+const isShortOfFunds = (error: unknown) => error instanceof CauldronError && error.code === 'insufficient_funds'
+
+// The largest sale up to `ceiling` that `attempt` can fund. The miner fee and the dust the outputs
+// carry come out of the same coins as the sale, so selling everything leaves too little; instead of
+// holding a fixed reserve back, the sale steps down from the ceiling until an attempt is funded and
+// then narrows to within `PRECISION` sats of the largest one that is. `attempt` throws an
+// insufficient-funds CauldronError for a sale its funding cannot cover; anything else passes through.
+const FIT_PRECISION = 64n
+export const fitSale = async <T>(ceiling: bigint, attempt: (sell: bigint) => Promise<T>): Promise<T> => {
+  try {
+    return await attempt(ceiling)
+  } catch (first) {
+    if (!isShortOfFunds(first)) throw first
+    let failed = ceiling
+    let step = 512n
+    let funded: { sell: bigint; result: T } | undefined
+    for (let probe = 0; probe < 24 && !funded; probe++) {
+      const sell: bigint = failed - step
+      if (sell <= 0n) break
+      try {
+        funded = { sell, result: await attempt(sell) }
+      } catch (error) {
+        if (!isShortOfFunds(error)) throw error
+        failed = sell
+        step *= 2n
+      }
     }
-    if (fromFeed) checked.filter(c => !c.live).forEach(c => poolFeed.forget(category, c.txid, c.vout))
-    pools = pools.filter(p => !spent.has(outpointOf(p)))
+    if (!funded) throw first
+    while (failed - funded.sell > FIT_PRECISION) {
+      const sell: bigint = (failed + funded.sell) / 2n
+      try {
+        funded = { sell, result: await attempt(sell) }
+      } catch (error) {
+        if (!isShortOfFunds(error)) throw error
+        failed = sell
+      }
+    }
+    return funded.result
   }
-  throw new CauldronError('pools_unavailable', "Cauldron's pool list is behind the chain; try again shortly")
 }
 
 export const quoteToken = async ({ category, side, amount }: { category: string; side: TradeSide; amount: bigint }): Promise<TokenQuote> =>
@@ -253,7 +310,18 @@ export interface BuildResult {
   route: unknown
 }
 
-export const buildTokenTrade = async (intent: BuildIntent) => tradeTransaction(await tradeOnLivePools(intent.sell, intent.category, intent.side), intent)
+// The transaction for `intent`, selling up to `intent.sell`. A purchase is fitted to its funding: it
+// sells as much of that as the coins can pay for after the miner fee, and `sell` of the intent that
+// comes back is what it actually sells (that is what the review is run against).
+export const buildTokenTrade = async (intent: BuildIntent): Promise<{ build: BuildResult; intent: BuildIntent }> => {
+  const session = poolSession(intent.category)
+  if (intent.side !== 'buy') return { build: tradeTransaction(await session.trade(intent.sell, intent.side), intent), intent }
+  return fitSale(intent.sell, async sell => {
+    const trade = await session.trade(sell, intent.side)
+    const fitted = { ...intent, sell: trade.summary.supply }
+    return { build: tradeTransaction(trade, fitted), intent: fitted }
+  })
+}
 
 // Quote, build and review in one pass over the pools: the trade that was priced is the one built,
 // on pools just checked unspent, with the floor `slippageBps` under its output. The pool covenants
@@ -263,10 +331,15 @@ export const prepareTokenTrade = async (
   amount: bigint,
   minOutputOf: (output: bigint) => bigint
 ): Promise<ReviewedSwap> => {
-  const trade = await tradeOnLivePools(amount, intent.category, intent.side)
-  const full = { ...intent, sell: trade.summary.supply, minOutput: minOutputOf(trade.summary.demand) }
-  if (full.minOutput <= 0n) throw new CauldronError('route_failed', 'This amount is too small for the Cauldron pools')
-  const reviewed = reviewBuild(tradeTransaction(trade, full), full)
+  const session = poolSession(intent.category)
+  const prepare = async (sell: bigint) => {
+    const trade = await session.trade(sell, intent.side)
+    const full = { ...intent, sell: trade.summary.supply, minOutput: minOutputOf(trade.summary.demand) }
+    if (full.minOutput <= 0n) throw new CauldronError('route_failed', 'This amount is too small for the Cauldron pools')
+    return reviewBuild(tradeTransaction(trade, full), full)
+  }
+  // A purchase sells up to `amount` and as much of it as its coins can fund; a sale of tokens is as asked.
+  const reviewed = await (intent.side === 'buy' ? fitSale(amount, prepare) : prepare(amount))
   checkPoolCovenants(reviewed)
   return reviewed
 }

@@ -1125,25 +1125,19 @@ const useSecondLeg = (tx: BridgeTx) => {
       const checked = await checkUnspent(op.binding.lockingBytecode, funding)
       if (checked.some(o => !o.unspent)) throw new Error(t('second.spent'))
 
-      let lastError: unknown
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const sellSats = secondLegSellAmount(total, attempt)
-        if (sellSats <= 0n) throw new Error(t('second.tooSmall', { ticker: token.ticker }))
-        try {
-          // Quote, build and review in one pass over the pools (the trade priced is the one built).
-          const reviewed = await prepareTokenTrade(
-            { category: token.category, side: 'buy', funding, lockingBytecode: op.binding.lockingBytecode, tokenAddress: op.binding.tokenAddress, cashAddress: op.binding.cashAddress },
-            sellSats,
-            output => minOutputFor(output)
-          )
-          if (request === preparation.current) setReview({ reviewed, at: Date.now() })
-          return
-        } catch (e) {
-          lastError = e
-          if (!(e instanceof CauldronError && e.code === 'insufficient_funds')) break
-        }
+      try {
+        // Quote, build and review in one pass over the pools (the trade priced is the one built). It sells
+        // as much of the received BCH as covers its own miner fee and dust, with no reserve held back.
+        const reviewed = await prepareTokenTrade(
+          { category: token.category, side: 'buy', funding, lockingBytecode: op.binding.lockingBytecode, tokenAddress: op.binding.tokenAddress, cashAddress: op.binding.cashAddress },
+          total,
+          output => minOutputFor(output)
+        )
+        if (request === preparation.current) setReview({ reviewed, at: Date.now() })
+      } catch (e) {
+        if (e instanceof CauldronError && e.code === 'insufficient_funds') throw new Error(t('second.tooSmall', { ticker: token.ticker }))
+        throw e
       }
-      throw lastError
     } catch (e) {
       if (request === preparation.current) setError(e instanceof Error ? e.message : t('second.failed'))
     } finally {
