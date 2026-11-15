@@ -1,6 +1,8 @@
 import { Chain, getEIP6963Provider, getMetaMaskProvider, okxMobileEnabled, RABBY_RDNS, WalletOption } from '@tcswap/core'
 import { getChainConfig } from '@tcswap/helpers'
 import { getBraveEVMProvider, getBraveSolanaProvider } from '@tcswap/wallets/brave'
+// The injected-provider globals (window.vultisig, window.phantom, ...) are declared by this package.
+import type {} from '@tcswap/wallet-extensions'
 import { supportedChains } from '@/lib/wallets'
 
 export enum WalletType {
