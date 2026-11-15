@@ -195,7 +195,11 @@ function onBraveAccountChange(address: string | undefined) {
   if (!known) window.location.reload()
 }
 
-type AccountsProvider = { request: (args: { method: string }) => Promise<unknown> }
+type AccountsProvider = {
+  request: (args: { method: string }) => Promise<unknown>
+  on?: (event: 'accountsChanged', listener: (accounts: string[]) => void) => void
+  removeListener?: (event: 'accountsChanged', listener: (accounts: string[]) => void) => void
+}
 
 // The EVM provider a browser wallet injects, found the way its connector finds it.
 function restoreProvider(option: WalletOption): AccountsProvider | undefined {
@@ -216,7 +220,7 @@ function restoreProvider(option: WalletOption): AccountsProvider | undefined {
   }
 }
 
-const RESTORE_CHECKED = new Set<WalletOption>([
+export const RESTORE_CHECKED = new Set<WalletOption>([
   WalletOption.METAMASK,
   WalletOption.RABBY,
   WalletOption.TRUSTWALLET_WEB,
@@ -246,6 +250,16 @@ export async function hasAuthorizedAccount(option: WalletOption, chains: Chain[]
   } catch {
     return false
   }
+}
+
+// Follows an injected EVM wallet's account changes (a switch, a lock, a revoke, an unlock), as wagmi's
+// injected connector does. `undefined` while the wallet is not injected, so the caller can try later.
+export function watchEvmAccounts(option: WalletOption, onChange: (addresses: string[]) => void): (() => void) | undefined {
+  const provider = restoreProvider(option)
+  if (!provider?.on) return undefined
+  const listener = (accounts: unknown) => onChange(Array.isArray(accounts) ? accounts.map(String) : [])
+  provider.on('accountsChanged', listener)
+  return () => provider.removeListener?.('accountsChanged', listener)
 }
 
 export async function getAccounts(

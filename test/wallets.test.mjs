@@ -13,9 +13,10 @@ const local = new Map()
 const tab = new Map()
 const cookies = new Map()
 const storageFor = map => ({ getItem: key => map.get(key) ?? null, setItem: (key, value) => map.set(key, value), removeItem: key => map.delete(key) })
-globalThis.window = { localStorage: storageFor(local), sessionStorage: storageFor(tab), location: { hostname: 'localhost', protocol: 'http:' } }
+globalThis.window = { localStorage: storageFor(local), sessionStorage: storageFor(tab), location: { hostname: 'localhost', protocol: 'http:' }, addEventListener() {} }
 globalThis.localStorage = window.localStorage
 globalThis.document = {
+  addEventListener() {},
   get cookie() { return [...cookies].map(([key, value]) => `${key}=${value}`).join('; ') },
   set cookie(value) {
     const [entry] = value.split(';')
@@ -278,6 +279,44 @@ test('an authorized wallet (eth_accounts has an account) restores through the no
   await flush()
   assert.deepEqual(useWalletStore.getState().accounts, [restored])
   assert.deepEqual(savedLink(), [{ provider: WalletOption.RABBY, chains: [Chain.Base] }])
+})
+
+test('a saved browser wallet follows the extension: unlock restores it, a switch moves to the new account, a lock parks it', async () => {
+  useWalletStore.setState({ hasHydrated: false })
+  const link = [{ provider: WalletOption.RABBY, chains: [Chain.Base] }]
+  cookies.set('tc-wallet-link', encodeURIComponent(JSON.stringify(link)))
+  controls.hasAuthorizedAccount = async () => false
+  await useWalletStore.persist.rehydrate()
+  await flush()
+  assert.deepEqual(useWalletStore.getState().accounts, [])
+
+  const first = account('0x3333333333333333333333333333333333333333', Chain.Base, WalletOption.RABBY)
+  const quietCalls = []
+  controls.getAccounts = async (provider, chains) => { quietCalls.push(chains); return [first] }
+  controls.evmListeners.get(WalletOption.RABBY)([first.address])
+  await flush()
+  assert.deepEqual(useWalletStore.getState().accounts, [first])
+  assert.deepEqual(quietCalls, [[Chain.Base]])
+
+  // The same account again (a repeat event) is a no-op.
+  controls.evmListeners.get(WalletOption.RABBY)([first.address.toUpperCase().replace('0X', '0x')])
+  await flush()
+  assert.equal(quietCalls.length, 1)
+
+  const second = account('0x4444444444444444444444444444444444444444', Chain.Base, WalletOption.RABBY)
+  controls.getAccounts = async () => [second]
+  controls.evmListeners.get(WalletOption.RABBY)([second.address])
+  await flush()
+  assert.deepEqual(useWalletStore.getState().accounts, [second])
+
+  controls.evmListeners.get(WalletOption.RABBY)([])
+  await flush()
+  assert.deepEqual(useWalletStore.getState().accounts, [])
+  assert.deepEqual(savedLink(), link)
+  assert.ok(controls.evmListeners.has(WalletOption.RABBY), 'a parked wallet stays watched for its unlock')
+
+  useWalletStore.getState().disconnect(WalletOption.RABBY)
+  assert.equal(cookies.has('tc-wallet-link'), false)
 })
 
 test('the BCH session lives under the WizardConnect default key in localStorage and clears on disconnect', () => {

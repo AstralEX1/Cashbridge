@@ -6,6 +6,8 @@ export const controls = {
   getAccounts: async () => [],
   hasAuthorizedAccount: async () => undefined,
   wallets: new Map(),
+  // accountsChanged listeners the store installed, by provider.
+  evmListeners: new Map(),
   disconnected: [],
   account: undefined,
   asset: { chain: Chain.Ethereum, identifier: 'ETH.ETH', ticker: 'ETH', decimals: 18 },
@@ -29,6 +31,11 @@ export const getUSwap = () => ({
 })
 export const supportedChains = { METAMASK: [Chain.Ethereum, Chain.Base], EXODUS: [Chain.Bitcoin] }
 export const syncBraveAccountWatch = () => {}
+export const RESTORE_CHECKED = new Set([WalletOption.METAMASK, WalletOption.RABBY])
+export const watchEvmAccounts = (provider, listener) => {
+  controls.evmListeners.set(provider, listener)
+  return () => controls.evmListeners.delete(provider)
+}
 export const useConnectedAccount = () => controls.account
 export const useDisconnect = () => () => { controls.account = undefined }
 export const useHasHydrated = () => true
