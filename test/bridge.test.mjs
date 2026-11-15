@@ -461,6 +461,12 @@ test('every pool input must accept the trade under its own covenant', () => {
 
 // --- Local Cauldron trade (@cashlab/cauldron) --------------------------------------------------
 
+test('a pool owner key hash is compiled once and different owners get different scripts', () => {
+  const script = poolLockingBytecode(new Uint8Array(20).fill(1))
+  assert.equal(poolLockingBytecode(new Uint8Array(20).fill(1)), script)
+  assert.notDeepEqual(poolLockingBytecode(new Uint8Array(20).fill(2)), script)
+})
+
 // A Cauldron pool with the real PoolV0 covenant, near the live price of ~3,600 sats per PUSD unit.
 const cauldronPool = (sats, tokens, txByte = 'dd') => {
   const withdrawPkh = new Uint8Array(20).fill(7)

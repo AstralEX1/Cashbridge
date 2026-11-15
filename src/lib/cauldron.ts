@@ -167,7 +167,16 @@ export const bestTrade = (pools: PoolV0[], amount: bigint, category: string = Br
   }
 }
 
-export const poolLockingBytecode = (withdrawPubkeyHash: Uint8Array) => lab.generatePoolV0LockingBytecode({ withdraw_pubkey_hash: withdrawPubkeyHash })
+// The script depends only on the owner's key hash, while every quote rebuilds all of a token's pools;
+// compiling it per pool was over half of a quote's time on the main thread.
+// shortcut: one entry per pool owner ever seen, never evicted; fine at a few hundred, add an LRU if it ever tracks thousands.
+const poolScripts = new Map<string, Uint8Array>()
+export const poolLockingBytecode = (withdrawPubkeyHash: Uint8Array) => {
+  const key = binToHex(withdrawPubkeyHash)
+  let script = poolScripts.get(key)
+  if (!script) poolScripts.set(key, (script = lab.generatePoolV0LockingBytecode({ withdraw_pubkey_hash: withdrawPubkeyHash })))
+  return script
+}
 
 const outpointOf = (pool: PoolV0) => `${binToHex(pool.outpoint.txhash)}:${pool.outpoint.index}`
 
