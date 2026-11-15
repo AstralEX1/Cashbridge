@@ -1098,9 +1098,6 @@
   outline-offset: 2px;
   border-radius: 6px;
 }
-.bridge-tip-icon {
-  color: #a6b5b9;
-}
 .bridge-tip {
   position: absolute;
   right: -8px;
@@ -1156,6 +1153,7 @@
 }
 .bridge-tip-step {
   display: flex;
+  align-items: flex-start;
   gap: 10px;
 }
 .bridge-tip-step > span {
@@ -1169,6 +1167,13 @@
 .bridge-mark {
   flex: none;
   border-radius: 7px;
+  /* Never stretched by a flex row: logos such as Cauldron's keep their square. */
+  align-self: center;
+  object-fit: contain;
+}
+.bridge-tip-step > .bridge-mark {
+  align-self: flex-start;
+  margin-top: 2px;
 }
 .bridge-tip-link {
   margin-top: 4px;

@@ -1,5 +1,4 @@
 import { ReactNode, useId, useState } from 'react'
-import { Info } from 'lucide-react'
 import type { CauldronToken } from '@/lib/cauldron-tokens'
 
 // Small shared pieces of the bridge's confirm and progress screens.
@@ -51,7 +50,6 @@ export const HoverCard = ({ label, children, align = 'end' }: { label: ReactNode
     <span className="bridge-tip-host" data-align={align}>
       <button type="button" className="bridge-tip-trigger" aria-describedby={id}>
         {label}
-        <Info size={16} className="bridge-tip-icon" aria-hidden="true" />
       </button>
       <span role="tooltip" id={id} className="bridge-tip">
         {children}
