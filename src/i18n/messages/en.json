@@ -291,11 +291,11 @@
       "selected": "Selected"
     },
     "settings": {
-      "noProtection": "No Protection",
-      "priceProtection": "Price Protection",
-      "priceProtectionTooltip1": "Price impact is how much your swap moves the pool's price. The larger your swap relative to available liquidity, the higher the impact.",
-      "priceProtectionTooltip2": "During the time between seeing a quote and your swap completing, prices can change. Slippage tolerance is the maximum price change you'll accept before the swap is cancelled.",
-      "priceProtectionDescription": "The most you are willing to spend on a swap. This includes the price impact of your swap and any slippage on the token prices before the swap is executed.",
+      "noProtection": "No limit",
+      "priceProtection": "Max slippage",
+      "priceProtectionTooltip1": "Slippage is how far the price can move against you between the quote and the swap's execution, including your swap's own price impact.",
+      "priceProtectionTooltip2": "If the price moves further than your max slippage, the swap is cancelled and refunded.",
+      "priceProtectionDescription": "The most the price may move against you before the swap is refunded. It includes your swap's price impact.",
       "twapTitle": "Time Weighted Average Price (TWAP)",
       "twapTooltip1": "TWAP trades on THORChain are called \"streaming swaps\" in the documents and code.",
       "twapTooltip2": "To place an instant sell order, which will result in the worst price execution, enter 1 for the number of sub-swaps and 1 block for the time between sub-swaps.",
