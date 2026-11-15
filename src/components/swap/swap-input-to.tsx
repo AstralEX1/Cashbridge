@@ -15,7 +15,7 @@ import { formatBaseUnits } from '@/lib/bridge'
 import { formatUsd, pusdUsdPrice } from '@/lib/bridge-summary'
 import { PUSD_TOKEN, sameToken } from '@/lib/cauldron-tokens'
 import { useSwapStore } from '@/store/swap-store'
-import { AutomaticRecipientInput } from '@/components/swap/automatic-bridge-controls'
+import { DestinationAddressInput } from '@/components/swap/automatic-bridge-controls'
 
 export const SwapInputTo = ({ priceImpact, selecting, onSelectOpenChange }: BridgeInputProps & { priceImpact?: USwapNumber }) => {
   const t = useTranslations('bridge.form')
@@ -67,7 +67,7 @@ export const SwapInputTo = ({ priceImpact, selecting, onSelectOpenChange }: Brid
             />
             <BridgeWalletBadge kind="bch" />
           </div>
-          <AutomaticRecipientInput />
+          <DestinationAddressInput />
           <output className="bridge-amount" aria-label={t('receiveAmount')} aria-live="polite" aria-busy={busy}>
             {busy ? <span className="bridge-muted animate-pulse">···</span> : (output ?? '')}
           </output>
