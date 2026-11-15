@@ -1,9 +1,9 @@
-import { EVMChain, EVMChains } from '@tcswap/core'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { Asset } from '@/components/swap/asset'
 import { BridgeConfig } from '@/config'
 import { type CauldronToken, isCauldronToken, PUSD_TOKEN } from '@/lib/cauldron-tokens'
+import { isPayoutChain } from '@/lib/payout-chains'
 import { useLimitSwapStore } from '@/store/limit-swap-store'
 
 const INITIAL_AMOUNT_FROM = 1
@@ -26,8 +26,8 @@ export const INITIAL_SLIPPAGE = 1
 export const INITIAL_CUSTOM_INTERVAL = 0
 export const INITIAL_CUSTOM_QUANTITY = 0
 
-// The reverse bridge pays out on an EVM chain only: its arrival is checked on that chain's own RPC.
-export const isReverseTargetAsset = (asset?: Asset) => isBridgeSellAsset(asset) && EVMChains.includes(asset!.chain as EVMChain)
+// The reverse bridge pays out only where its arrival can be checked on that chain's own node.
+export const isReverseTargetAsset = (asset?: Asset) => isBridgeSellAsset(asset) && isPayoutChain(asset!.chain)
 
 interface SwapState {
   // The BCH side of the bridge: native BCH (null) or a Cauldron token, bought or sold through Cauldron.

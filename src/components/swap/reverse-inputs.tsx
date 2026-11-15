@@ -27,7 +27,7 @@ import { DEPOSIT_FEE_RESERVE } from '@/lib/thorchain-deposit'
 import { useSwapStore } from '@/store/swap-store'
 
 // The reverse direction's form: the BCH side on top (BCH or a Cauldron token, sent from the bound
-// BCH wallet) and the other chain's asset below (paid out by THORChain to the connected EVM wallet).
+// BCH wallet) and the other chain's asset below (paid out by THORChain to the wallet connected on that chain).
 
 // What the bound address holds of the BCH-side asset: token-free BCH, or the token's fungible
 // amount (outputs carrying an NFT are left alone). Only the bound address is seen, not the whole

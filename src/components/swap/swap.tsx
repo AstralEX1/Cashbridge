@@ -42,7 +42,7 @@ const BridgeFlowPreview =
 
 const DEFAULT_SELL = 'BTC.BTC'
 const DEFAULT_BUY = BridgeConfig.buyAsset
-// The first payout asset offered in the reverse direction, when the forward source is not an EVM asset.
+// The first payout asset offered in the reverse direction, when the forward source cannot be paid out to.
 const DEFAULT_REVERSE_TARGETS = ['BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913', 'BASE.ETH', 'ETH.ETH']
 
 export const Swap = () => {
@@ -107,7 +107,7 @@ export const Swap = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPrivateTab, isPrivateSend, assets, pairKey])
 
-  // The reverse direction pays out on an EVM chain: a forward source elsewhere gives way to an EVM asset.
+  // The reverse direction pays out only where the payout can be checked: any other source gives way.
   useEffect(() => {
     if (!reverse || !assets?.length || isReverseTargetAsset(assetFrom)) return
     const target = DEFAULT_REVERSE_TARGETS.map(id => assets.find(a => a.identifier.toUpperCase() === id && isReverseTargetAsset(a))).find(Boolean)
