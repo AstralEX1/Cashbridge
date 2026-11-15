@@ -11,6 +11,8 @@ Forked from the [swap.thorchain.org](https://github.com/thorchain/swap.thorchain
 
 ## Development
 
+Use Node.js 22.23.4, as in CI (minimum 22.22.2 on Node 22; see `package.json` for other supported versions).
+
 ```bash
 npm install
 npm run dev
