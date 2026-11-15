@@ -16,6 +16,7 @@ import { InsufficientFunds } from '@cashlab/common/exceptions.js'
 import { sourceOutputToRelay } from '@wizardconnect/core/hdwalletv1-serialize'
 import { BridgeConfig } from '@/config'
 import { broadcastTransaction, checkOutpointsLive, decodeTx, normalizeTxid, RpcError, RpcTimeoutError, txidOf } from '@/lib/bch'
+import { poolFeed, type PoolRecord } from '@/lib/cauldron-rostrum'
 
 // BCH <-> any fungible CashToken on Cauldron (PUSD by default): quotes and unsigned trade
 // transactions built from the token's live pools. Every transaction is checked here against what the user approved before it is shown for
@@ -101,6 +102,20 @@ const quoteOf = (trade: TradeResult, requested: bigint, category: string, side: 
 
 const isCategory = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
 
+const poolOf = (category: string, p: PoolRecord): PoolV0 => {
+  const parameters = { withdraw_pubkey_hash: hexToBin(p.pkh) }
+  return {
+    version: '0' as const,
+    parameters,
+    outpoint: { txhash: hexToBin(p.txid), index: p.vout },
+    output: {
+      locking_bytecode: poolLockingBytecode(parameters.withdraw_pubkey_hash),
+      token: { amount: BigInt(p.tokens), token_id: category },
+      amount: BigInt(p.sats)
+    }
+  }
+}
+
 const fetchIndexedPools = async (category: string): Promise<PoolV0[]> => {
   if (!isCategory(category)) throw new CauldronError('bad_request', 'Not a token category')
   const response = await fetch(`${BridgeConfig.cauldronIndexerUrl}/cauldron/pool/active?token=${category}`, { signal: AbortSignal.timeout(15_000) }).catch(
@@ -124,20 +139,20 @@ const fetchIndexedPools = async (category: string): Promise<PoolV0[]> => {
     ) {
       return []
     }
-    const parameters = { withdraw_pubkey_hash: hexToBin(p.owner_pkh) }
-    return [
-      {
-        version: '0' as const,
-        parameters,
-        outpoint: { txhash: hexToBin(p.txid), index: p.tx_pos as number },
-        output: {
-          locking_bytecode: poolLockingBytecode(parameters.withdraw_pubkey_hash),
-          token: { amount: BigInt(p.tokens as number), token_id: category },
-          amount: BigInt(p.sats as number)
-        }
-      }
-    ]
+    return [poolOf(category, { pkh: p.owner_pkh, txid: p.txid, vout: p.tx_pos as number, sats: p.sats as number, tokens: p.tokens as number })]
   })
+}
+
+// The token's pools from the live Rostrum feed, or undefined when it is off, unreachable or lists none
+// (an empty feed is not trusted over the indexer).
+const feedPools = async (category: string): Promise<PoolV0[] | undefined> => {
+  if (!poolFeed.enabled) return undefined
+  try {
+    const records = await poolFeed.pools(category)
+    return records.length ? records.map(record => poolOf(category, record)) : undefined
+  } catch {
+    return undefined
+  }
 }
 
 // The trade selling at most `amount` (sats when buying, token units when selling) at the best rate
@@ -156,11 +171,25 @@ export const poolLockingBytecode = (withdrawPubkeyHash: Uint8Array) => lab.gener
 
 const outpointOf = (pool: PoolV0) => `${binToHex(pool.outpoint.txhash)}:${pool.outpoint.index}`
 
-// The best trade on pools that are unspent on chain right now: the indexer can lag, so each pool
-// the trade picks is checked and the trade is redone without the spent ones.
+// The best trade on pools that are unspent on chain right now: each pool the trade picks is checked
+// and the trade is redone without the spent ones. The pools come from the live Rostrum feed, which
+// follows the chain, and from the indexer when the feed is unavailable or its pools turn out unusable.
 const tradeOnLivePools = async (amount: bigint, category: string, side: TradeSide) => {
   if (amount <= 0n) throw new CauldronError('bad_request', 'Nothing to sell')
-  let pools = await fetchIndexedPools(category)
+  const fromFeed = await feedPools(category)
+  if (fromFeed) {
+    try {
+      return await tradeOnPools(fromFeed, amount, category, side, true)
+    } catch (error) {
+      if (error instanceof CauldronError && error.code === 'bad_request') throw error
+      // The indexer may still hold a route the feed's list did not.
+    }
+  }
+  return tradeOnPools(await fetchIndexedPools(category), amount, category, side, false)
+}
+
+const tradeOnPools = async (indexed: PoolV0[], amount: bigint, category: string, side: TradeSide, fromFeed: boolean) => {
+  let pools = indexed
   const live = new Set<string>()
   for (let round = 0; round < 4; round++) {
     const trade = bestTrade(pools, amount, category, side)
@@ -179,6 +208,7 @@ const tradeOnLivePools = async (amount: bigint, category: string, side: TradeSid
       if (trade.summary.demand <= 0n) throw new CauldronError('route_failed', 'The Cauldron pools cannot fill this amount')
       return trade
     }
+    if (fromFeed) checked.filter(c => !c.live).forEach(c => poolFeed.forget(category, c.txid, c.vout))
     pools = pools.filter(p => !spent.has(outpointOf(p)))
   }
   throw new CauldronError('pools_unavailable', "Cauldron's pool list is behind the chain; try again shortly")
