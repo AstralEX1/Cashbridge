@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Chain } from '@tcswap/core'
+import { Chain, WalletOption } from '@tcswap/core'
 import { Check, ChevronLeft, LoaderCircle } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { Credenza, CredenzaContent, CredenzaHeader, CredenzaTitle } from '@/components/ui/credenza'
@@ -10,6 +10,7 @@ import { Ledger } from '@/components/connect-wallet/ledger'
 import { Trezor } from '@/components/connect-wallet/trezor'
 import { WalletIcon } from '@/components/wallet-icon'
 import { useWallets } from '@/hooks/use-wallets'
+import { isMobileBrowser, metaMaskAppLink } from '@/lib/metamask-link'
 import { cn } from '@/lib/utils'
 
 const WALLETS_WITH_LOGO_BOUNCE = new Set(['metamask', 'trustwallet', 'rabby', 'okx'])
@@ -71,6 +72,8 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
     const connected = accounts.some(account => account.provider === wallet.option && (!chain || account.network === chain))
     const isConnecting = connecting === wallet.key
     const bounce = WALLETS_WITH_LOGO_BOUNCE.has(wallet.key) ? '' : undefined
+    // On a phone MetaMask is an app, not an extension: the row opens this page inside it.
+    const appLink = !isInstalled && wallet.option === WalletOption.METAMASK && isMobileBrowser() ? metaMaskAppLink(window.location) : undefined
     const content = (
       <>
         <WalletIcon walletKey={wallet.key} width={32} height={32} alt="" className="connect-wallet-icon wallet-choice-icon" />
@@ -87,10 +90,20 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
             {t('detected')}
           </span>
         ) : !isInstalled ? (
-          <span className="connect-wallet-status connect-wallet-install">{t('install')}</span>
+          <span className="connect-wallet-status connect-wallet-install">{t(appLink ? 'openApp' : 'install')}</span>
         ) : null}
       </>
     )
+
+    if (appLink) {
+      return (
+        <li key={wallet.key}>
+          <a className="connect-wallet-row" data-wallet-logo-bounce={bounce} href={appLink}>
+            {content}
+          </a>
+        </li>
+      )
+    }
 
     if (!isInstalled) {
       return (

@@ -404,3 +404,23 @@ test('balances are scoped to the account address and cached funds disappear imme
   assert.equal(useBalance().balance, null)
   assert.equal(controls.queryOptions.enabled, false)
 })
+
+test('on a phone MetaMask opens this page in its app, keeping the path and query', async () => {
+  const { isMobileBrowser, metaMaskAppLink } = await import('../src/lib/metamask-link.ts')
+  assert.equal(metaMaskAppLink({ host: 'www.cashbridge.space', pathname: '/sell-base.usdc-buy-bch.bch', search: '?amount=5' }), 'https://metamask.app.link/dapp/www.cashbridge.space/sell-base.usdc-buy-bch.bch?amount=5')
+  const real = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+  const as = (userAgent, maxTouchPoints = 0) => {
+    Object.defineProperty(globalThis, 'navigator', { value: { userAgent, maxTouchPoints }, configurable: true })
+    return isMobileBrowser()
+  }
+  try {
+    assert.equal(as('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)'), true)
+    assert.equal(as('Mozilla/5.0 (Linux; Android 15; Pixel 9)'), true)
+    assert.equal(as('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 5), true)
+    assert.equal(as('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'), false)
+    assert.equal(as('Mozilla/5.0 (Windows NT 10.0; Win64; x64)'), false)
+  } finally {
+    if (real) Object.defineProperty(globalThis, 'navigator', real)
+    else delete globalThis.navigator
+  }
+})

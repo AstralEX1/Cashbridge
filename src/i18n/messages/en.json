@@ -565,6 +565,7 @@
     "connectedOn": "Connected on {chain}",
     "disconnected": "Disconnected",
     "install": "Install",
+    "openApp": "Open app",
     "detected": "Detected",
     "connecting": "Connecting…",
     "connectWallet": "Connect Wallet",
