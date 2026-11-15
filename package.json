@@ -78,7 +78,8 @@
     "libsodium-sumo": "0.7.15",
     "viem": {
       "ox": "0.14.26"
-    }
+    },
+    "protobufjs@^7": "^7.6.6"
   },
   "resolutions": {
     "libsodium-wrappers-sumo": "0.7.15",
