@@ -17,7 +17,7 @@ import { useAssetFrom, useSlippage, useSwap } from '@/hooks/use-swap'
 import { useConnectedAccount } from '@/hooks/use-wallets'
 import { useQuote } from '@/hooks/use-quote'
 import { useSwapRates } from '@/hooks/use-rates'
-import { BridgeConfig } from '@/config'
+import { AppConfig, BridgeConfig } from '@/config'
 import { addressToLockingBytecode } from '@/lib/bch'
 import { toBaseUnits } from '@/lib/bridge'
 import { getQuotes, isBridgeRoute } from '@/lib/api'
@@ -70,7 +70,7 @@ export const AutoBridgeDialog = ({ provider, isOpen, onOpenChange }: Props) => {
       setReference(saved)
       const quotes = await getQuotes({ buyAsset: BridgeConfig.buyAsset, sellAsset: captured.source.asset, sellAmount: captured.source.amount,
         sourceAddress: captured.source.address, destinationAddress: order.depositAddress, refundAddress: captured.source.address,
-        dry: false, slippage: slippage ?? 99, providers: BridgeConfig.providers })
+        dry: false, slippage: slippage ?? 99, providers: AppConfig.providers })
       const route = quotes.find(q => q.providers[0] === provider) ?? quotes[0]
       if (!route || !isBridgeRoute(route, { sellAsset: captured.source.asset, destinationAddress: order.depositAddress }) || !new USwapNumber(route.sellAmount).eqValue(captured.source.amount))
         throw new Error(t('noRoute'))
