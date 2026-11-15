@@ -17,8 +17,16 @@ export const MCP_SERVER_INFO = {
   version: '0.4.1'
 }
 
-// Requests per 10-minute window, keyed by client IP.
+// Requests per 10-minute window, keyed by client IP. Every tool call in a
+// batch is charged against it, not just the request that carries them.
 export const ANONYMOUS_REQUEST_LIMIT = 60
+
+// A JSON-RPC message is a few hundred bytes; nothing legitimate comes near this.
+export const MAX_REQUEST_BYTES = 64 * 1024
+export const MAX_BATCH_LENGTH = 20
+// Batch items run at most this many at a time, so one request cannot fan out
+// into a burst of upstream calls.
+export const MAX_BATCH_CONCURRENCY = 4
 
 export const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',

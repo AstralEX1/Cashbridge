@@ -34,21 +34,25 @@ function sweep(now: number) {
 /**
  * In-memory sliding-window limiter, sufficient for the single-instance
  * standalone deployment. Returns seconds to wait when the limit is hit,
- * or null when the request is allowed.
+ * or null when the request is allowed. `cost` charges one request for
+ * several units of work, all or nothing.
  */
-export function rateLimit(req: NextRequest, scope: string, limit: number): number | null {
+export function rateLimit(req: NextRequest, scope: string, limit: number, cost = 1): number | null {
+  if (cost <= 0) return null
   const now = Date.now()
   if (hits.size > MAX_TRACKED_CLIENTS) sweep(now)
 
   const key = `${scope}:${clientKey(req)}`
   const recent = (hits.get(key) ?? []).filter(ts => ts > now - WINDOW_MS)
 
-  if (recent.length >= limit) {
+  if (recent.length + cost > limit) {
     hits.set(key, recent)
-    return Math.ceil((recent[0] + WINDOW_MS - now) / 1000)
+    // Wait until enough of the oldest hits have aged out to make room for this cost.
+    const freed = recent[recent.length + cost - limit - 1]
+    return Math.ceil(((freed ?? now) + WINDOW_MS - now) / 1000)
   }
 
-  recent.push(now)
+  for (let i = 0; i < cost; i++) recent.push(now)
   hits.set(key, recent)
   return null
 }

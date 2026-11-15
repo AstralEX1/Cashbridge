@@ -4,6 +4,9 @@ import { MCP_UI_RESOURCES, SWAP_QUOTE_UI_READ_RESULT, SWAP_QUOTE_UI_URI } from '
 import {
   ANONYMOUS_REQUEST_LIMIT,
   CORS_HEADERS,
+  MAX_BATCH_CONCURRENCY,
+  MAX_BATCH_LENGTH,
+  MAX_REQUEST_BYTES,
   MCP_SERVER_INFO,
   MCP_TOOLS,
   SUPPORTED_PROTOCOL_VERSIONS,
@@ -238,6 +241,37 @@ async function handleMessage(message: unknown): Promise<JsonRpcResponse | null> 
   return jsonRpcError(id, -32601, `Method not found: ${method}`)
 }
 
+// Results keep the order of the batch; at most `limit` items run at once.
+async function mapBounded<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let next = 0
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++
+      results[index] = await fn(items[index])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return results
+}
+
+const isToolCall = (message: unknown) =>
+  !!message && typeof message === 'object' && (message as { method?: unknown }).method === 'tools/call'
+
+function rateLimited(retryAfter: number) {
+  return NextResponse.json(
+    { jsonrpc: '2.0', id: null, error: { code: -32000, message: 'Rate limit exceeded' } },
+    { status: 429, headers: { ...CORS_HEADERS, 'Retry-After': String(retryAfter) } }
+  )
+}
+
+function tooLarge() {
+  return NextResponse.json(jsonRpcError(null, -32600, `Request body exceeds ${MAX_REQUEST_BYTES} bytes`), {
+    status: 413,
+    headers: CORS_HEADERS
+  })
+}
+
 /**
  * Minimal stateless MCP server over streamable HTTP: single JSON responses,
  * no SSE stream, no sessions. Exposes read-only THORChain data tools.
@@ -245,26 +279,37 @@ async function handleMessage(message: unknown): Promise<JsonRpcResponse | null> 
  * Arrays are accepted because the server offers to negotiate 2025-03-26 and
  * 2024-11-05, where a JSON-RPC batch is a valid request; a batch of nothing
  * but notifications gets the same empty 202 a single notification does.
+ * A batch is bounded in bytes and length, runs a few items at a time, and
+ * every tool call in it is charged against the caller's quota.
  */
 export async function handleMcpPost(req: NextRequest) {
   const retryAfter = rateLimit(req, 'mcp', ANONYMOUS_REQUEST_LIMIT)
-  if (retryAfter !== null) {
-    return NextResponse.json(
-      { jsonrpc: '2.0', id: null, error: { code: -32000, message: 'Rate limit exceeded' } },
-      { status: 429, headers: { ...CORS_HEADERS, 'Retry-After': String(retryAfter) } }
-    )
-  }
+  if (retryAfter !== null) return rateLimited(retryAfter)
+
+  const declaredLength = Number(req.headers.get('content-length') ?? NaN)
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BYTES) return tooLarge()
 
   let message: unknown
   try {
-    message = await req.json()
+    const body = await req.text()
+    if (new TextEncoder().encode(body).length > MAX_REQUEST_BYTES) return tooLarge()
+    message = JSON.parse(body)
   } catch {
     return Response.json(jsonRpcError(null, -32700, 'Parse error'), { headers: CORS_HEADERS })
   }
 
   if (Array.isArray(message)) {
     if (message.length === 0) return Response.json(jsonRpcError(null, -32600, 'Empty batch'), { headers: CORS_HEADERS })
-    const responses = (await Promise.all(message.map(handleMessage))).filter(response => response !== null)
+    if (message.length > MAX_BATCH_LENGTH) {
+      return Response.json(jsonRpcError(null, -32600, `Batch exceeds ${MAX_BATCH_LENGTH} messages`), { headers: CORS_HEADERS })
+    }
+
+    // The request itself already paid for one tool call.
+    const toolCalls = message.filter(isToolCall).length
+    const batchRetryAfter = rateLimit(req, 'mcp', ANONYMOUS_REQUEST_LIMIT, toolCalls - 1)
+    if (batchRetryAfter !== null) return rateLimited(batchRetryAfter)
+
+    const responses = (await mapBounded(message, MAX_BATCH_CONCURRENCY, handleMessage)).filter(response => response !== null)
     if (responses.length === 0) return new Response(null, { status: 202, headers: CORS_HEADERS })
     return Response.json(responses, { headers: CORS_HEADERS })
   }

@@ -189,7 +189,7 @@ The server implements the MCP Apps extension (\`io.modelcontextprotocol/ui\`): \
 
 ## Transport notes
 
-The server is stateless: no session id, no SSE stream, one JSON response per POST. A \`GET\` asking for \`text/event-stream\` returns 405; any other \`GET\` returns the server card. JSON-RPC batches are accepted for clients that negotiate a protocol revision allowing them — send an array, get an array back, with notifications answered by an empty \`202\`.
+The server is stateless: no session id, no SSE stream, one JSON response per POST. A \`GET\` asking for \`text/event-stream\` returns 405; any other \`GET\` returns the server card. JSON-RPC batches are accepted for clients that negotiate a protocol revision allowing them — send an array, get an array back, with notifications answered by an empty \`202\`. A batch holds at most 20 messages in at most 64 KB, and each tool call in it counts as one request against the rate limit.
 
 ## Rate limits
 
