@@ -1,19 +1,3 @@
-@property --bridge-select-scale {
-  syntax: '<number>';
-  inherits: true;
-  initial-value: 1;
-}
-@property --bridge-select-gap {
-  syntax: '<length>';
-  inherits: true;
-  initial-value: 4px;
-}
-@property --bridge-select-alpha {
-  syntax: '<percentage>';
-  inherits: true;
-  initial-value: 5%;
-}
-
 .bridge-page {
   min-height: 100vh;
   padding: 32px 16px 64px;
@@ -174,28 +158,25 @@
 .bridge-widget :is(button, summary, a):focus-visible {
   box-shadow: 0 0 0 3px #0f182024;
 }
+/* The press feedback moves only the pill behind the label: transform and opacity transition on the
+   compositor, while the variables below just switch with the state. */
 .bridge-pill.bridge-asset-button {
   --bridge-select-scale: 1;
-  --bridge-select-gap: 4px;
-  --bridge-select-alpha: 5%;
+  --bridge-select-alpha: 0.055;
   --bridge-select-shadow: transparent;
   position: relative;
   isolation: isolate;
   max-width: 100%;
   flex-wrap: nowrap;
   justify-content: flex-start;
-  gap: var(--bridge-select-gap);
+  gap: 4px;
   padding: 12px 8px;
   background: transparent;
   font-size: 14px;
   line-height: 18px;
   text-shadow: 0.2px 0 0 var(--bridge-select-shadow), -0.2px 0 0 var(--bridge-select-shadow);
   user-select: none;
-  transition:
-    --bridge-select-scale 0.8s var(--bridge-select-ease),
-    --bridge-select-gap 0.8s var(--bridge-select-ease),
-    --bridge-select-alpha 0.8s var(--bridge-select-ease),
-    text-shadow 0.25s;
+  transition: text-shadow 0.25s;
 }
 .bridge-asset-button::before {
   content: '';
@@ -203,19 +184,21 @@
   inset: 0;
   z-index: -1;
   border-radius: inherit;
-  background: color-mix(in oklch, currentColor var(--bridge-select-alpha), #f8fdff);
+  background: currentColor;
+  opacity: var(--bridge-select-alpha);
   transform: scale(var(--bridge-select-scale));
-  transition: background-color 0.25s;
+  transition:
+    transform 0.8s var(--bridge-select-ease),
+    opacity 0.8s var(--bridge-select-ease);
 }
 .bridge-asset-button:focus-visible,
 .bridge-asset-button:active {
   --bridge-select-scale: 1.087;
-  --bridge-select-gap: 6px;
-  --bridge-select-alpha: 10%;
+  --bridge-select-alpha: 0.11;
   --bridge-select-shadow: #0f1820;
 }
 .bridge-asset-button:active {
-  --bridge-select-alpha: 15%;
+  --bridge-select-alpha: 0.165;
 }
 .bridge-asset-icon {
   display: inline-grid;
@@ -231,12 +214,11 @@
 @media (hover: hover) {
   .bridge-asset-button:hover {
     --bridge-select-scale: 1.087;
-    --bridge-select-gap: 6px;
-    --bridge-select-alpha: 10%;
+    --bridge-select-alpha: 0.11;
     --bridge-select-shadow: #0f1820;
   }
   .bridge-asset-button:hover:active {
-    --bridge-select-alpha: 15%;
+    --bridge-select-alpha: 0.165;
   }
 }
 .bridge-amount {
@@ -1439,17 +1421,25 @@
   background: #0ac18e;
   transition: width 600ms ease;
 }
+/* The shimmer is a gradient layer three fills wide (two tiles of the gradient per fill width) that
+   slides by two tiles, so it moves with transform instead of repainting a background every frame. */
 .bridge-flow-fill.is-live {
+  overflow: hidden;
+}
+.bridge-flow-fill.is-live::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -400%;
+  width: 600%;
   background: linear-gradient(90deg, #0ac18e 0%, #6ee6c2 50%, #0ac18e 100%);
-  background-size: 200% 100%;
+  background-size: calc(100% / 3) 100%;
   animation: bridge-flow-shimmer 2.2s linear infinite;
 }
 @keyframes bridge-flow-shimmer {
-  from {
-    background-position: 200% 0;
-  }
   to {
-    background-position: -200% 0;
+    transform: translateX(66.6667%);
   }
 }
 .bridge-flow-bar > span {
@@ -1767,7 +1757,7 @@ button.bridge-flow-primary:disabled {
 @media (prefers-reduced-motion: reduce) {
   .bridge-flow-layer,
   .bridge-flow-arrow.is-live,
-  .bridge-flow-fill.is-live,
+  .bridge-flow-fill.is-live::after,
   .bridge-flow-tile,
   .bridge-flow-slide,
   .bridge-flow-spinner,
