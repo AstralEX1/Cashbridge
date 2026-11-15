@@ -176,6 +176,12 @@ test('a returned route must still be THORChain to BCH paying the asked address',
   assert.ok(isBridgeRoute({ ...route, destinationAddress: binding.cashAddress.split(':')[1] }, request))
   assert.ok(!isBridgeRoute({ ...route, destinationAddress: otherBinding.cashAddress.split(':')[1] }, request))
   assert.ok(!isBridgeRoute({ ...route, destinationAddress: undefined }, request))
+  // The memo is what THORChain acts on: an echoed address cannot cover a memo paying someone else.
+  const short = binding.cashAddress.split(':')[1]
+  assert.ok(isBridgeRoute({ ...route, memo: `=:c:${short}:0/1/0` }, request))
+  assert.ok(isBridgeRoute({ ...route, memo: `=:BCH.BCH:${binding.cashAddress}:0` }, request))
+  assert.ok(!isBridgeRoute({ ...route, memo: `=:c:${otherBinding.cashAddress.split(':')[1]}:0/1/0` }, request))
+  assert.ok(!isBridgeRoute({ ...route, memo: `=:ETH.ETH:0xabc:0` }, request))
 })
 
 test('the reverse direction quotes BCH.BCH into one non-BCH asset and nothing else', () => {

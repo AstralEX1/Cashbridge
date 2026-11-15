@@ -6,6 +6,7 @@ import { normalizeThorBankDenom } from '@/lib/swap-helpers'
 import { referralHeaders } from '@/lib/referral'
 import { aggregatorApiUrl, BridgeConfig } from '@/config'
 import { addressToLockingBytecode } from '@/lib/bch'
+import { swapMemoPays } from '@/lib/bridge'
 import { BelowMinimumError, minimumFromProviderErrors } from '@/lib/errors'
 import { sourceTransactionId } from '@/lib/source-transaction'
 
@@ -188,7 +189,9 @@ export const isBridgeRoute = (route: QuoteResponseRoute, request: Pick<QuoteRequ
     (!request.destinationAddress ||
       (reverse
         ? route.destinationAddress?.toLowerCase() === request.destinationAddress.toLowerCase()
-        : sameBchScript(route.destinationAddress, request.destinationAddress)))
+        : sameBchScript(route.destinationAddress, request.destinationAddress) &&
+          // The memo, not the echoed address, is what THORChain pays: it must name the same BCH script.
+          (!route.memo || swapMemoPays(route.memo, addressToLockingBytecode(request.destinationAddress) ?? ''))))
   )
 }
 

@@ -109,8 +109,9 @@ export const interpretMidgard = (actions: MidgardAction[]): FirstLegView | undef
 
 // The source transaction a user typed in after a lost wallet response must be this operation's:
 // a THORChain swap to BCH.BCH paying the bound address (memo `=:BCH.BCH:<address>:...` or a short form).
-export const inboundMatchesBinding = (status: TxStatusResponse, lockingBytecode: string) => {
-  const memo = status.tx?.memo ?? ''
+export const inboundMatchesBinding = (status: TxStatusResponse, lockingBytecode: string) => swapMemoPays(status.tx?.memo ?? '', lockingBytecode)
+
+export const swapMemoPays = (memo: string, lockingBytecode: string) => {
   const [action, asset, ...rest] = memo.split(':')
   if (!['=', 's', 'swap'].includes((action ?? '').toLowerCase())) return false
   if (!['BCH.BCH', 'BCH', 'C'].includes((asset ?? '').toUpperCase())) return false
