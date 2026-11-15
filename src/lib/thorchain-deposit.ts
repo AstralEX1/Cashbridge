@@ -1,6 +1,7 @@
 import { binToHex, encodeTransaction, hexToBin, utf8ToBin } from '@bitauth/libauth'
 import { sourceOutputToRelay } from '@wizardconnect/core/hdwalletv1-serialize'
 import { addressToLockingBytecode, normalizeTxid } from '@/lib/bch'
+import { sameAddress } from '@/lib/payout-chains'
 
 // The reverse bridge's THORChain leg: a BCH deposit to THORChain's vault carrying the swap memo,
 // built here and signed in the bound BCH wallet. THORChain refunds to the address of the first
@@ -39,26 +40,29 @@ export const checkInbound = (inbounds: InboundAddress[], quotedVault: string, de
   if (bch.halted || bch.chain_trading_paused || bch.global_trading_paused) throw new DepositError('THORChain has paused BCH trading')
   const vaultScript = addressToLockingBytecode(bch.address)
   if (!vaultScript || vaultScript !== addressToLockingBytecode(quotedVault)) throw new DepositError('The quoted vault is not THORChain’s current BCH vault')
+  // RUNE and THORChain-native tokens are paid inside THORChain, which has no inbound address of its own.
   const destination = inbounds.find(i => i.chain === destinationChain)
-  if (!destination || destination.halted || destination.chain_trading_paused) throw new DepositError(`THORChain has paused ${destinationChain} payouts`)
+  if (destinationChain !== 'THOR' && (!destination || destination.halted || destination.chain_trading_paused))
+    throw new DepositError(`THORChain has paused ${destinationChain} payouts`)
   const gasRate = BigInt(Math.min(10, Math.max(1, Number(bch.gas_rate) || 1)))
-  return { vaultScript, router: destination.router, feeRate: gasRate }
+  return { vaultScript, router: destination?.router, feeRate: gasRate }
 }
 
 // --- Memo ----------------------------------------------------------------------------------------
 
 // The quoted memo must swap to the asked asset and pay the asked address: `=:ASSET:DEST[:LIMIT...]`
 // (also `s`/`swap`). THORChain accepts the asset in its short form (BASE.USDC for
-// BASE.USDC-0X8335...), which the aggregator uses to fit the 80 bytes.
-export const checkDepositMemo = (memo: string, { buyAsset, destination }: { buyAsset: string; destination: string }) => {
+// BASE.USDC-0X8335...), or the protocol's short code (`b` for BTC.BTC), which the aggregator uses to
+// fit the 80 bytes.
+export const checkDepositMemo = (memo: string, { buyAsset, destination, shortCode }: { buyAsset: string; destination: string; shortCode?: string }) => {
   if (utf8ToBin(memo).length > MAX_MEMO_BYTES) throw new DepositError('The swap memo is longer than THORChain reads')
   const [action, asset = '', dest = ''] = memo.split(':')
   if (!['=', 's', 'swap'].includes(action.toLowerCase())) throw new DepositError('The memo is not a swap')
   const want = buyAsset.toUpperCase()
   const got = asset.toUpperCase()
   const [chainSymbol] = want.split('-')
-  if (got !== want && got !== chainSymbol) throw new DepositError('The memo swaps to a different asset')
-  if (dest.toLowerCase() !== destination.toLowerCase()) throw new DepositError('The memo pays a different address')
+  if (got !== want && got !== chainSymbol && !(shortCode && got === shortCode.toUpperCase())) throw new DepositError('The memo swaps to a different asset')
+  if (!sameAddress(dest, destination)) throw new DepositError('The memo pays a different address')
 }
 
 // --- Deposit transaction ---------------------------------------------------------------------------

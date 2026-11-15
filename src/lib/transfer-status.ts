@@ -11,7 +11,7 @@ export type TransferStatus = 'pending' | 'completed' | 'failed' | 'unsupported'
 const TENDERMINT_CHAINS: Chain[] = [Chain.Cosmos, Chain.THORChain, Chain.Maya]
 
 // The SDK's XRPL endpoint is a websocket; this is the same cluster's JSON-RPC.
-const XRPL_RPC_URL = 'https://xrplcluster.com/'
+export const XRPL_RPC_URL = 'https://xrplcluster.com/'
 
 // How long a send may go unseen before history gives up. Low-fee UTXO and EVM transactions can wait
 // for days; elsewhere transactions expire quickly (Solana blockhash, Tron expiration, XRPL LastLedgerSequence).
@@ -23,12 +23,12 @@ export const transferDropWindow = (chain: Chain) => {
   return HOUR_MS
 }
 
-const rpcBase = async (chain: Chain) => {
+export const rpcBase = async (chain: Chain) => {
   const url = await getRPCUrl(chain)
   return url.endsWith('/') ? url.slice(0, -1) : url
 }
 
-const postJson = async (url: string, body: unknown) => {
+export const postJson = async (url: string, body: unknown) => {
   const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
   if (!res.ok) throw new Error(`${url} answered ${res.status}`)
   return res.json()

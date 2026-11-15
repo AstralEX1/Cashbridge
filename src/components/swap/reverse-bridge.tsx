@@ -60,6 +60,7 @@ import {
 } from '@/lib/reverse-bridge'
 import { DEPOSIT_FEE_RESERVE } from '@/lib/thorchain-deposit'
 import { resolveFees } from '@/lib/swap-helpers'
+import { isEvmChain } from '@/lib/payout-chains'
 import { generateId } from '@/lib/utils'
 import { useSwapStore } from '@/store/swap-store'
 import {
@@ -75,7 +76,7 @@ import {
 
 // The reverse bridge's UI: the form's button, the confirm dialog, the progress screen and the
 // tracker. Step 1 (a token only) sells it for BCH on Cauldron; step 2 deposits the BCH to THORChain,
-// which pays the EVM address. Both are signed in the bound BCH wallet and broadcast by this app.
+// which pays the destination address. Both are signed in the bound BCH wallet and broadcast by this app.
 
 type BridgeTx = SwapTransaction & { bridge: BridgeOperation }
 type Update = ReturnType<typeof useUpdateBridge>
@@ -177,7 +178,7 @@ const sendDeposit = async (uid: string, prepared: PreparedDeposit, update: Updat
 // --- Tracking ------------------------------------------------------------------------------------
 
 // Progress from the chains: the BCH transactions on Fulcrum, the payout as the router's TransferOut
-// event on the EVM chain's RPC, a refund as THORChain's REFUND:<deposit> payment at the bound address.
+// event on an EVM chain's RPC or the outbound on another chain's own node, a refund as THORChain's REFUND:<deposit> payment at the bound address.
 export const syncReverse = async (tx: BridgeTx, update: Update) => {
   const op = tx.bridge
   const reverse = op.reverse
@@ -220,9 +221,10 @@ export const syncReverse = async (tx: BridgeTx, update: Update) => {
           .then(status => depositReadyAt(status))
           .catch(() => undefined)
       ])
-      // THORChain's own report fills the gap after a while, still checked on the destination chain.
-      const reported =
-        !found?.payout && Date.now() - (deposit.signedAt ?? 0) > REPORTED_PAYOUT_AFTER_MS ? await confirmReportedPayout(op).catch(() => undefined) : undefined
+      // On an EVM chain THORChain's own report fills the gap after a while; elsewhere it names the
+      // outbound from the start. Either way the payout is checked on the destination chain.
+      const reportedNow = !isEvmChain(destinationChainOf(reverse.buyAsset)) || Date.now() - (deposit.signedAt ?? 0) > REPORTED_PAYOUT_AFTER_MS
+      const reported = !found?.payout && reportedNow ? await confirmReportedPayout(op).catch(() => undefined) : undefined
       if (reported) return update(tx.uid, current => ({ stage: 'completed', reverse: { ...current.reverse!, payout: reported } }))
       if (found?.payout) {
         return update(tx.uid, current => ({
@@ -459,7 +461,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
     queryFn: async (): Promise<Prepared> =>
       token
         ? { sale: await prepareSale(token, units!, binding!) }
-        : { deposit: await prepareBchDeposit({ amountSats: units!, binding: binding!, buyAsset: asset!.identifier, destination: destination!, slippage: slippage ?? 1 }) },
+        : { deposit: await prepareBchDeposit({ amountSats: units!, binding: binding!, buyAsset: asset!.identifier, shortCode: asset!.shortCode, destination: destination!, slippage: slippage ?? 1 }) },
     enabled: isOpen && !submitting && !!binding && !!destination && !!asset && !!units && units > 0n,
     staleTime: PREPARED_TTL_MS,
     refetchInterval: PREPARED_TTL_MS,
@@ -795,6 +797,7 @@ const useDepositStep = (tx: BridgeTx) => {
         payAll: true,
         binding: op.binding,
         buyAsset: op.reverse!.buyAsset,
+        shortCode: tx.assetTo.shortCode,
         destination: op.reverse!.destination,
         slippage: slippage ?? 1
       }),
