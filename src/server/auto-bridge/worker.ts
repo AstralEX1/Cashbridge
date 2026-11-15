@@ -78,6 +78,21 @@ export const assertInputsLive = async (gateway: Gateway, hex: string, sources: O
   }
 }
 
+// A swap whose pool input went to another trade while every funding coin stays unspent can never confirm.
+// Without this an uncertain first broadcast would be resent forever and the order would never reach its fallback.
+async function conflicted(gateway: Gateway, order: Order, attempt: Attempt) {
+  if (attempt.kind !== 'swap') return false
+  let poolSpent = false
+  for (const input of decodeTx(attempt.hex).inputs) {
+    const txid = binToHex(input.outpointTransactionHash),
+      own = order.funding.some(coin => coin.txid === txid && coin.vout === input.outpointIndex)
+    const live = await gateway.coin(txid, input.outpointIndex)
+    if (own && !live) return false
+    if (!own && !live) poolSpent = true
+  }
+  return poolSpent && !(await gateway.observe(attempt.txid)).seen
+}
+
 async function submit(store: OrderStore, gateway: Gateway, order: Order, attempt: Attempt, clock: () => number) {
   // Durable before the first network write: a crash here must leave acceptance unknown.
   const firstSend = store.beginBroadcast(attempt.txid)
@@ -160,6 +175,12 @@ export async function processOrder(
     }
   }
   const unresolved = [...attempts].reverse().find(attempt => attempt.status !== 'rejected')
+  if (unresolved && (await conflicted(gateway, order, unresolved))) {
+    // Every attempt spends the order's funding, so a replacement can never pay out twice.
+    store.attemptStatus(unresolved.txid, 'rejected', true)
+    store.update(order.id, order.version, { state: 'retrying', error: 'A pool input was spent by another trade; rebuilding the swap.' }, clock())
+    return
+  }
   if (unresolved) {
     store.update(order.id, order.version, { observation: { txid: unresolved.txid, seen: false, confirmations: 0 } }, clock())
     order = store.get(order.id)!

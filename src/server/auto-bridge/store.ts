@@ -265,11 +265,12 @@ export class OrderStore {
     })
   }
 
-  attemptStatus(txid: string, status: Attempt['status']) {
+  // `conflicted`: the attempt's inputs were spent elsewhere, which overrides an earlier node acceptance.
+  attemptStatus(txid: string, status: Attempt['status'], conflicted = false) {
     return this.write(() => {
     const row = this.db.prepare('SELECT payload FROM attempts WHERE txid=?').get(txid) as { payload: string } | undefined
     if (!row) throw new Error('Unknown signed attempt')
-    if (JSON.parse(row.payload).status === 'accepted' && status !== 'accepted') return
+    if (JSON.parse(row.payload).status === 'accepted' && status !== 'accepted' && !conflicted) return
     const attempt = { ...JSON.parse(row.payload), status }
     this.db.prepare('UPDATE attempts SET status=?, payload=? WHERE txid=?').run(status, JSON.stringify(attempt), txid)
     this.dirty = true

@@ -331,6 +331,33 @@ test('unknown broadcast stays unknown when later retries are rejected, and no re
   }
 })
 
+test('an uncertain swap whose pool input went to another trade is rebuilt instead of resent forever', async () => {
+  const env = environment()
+  try {
+    env.setBroadcastError(new Error('Unknown acceptance'))
+    await processOrder(env.store, env.gateway, env.signer, env.order, env.policy, env.build, () => 1000)
+    const first = env.store.attempts(env.order.id)[0]
+    assert.equal(first.status, 'unknown')
+    const coin = env.gateway.coin
+    env.gateway.coin = async (id, vout) => (id === '08'.repeat(32) ? undefined : coin(id, vout))
+    env.setBroadcastError(new BroadcastRejected('Missing inputs'))
+    await processOrder(env.store, env.gateway, env.signer, env.store.get(env.order.id), env.policy, env.build, () => 2000)
+    assert.equal(env.store.attempts(env.order.id)[0].status, 'rejected')
+    assert.equal(env.store.get(env.order.id).state, 'retrying')
+    assert.equal(env.counts().builds, 1, 'no replacement is signed in the pass that finds the conflict')
+    env.gateway.coin = coin
+    env.setBroadcastError(undefined)
+    await processOrder(env.store, env.gateway, env.signer, env.store.get(env.order.id), env.policy, async order => localBuild(order, 980000n), () => 3000)
+    const attempts = env.store.attempts(env.order.id)
+    assert.equal(attempts.length, 2)
+    assert.notEqual(attempts[1].txid, first.txid)
+    assert.equal(env.store.get(env.order.id).state, 'submitted')
+    assert.equal(env.store.get(env.order.id).payoutTxid, attempts[1].txid)
+  } finally {
+    env.store.close()
+  }
+})
+
 test('a definitively rejected refund retries saved bytes after the node recovers', async () => {
   const env = environment()
   try {
