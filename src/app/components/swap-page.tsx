@@ -1,8 +1,6 @@
-import Script from 'next/script'
 import { Suspense } from 'react'
 import { GlobalDialog } from '@/components/global-dialog'
 import { Swap } from '@/components/swap/swap'
-import { AppConfig } from '@/config'
 
 export function SwapPage() {
   return (
@@ -15,9 +13,6 @@ export function SwapPage() {
         <Swap />
       </Suspense>
       <GlobalDialog />
-      {AppConfig.pixelEvent && (
-        <Script id="twitter-events" strategy="afterInteractive" dangerouslySetInnerHTML={{ __html: `twq('event', '${AppConfig.pixelEvent}', {})` }} />
-      )}
     </main>
   )
 }

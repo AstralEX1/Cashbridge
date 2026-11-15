@@ -1,8 +1,6 @@
 import type { Metadata } from 'next'
-import Script from 'next/script'
 import localFont from 'next/font/local'
 import { Noto_Sans_Runic } from 'next/font/google'
-import { GoogleAnalytics, GoogleTagManager } from '@next/third-parties/google'
 import { ThemeProvider } from 'next-themes'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
@@ -58,9 +56,6 @@ export const metadata: Metadata = {
         alt: AppConfig.title
       }
     ]
-  },
-  verification: {
-    google: 'MWABJkMWVW-TIfLuXops2ZuVAYv71PSmQ6Iz6IGvu08'
   }
 }
 
@@ -142,22 +137,6 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
 
   return (
     <html lang={locale} dir={getLangDir(locale)} data-brand={AppConfig.id} suppressHydrationWarning>
-      {AppConfig.gtag && <GoogleTagManager gtmId={AppConfig.gtag} />}
-      <GoogleAnalytics gaId="G-VZ0FQ1WC7G" />
-      <Script
-        id="hotjar"
-        strategy="afterInteractive"
-        dangerouslySetInnerHTML={{
-          __html: `(function(h,o,t,j,a,r){h.hj=h.hj||function(){(h.hj.q=h.hj.q||[]).push(arguments)};h._hjSettings={hjid:6592863,hjsv:6};a=o.getElementsByTagName('head')[0];r=o.createElement('script');r.async=1;r.src=t+h._hjSettings.hjid+j+h._hjSettings.hjsv;a.appendChild(r);})(window,document,'https://static.hotjar.com/c/hotjar-','.js?sv=');`
-        }}
-      />
-      {AppConfig.pixelId && (
-        <Script
-          dangerouslySetInnerHTML={{
-            __html: `!function(e,t,n,s,u,a){e.twq||(s=e.twq=function(){s.exe?s.exe.apply(s,arguments):s.queue.push(arguments);},s.version='1.1',s.queue=[],u=t.createElement(n),u.async=!0,u.src='https://static.ads-twitter.com/uwt.js',a=t.getElementsByTagName(n)[0],a.parentNode.insertBefore(u,a))}(window,document,'script');twq('config','${AppConfig.pixelId}')`
-          }}
-        />
-      )}
       <body className={`${crit.variable} ${notoRunic.variable} bg-body font-sans antialiased`}>
         {/* Agent discovery links; React hoists them into <head>. */}
         <link rel="mcp-server-card" type="application/mcp-server-card+json" href="/.well-known/mcp/server-card.json" />
