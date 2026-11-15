@@ -277,6 +277,19 @@ export class OrderStore {
     })
   }
 
+  // Counts a definite refusal of a resent attempt and returns the total so far.
+  noteRefusal(txid: string) {
+    return this.write(() => {
+    const row = this.db.prepare('SELECT payload FROM attempts WHERE txid=?').get(txid) as { payload: string } | undefined
+    if (!row) throw new Error('Unknown signed attempt')
+    const attempt: Attempt = JSON.parse(row.payload)
+    const refusals = (attempt.refusals ?? 0) + 1
+    this.db.prepare('UPDATE attempts SET payload=? WHERE txid=?').run(JSON.stringify({ ...attempt, refusals }), txid)
+    this.dirty = true
+    return refusals
+    })
+  }
+
   public(id: string, capability: string): PublicOrder {
     const order = this.authorized(id, capability)
     const winner = order.payoutTxid && this.attempts(id).find(attempt => attempt.txid === order.payoutTxid)

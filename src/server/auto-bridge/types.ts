@@ -34,6 +34,8 @@ export interface Attempt {
   kind: 'swap' | 'refund'
   pusdOut: string
   status: 'signed' | 'unknown' | 'rejected' | 'accepted'
+  // Definite node refusals of these bytes after a lost first answer.
+  refusals?: number
 }
 export interface Limits {
   maxOrderSats: bigint

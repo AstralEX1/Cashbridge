@@ -331,6 +331,28 @@ test('unknown broadcast stays unknown when later retries are rejected, and no re
   }
 })
 
+test('a lost swap broadcast refused by every node three passes running is rejected and rebuilt', async () => {
+  const env = environment()
+  try {
+    env.setBroadcastError(new Error('Unknown acceptance'))
+    await processOrder(env.store, env.gateway, env.signer, env.order, env.policy, env.build, () => 1000)
+    env.setBroadcastError(new BroadcastRejected('min relay fee not met'))
+    for (const [i, at] of [2000, 3000].entries()) {
+      await processOrder(env.store, env.gateway, env.signer, env.store.get(env.order.id), env.policy, env.build, () => at)
+      assert.equal(env.store.attempts(env.order.id)[0].status, 'unknown', `refusal ${i + 1} is not final`)
+    }
+    await processOrder(env.store, env.gateway, env.signer, env.store.get(env.order.id), env.policy, env.build, () => 4000)
+    assert.equal(env.store.attempts(env.order.id)[0].status, 'rejected')
+    assert.equal(env.store.get(env.order.id).state, 'retrying')
+    assert.equal(env.counts().builds, 1, 'the pass that rejects signs nothing new')
+    env.setBroadcastError(undefined)
+    await processOrder(env.store, env.gateway, env.signer, env.store.get(env.order.id), env.policy, async order => localBuild(order, 980000n), () => 5000)
+    assert.equal(env.store.attempts(env.order.id).length, 2, 'a replacement spending the same funding is signed')
+  } finally {
+    env.store.close()
+  }
+})
+
 test('a lost swap broadcast that nodes keep refusing goes to operator review at the deadline, not forever', async () => {
   const env = environment()
   try {

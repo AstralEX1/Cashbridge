@@ -93,6 +93,9 @@ async function conflicted(gateway: Gateway, order: Order, attempt: Attempt) {
   return poolSpent && !(await gateway.observe(attempt.txid)).seen
 }
 
+// Definite refusals of a resent attempt, each in its own pass, before it counts as rejected.
+export const FINAL_REFUSALS = 3
+
 async function submit(store: OrderStore, gateway: Gateway, order: Order, attempt: Attempt, clock: () => number) {
   // Durable before the first network write: a crash here must leave acceptance unknown.
   const firstSend = store.beginBroadcast(attempt.txid)
@@ -103,7 +106,11 @@ async function submit(store: OrderStore, gateway: Gateway, order: Order, attempt
     if (isTerminal(current.state)) return
     store.update(order.id, current.version, { state: 'submitted', payoutTxid: attempt.txid, error: undefined }, clock())
   } catch (error) {
-    const rejected = error instanceof BroadcastRejected && firstSend
+    // After a lost first answer one refusal proves nothing (a node may have taken it meanwhile), but
+    // every RPC refusing the same bytes several times running means no node holds them: the attempt
+    // ends and the order goes on to a rebuild or the BCH fallback, still spending the same funding.
+    const refused = error instanceof BroadcastRejected
+    const rejected = refused && (firstSend || store.noteRefusal(attempt.txid) >= FINAL_REFUSALS)
     store.attemptStatus(attempt.txid, rejected ? 'rejected' : 'unknown')
     const current = store.get(order.id)!
     if (isTerminal(current.state)) return
