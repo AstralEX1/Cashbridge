@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { binToHex, decodeTransaction, encodeTransaction, hash160, hexToBin } from '@bitauth/libauth'
-import { addressPaysScript, bindingFromPubkey, checkOutbound, decodeTx, isValidBinding, opReturnText, txidOf } from '../src/lib/bch.ts'
+import { addressPaysScript, bindingFromAddress, bindingFromPubkey, checkOutbound, decodeTx, isValidBinding, opReturnText, txidOf } from '../src/lib/bch.ts'
 import { bestTrade, checkPoolCovenants, checkSigned, poolLockingBytecode, reviewBuild, sourcesOf, tradeTransaction } from '../src/lib/cauldron.ts'
 import { formatBaseUnits, inboundMatchesBinding, interpretMidgard, interpretTxStatus, minOutputFor, secondLegSellAmount, toBaseUnits } from '../src/lib/bridge.ts'
 import { assertBridgeQuoteRequest, getQuotes, isBridgeRoute } from '../src/lib/api.ts'
@@ -119,6 +119,16 @@ test('a restored binding is accepted only if it still derives from its key', () 
   assert.ok(!isValidBinding({ ...binding, lockingBytecode: otherBinding.lockingBytecode }))
   assert.ok(!isValidBinding({ ...binding, pubkey: 'zz' }))
   assert.ok(!isValidBinding(null))
+})
+
+test('a pasted address becomes a watch-only binding that pays the same script', () => {
+  const pasted = bindingFromAddress(binding.tokenAddress)
+  assert.equal(pasted.pubkey, '')
+  assert.equal(pasted.cashAddress, binding.cashAddress)
+  assert.equal(pasted.lockingBytecode, binding.lockingBytecode)
+  assert.ok(isValidBinding(pasted))
+  assert.ok(!isValidBinding({ ...pasted, lockingBytecode: otherBinding.lockingBytecode }), 'watch-only must still match its address')
+  assert.equal(bindingFromAddress('bitcoincash:not-an-address'), undefined)
 })
 
 // --- Amounts -----------------------------------------------------------------------------------

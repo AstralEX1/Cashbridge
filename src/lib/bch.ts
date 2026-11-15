@@ -8,6 +8,7 @@ import {
   hash160,
   hashTransaction,
   hexToBin,
+  lockingBytecodeToCashAddress,
   sha256,
   type Transaction,
   utf8ToBin
@@ -77,12 +78,30 @@ export const addressToLockingBytecode = (address: string): string | undefined =>
   return undefined
 }
 
+// A pasted address the user receives plain BCH at, with no wallet connected: nothing will be signed
+// for it, so it carries no public key. Undefined for anything that is not a mainnet BCH address.
+export const bindingFromAddress = (address: string): BchBinding | undefined => {
+  const lockingBytecode = addressToLockingBytecode(address)
+  if (!lockingBytecode) return undefined
+  const bytecode = hexToBin(lockingBytecode)
+  const plain = lockingBytecodeToCashAddress({ prefix: BCH_PREFIX, bytecode })
+  const tokens = lockingBytecodeToCashAddress({ prefix: BCH_PREFIX, bytecode, tokenSupport: true })
+  if (typeof plain === 'string' || typeof tokens === 'string') return undefined
+  return { pubkey: '', path: 'receive', addressIndex: 0, lockingBytecode, cashAddress: plain.address, tokenAddress: tokens.address }
+}
+
+export const isWatchOnly = (binding: Pick<BchBinding, 'pubkey'>) => binding.pubkey === ''
+
 export const addressPaysScript = (address: string | undefined, lockingBytecode: string) =>
   !!address && addressToLockingBytecode(address) === lockingBytecode.toLowerCase()
 
 // A restored binding is only used again if every field still derives from its public key.
 export const isValidBinding = (binding: unknown): binding is BchBinding => {
   const b = binding as BchBinding
+  if (b && typeof b === 'object' && b.pubkey === '') {
+    const fresh = typeof b.cashAddress === 'string' ? bindingFromAddress(b.cashAddress) : undefined
+    return !!fresh && fresh.lockingBytecode === b.lockingBytecode && fresh.tokenAddress === b.tokenAddress && b.path === 'receive' && b.addressIndex === 0
+  }
   if (!b || typeof b !== 'object' || !isHex(b.pubkey, 33) || !Object.hasOwn(BINDING_PATHS, b.path) || !Number.isSafeInteger(b.addressIndex) || b.addressIndex < 0) return false
   try {
     const fresh = bindingFromPubkey(hexToBin(b.pubkey), b.addressIndex, b.path)

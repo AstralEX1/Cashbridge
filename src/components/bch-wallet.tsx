@@ -4,7 +4,7 @@ import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, 
 import { useWizardConnect, WizardConnectQRDialog } from '@wizardconnect/react'
 import type { DappConnectionManager } from '@wizardconnect/dapp'
 import { AppConfig } from '@/config'
-import { type BchBinding, BINDING_PATHS, type BindingPath, bindingFromPubkey, isValidBinding } from '@/lib/bch'
+import { type BchBinding, BINDING_PATHS, type BindingPath, bindingFromPubkey, isValidBinding, isWatchOnly } from '@/lib/bch'
 import { useActiveBridge } from '@/store/transaction-store'
 
 // The user's own BCH wallet, connected over WizardConnect. It receives the first leg's BCH and
@@ -110,7 +110,9 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
   useEffect(() => setSaved(readSaved()), [])
 
   // An active operation is bound to the address its BCH was sent to; nothing else may sign for it.
-  const expected = activeBridge?.bridge.binding
+  // A pasted receiving address (no public key) signs nothing, so it binds no wallet.
+  const bound = activeBridge?.bridge.binding
+  const expected = bound && !isWatchOnly(bound) ? bound : undefined
 
   // Every wallet_ready (also after a wallet reconnects) can bring new paths, so derivation reruns on
   // each. What the wallet announced is kept for the error message: names only, never the secret.
