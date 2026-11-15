@@ -36,7 +36,7 @@ import { BridgeConfig } from '@/config'
 import { isTerminal } from '@/lib/auto-bridge-contract'
 import { automaticCompletion, automaticTransactions } from '@/lib/auto-bridge-summary'
 import { formatBaseUnits } from '@/lib/bridge'
-import { orderRequest, restoreAutomaticOrder } from '@/lib/auto-bridge-client'
+import { orderRequest, pollAutomaticOrders, restoreAutomaticOrder, type OrderPollSchedule } from '@/lib/auto-bridge-client'
 import { sourceTransactionId } from '@/lib/source-transaction'
 import { autoBridgeStore, type SavedAutoOrder } from '@/store/auto-bridge-store'
 
@@ -58,8 +58,7 @@ export const AutomaticOrders = () => {
   const references = autoBridgeStore(state => state.orders)
   const hydrated = useAutomaticHydrated()
   const [offline, setOffline] = useState(false)
-  const checkedTerminal = useRef(new Set<string>())
-  const nextPoll = useRef(new Map<string, { at: number; attempted: boolean; failed: boolean }>())
+  const nextPoll = useRef<OrderPollSchedule>(new Map())
   const ids = references.map(ref => ref.id).join(',')
   useEffect(() => {
     let stopped = false, busy = false
@@ -68,24 +67,7 @@ export const AutomaticOrders = () => {
       busy = true
       let failed = false
       try {
-        for (const reference of autoBridgeStore.getState().orders) {
-          if (stopped) break
-          const terminal = reference.order && isTerminal(reference.order.state)
-          if (terminal && checkedTerminal.current.has(reference.id)) continue
-          const deferred = nextPoll.current.get(reference.id)
-          if (deferred && deferred.at > Date.now() && deferred.attempted === !!reference.sourceAttempted) {
-            failed ||= deferred.failed
-            continue
-          }
-          try {
-            await restoreAutomaticOrder(reference)
-            if (terminal) checkedTerminal.current.add(reference.id)
-            nextPoll.current.set(reference.id, { at: Date.now() + (reference.sourceAttempted ? 5000 : 60000), attempted: !!reference.sourceAttempted, failed: false })
-          } catch {
-            failed = true
-            nextPoll.current.set(reference.id, { at: Date.now() + 60000, attempted: !!reference.sourceAttempted, failed: true })
-          }
-        }
+        failed = await pollAutomaticOrders(nextPoll.current, () => stopped)
       } finally { busy = false; if (!stopped) setOffline(failed) }
     }
     void poll()

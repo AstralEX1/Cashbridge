@@ -2,15 +2,6 @@ import { BridgeConfig } from '@/config'
 import { loadConfig, readCredential } from '@/server/auto-bridge/config'
 import { OrderStore } from '@/server/auto-bridge/store'
 
-let store: OrderStore | undefined
-export const getOrderStore = () => {
-  if (!store) {
-    const config = loadConfig()
-    store = new OrderStore(config.database, config.xpub, config.limits, config.maxWaitMs, config.guardFile)
-  }
-  return store
-}
-
 export async function runWorker() {
   const [{ WorkerWallet }, { BchGateway }, { processOrder }] = await Promise.all([
     import('@/server/auto-bridge/wallet'),
@@ -20,7 +11,7 @@ export async function runWorker() {
   const config = loadConfig()
   const wallet = new WorkerWallet(readCredential(process.env.AUTO_BRIDGE_KEY_FILE, true))
   if (wallet.xpub !== config.xpub) throw new Error('Worker key does not match the deposit wallet')
-  const orders = getOrderStore(),
+  const orders = new OrderStore(config.database, config.xpub, config.limits, config.maxWaitMs, config.guardFile),
     gateway = new BchGateway()
   const { startOrderServer } = await import('@/server/auto-bridge/http')
   const { quoteToken } = await import('@/lib/cauldron')
@@ -62,6 +53,5 @@ export async function runWorker() {
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()))
     orders.close()
-    store = undefined
   }
 }

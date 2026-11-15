@@ -8,6 +8,29 @@ import { BchGateway } from '../src/server/auto-bridge/gateway.ts'
 import { loadConfig } from '../src/server/auto-bridge/config.ts'
 import { BroadcastRejected, BroadcastUnknown } from '../src/lib/cauldron.ts'
 
+test('an accepted RPC broadcast does not call or wait for the backup broadcaster', async t => {
+  const previous = ['BCHN_RPC_CONFIG_FILE', 'BCHN_RPC_COOKIE_FILE', 'BCHN_RPC_URL'].map(name => [name, process.env[name]])
+  delete process.env.BCHN_RPC_CONFIG_FILE
+  delete process.env.BCHN_RPC_COOKIE_FILE
+  process.env.BCHN_RPC_URL = 'http://127.0.0.1:8332'
+  const attempt = { txid: '11'.repeat(32), hex: '00', kind: 'refund', pusdOut: '0', status: 'signed' }
+  let calls = 0
+  t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    calls++
+    assert.equal(JSON.parse(options.body).method, 'sendrawtransaction')
+    return Response.json({ result: attempt.txid })
+  })
+  try {
+    await new BchGateway().broadcast(attempt)
+    assert.equal(calls, 1)
+  } finally {
+    for (const [name, value] of previous) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  }
+})
+
 test('an unsolicited NFT can be observed for custody without becoming a spendable native input', async () => {
   const originalFetch = globalThis.fetch
   globalThis.fetch = async () => Response.json({ result: { value: 0.00000546, confirmations: 1,

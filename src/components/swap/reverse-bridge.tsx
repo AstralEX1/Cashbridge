@@ -37,7 +37,7 @@ import { withLock } from '@/lib/bridge-first-leg'
 import { bridgeCompletionTransactions } from '@/lib/bridge-completion'
 import { formatStepTime, stepTime } from '@/lib/bridge-tracking'
 import { formatAmount, formatMinutes, formatPercent, formatUsd, PUSD_LEG_SECONDS, valueImpact } from '@/lib/bridge-summary'
-import { BroadcastRejected, broadcastBchTransaction, type ReviewedSwap } from '@/lib/cauldron'
+import { type ReviewedSwap } from '@/lib/cauldron'
 import { SignCancelled, SignDeclined, SignTimedOut, SignUndelivered } from '@/lib/bch-signing'
 import { type CauldronToken, PUSD_TOKEN } from '@/lib/cauldron-tokens'
 import { readableError } from '@/lib/errors'
@@ -45,6 +45,8 @@ import { getTxStatus } from '@/lib/api'
 import {
   bchAsset,
   blockHeight,
+  broadcastSale,
+  broadcastDeposit,
   confirmReportedPayout,
   depositReadyAt,
   destinationChainOf,
@@ -91,50 +93,6 @@ const freshOperation = async (uid: string) => {
   await transactionStore.persist.rehydrate()
   const tx = transactionStore.getState().transactions.find(t => t.uid === uid)
   return tx && tx.kind !== 'send' && tx.bridge ? (tx as BridgeTx) : undefined
-}
-
-// --- Broadcast -----------------------------------------------------------------------------------
-
-const broadcastSale = async (uid: string, signedHex: string, txid: string, update: Update) => {
-  try {
-    await broadcastBchTransaction(signedHex, txid)
-    // Accepted by the network: the BCH is there at 0-conf, step 2 can be signed.
-    update(uid, () => ({ stage: 'bch_ready', error: undefined }))
-  } catch (error) {
-    if (error instanceof BroadcastRejected) {
-      const seen = await getTransactionState(txid).catch(() => ({ seen: false }))
-      if (!seen.seen) return update(uid, () => ({ stage: 'failed', error: `The swap was rejected: ${error.message}. Nothing was sent.` }))
-    }
-    update(uid, () => ({ stage: 'first_leg_unknown', error: error instanceof Error ? error.message : 'Broadcast outcome unknown' }))
-  }
-}
-
-const broadcastDeposit = async (uid: string, signedHex: string, txid: string, update: Update) => {
-  try {
-    await broadcastBchTransaction(signedHex, txid)
-    update(uid, () => ({ stage: 'second_leg_pending', error: undefined }))
-  } catch (error) {
-    if (error instanceof BroadcastRejected) {
-      const seen = await getTransactionState(txid).catch(() => ({ seen: false }))
-      if (!seen.seen) {
-        // Nothing reached THORChain: a token operation goes back to step 2 with the BCH it holds;
-        // a plain one ends here, its BCH untouched.
-        return update(uid, op =>
-          op.reverse?.sale
-            ? {
-                stage: 'bch_ready',
-                error: `The deposit was rejected: ${error.message}. Prepare it again.`,
-                reverse: { ...op.reverse, deposit: undefined, priorDepositTxids: [...(op.reverse.priorDepositTxids ?? []), txid] }
-              }
-            : { stage: 'failed', error: `The deposit was rejected: ${error.message}. Nothing was sent.` }
-        )
-      }
-    }
-    update(uid, op => ({
-      stage: 'second_leg_unknown',
-      reverse: { ...op.reverse!, deposit: { ...op.reverse!.deposit!, error: error instanceof Error ? error.message : 'Broadcast outcome unknown' } }
-    }))
-  }
 }
 
 // Signs a prepared deposit for the operation `uid` and broadcasts it.
@@ -309,8 +267,8 @@ export const ReverseSwapButton = ({ onShowBridge }: { onShowBridge: () => void }
     if (!quote && minimum) return { text: t('button.minimum', { amount: minimum, ticker: 'BCH' }), spinner: false, accent: false }
     if (!quote) return { text: token && error ? tReverse('noTokenRoute', { ticker: token.ticker }) : t('button.noValidQuotes'), spinner: false, accent: false }
     if (balance.isLoading) return { text: t('button.checkingBalance'), spinner: true, accent: false }
-    if (balance.units === undefined) return { text: t('button.balanceUnavailable'), spinner: false, accent: false, onClick: () => balance.refetch() }
-    if (balance.units < units + (token ? 0n : DEPOSIT_FEE_RESERVE)) return { text: t('button.insufficientBalance'), spinner: false, accent: false }
+    if (balance.maxUnits === undefined) return { text: t('button.balanceUnavailable'), spinner: false, accent: false, onClick: () => balance.refetch() }
+    if (balance.maxUnits < units) return { text: t('button.insufficientBalance'), spinner: false, accent: false }
     return { text: t('button.send'), spinner: false, accent: true, onClick: () => openDialog(ReverseConfirmDialog, {}) }
   }
 

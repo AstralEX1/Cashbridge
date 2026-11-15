@@ -3,6 +3,7 @@ import { apiError, methodNotAllowed } from '@/lib/api-error'
 import { rateLimit } from '@/lib/rate-limit'
 import { BLOCKCHAIR_CHAINS } from '@/lib/blockchair'
 import { isSameOrigin } from '@/lib/same-origin'
+import { readRequestBody } from '@/lib/request-body'
 
 // Server-side proxy for the Blockchair calls the UTXO toolbox makes, so the
 // paid API key stays on the server instead of shipping in the client bundle.
@@ -49,7 +50,7 @@ function badPath() {
   )
 }
 
-async function forward(req: NextRequest, path: string[], endpoints: string[], body?: string) {
+async function forward(req: NextRequest, path: string[], endpoints: string[], method: 'GET' | 'POST' = 'GET') {
   if (!isSameOrigin(req)) {
     return apiError(
       403,
@@ -74,6 +75,9 @@ async function forward(req: NextRequest, path: string[], endpoints: string[], bo
     return apiError(500, 'server_misconfigured', 'Server misconfiguration', 'BLOCKCHAIR_API_KEY is not set on the server.')
   }
 
+  const body = method === 'POST' ? await readRequestBody(req, 2 * 1024 * 1024) : undefined
+  if (body !== undefined && typeof body !== 'string') return body
+
   const url = new URL(target)
   url.search = req.nextUrl.search
   // Never let a caller pin their own key onto our request.
@@ -81,7 +85,7 @@ async function forward(req: NextRequest, path: string[], endpoints: string[], bo
   url.searchParams.set('key', apiKey)
 
   const upstream = await fetch(url, {
-    method: body === undefined ? 'GET' : 'POST',
+    method,
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body,
     cache: 'no-store',
@@ -109,7 +113,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params
-  return forward(req, path, POST_ENDPOINTS, await req.text())
+  return forward(req, path, POST_ENDPOINTS, 'POST')
 }
 
 export const PUT = methodNotAllowed(['GET', 'POST'])

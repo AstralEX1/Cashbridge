@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
 import { Coins, Loader } from 'lucide-react'
@@ -23,7 +23,8 @@ import { listWalletCoins } from '@/lib/bch'
 import { formatBaseUnits } from '@/lib/bridge'
 import { formatUsd, valueImpact } from '@/lib/bridge-summary'
 import type { CauldronToken } from '@/lib/cauldron-tokens'
-import { DEPOSIT_FEE_RESERVE } from '@/lib/thorchain-deposit'
+import { checkInbound, DepositError, type InboundAddress, maxBchDeposit } from '@/lib/thorchain-deposit'
+import { getInboundAddresses } from '@/lib/api'
 import { useSwapStore } from '@/store/swap-store'
 
 // The reverse direction's form: the BCH side on top (BCH or a Cauldron token, sent from the bound
@@ -42,12 +43,34 @@ export const useBchSideBalance = (token: CauldronToken | null) => {
     retry: 1
   })
   const utxos = query.data?.utxos
+  const fee = useQuery({
+    queryKey: ['bch-deposit-fee-rate'],
+    queryFn: async () => {
+      const inbounds = await getInboundAddresses() as unknown as InboundAddress[]
+      const vault = inbounds.find(item => item.chain === 'BCH')?.address
+      if (!vault) throw new DepositError('THORChain has no BCH vault right now')
+      return checkInbound(inbounds, vault, 'THOR')
+    },
+    enabled: !!binding && !token,
+    staleTime: 60_000,
+    retry: 1
+  })
   const units = utxos
     ? token
       ? utxos.reduce((sum, u) => sum + (u.token?.category === token.category && !u.token.nft ? u.token.amount : 0n), 0n)
       : utxos.reduce((sum, u) => sum + (u.hasToken ? 0n : u.value), 0n)
     : undefined
-  return { units, decimals: token ? token.decimals : 8, isLoading: query.isLoading && !!binding, refetch: query.refetch }
+  const maxUnits = useMemo(() => token ? units : utxos && binding && fee.data !== undefined
+    ? maxBchDeposit(utxos.filter(u => !u.hasToken).map(u => ({ txid: u.txid, vout: u.vout, value: u.value.toString() })), binding.lockingBytecode, fee.data.vaultScript, fee.data.feeRate)
+    : undefined, [utxos, binding, fee.data, token, units])
+  return {
+    units, maxUnits, decimals: token ? token.decimals : 8,
+    isLoading: !!binding && (query.isLoading || (!token && fee.isLoading)),
+    refetch: () => {
+      void query.refetch()
+      if (!token) void fee.refetch()
+    }
+  }
 }
 
 const useBchUsd = () => {
@@ -75,7 +98,7 @@ export const BchInputFrom = ({ selecting, onSelectOpenChange }: BridgeInputProps
   const sentBch = token ? (sale.quote ? Number(sale.quote.output) / 1e8 : undefined) : Number(amountFrom) || undefined
   const usd = sentBch !== undefined && bchUsd ? formatUsd(sentBch * bchUsd) : null
   // Sending all BCH leaves room for the deposit's fee.
-  const max = balance.units === undefined ? undefined : token ? balance.units : balance.units - DEPOSIT_FEE_RESERVE
+  const max = balance.maxUnits
 
   return (
     <BridgeInputSwitcher selecting={selecting}>

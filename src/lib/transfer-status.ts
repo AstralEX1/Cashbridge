@@ -29,7 +29,7 @@ export const rpcBase = async (chain: Chain) => {
 }
 
 export const postJson = async (url: string, body: unknown) => {
-  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) })
   if (!res.ok) throw new Error(`${url} answered ${res.status}`)
   return res.json()
 }
@@ -42,7 +42,7 @@ async function evmStatus(chain: EVMChain, hash: string): Promise<TransferStatus>
 }
 
 async function utxoStatus(slug: string, hash: string): Promise<TransferStatus> {
-  const res = await fetch(`${blockchairProxyUrl()}/${slug}/dashboards/transaction/${encodeURIComponent(hash)}`)
+  const res = await fetch(`${blockchairProxyUrl()}/${slug}/dashboards/transaction/${encodeURIComponent(hash)}`, { signal: AbortSignal.timeout(15_000) })
   if (!res.ok) throw new Error(`Blockchair answered ${res.status}`)
   const { data } = await res.json()
   // Unknown hashes come back as an empty `data`; a mempool transaction has block_id -1.
@@ -53,7 +53,7 @@ async function utxoStatus(slug: string, hash: string): Promise<TransferStatus> {
 // Tendermint RPC: a hash the node has not indexed is an error whose data says "not found".
 async function tendermintStatus(chain: Chain, hash: string): Promise<TransferStatus> {
   const rpc = await rpcBase(chain)
-  const res = await fetch(`${rpc}/tx?hash=0x${hash.startsWith('0x') ? hash.slice(2) : hash}`)
+  const res = await fetch(`${rpc}/tx?hash=0x${hash.startsWith('0x') ? hash.slice(2) : hash}`, { signal: AbortSignal.timeout(15_000) })
   const { result, error } = await res.json()
   if (error) {
     if (String(error.data).includes('not found')) return 'pending'

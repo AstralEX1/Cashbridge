@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { apiError, methodNotAllowed } from '@/lib/api-error'
 import { rateLimit } from '@/lib/rate-limit'
 import { isSameOrigin } from '@/lib/same-origin'
+import { readRequestBody } from '@/lib/request-body'
 
 // Server-side proxy for the Solana JSON-RPC calls the SDK's toolbox makes. No
 // free endpoint works from a browser: api.mainnet-beta.solana.com answers a
@@ -64,15 +65,8 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // Checked before reading, so an oversized body is refused rather than buffered,
-  // and again after, in bytes rather than UTF-16 units, in case the header lied.
-  const tooLarge = () =>
-    apiError(413, 'payload_too_large', 'Request body is too large', `Solana JSON-RPC requests are limited to ${MAX_BODY_BYTES} bytes.`)
-
-  if (Number(req.headers.get('content-length')) > MAX_BODY_BYTES) return tooLarge()
-
-  const body = await req.text()
-  if (Buffer.byteLength(body) > MAX_BODY_BYTES) return tooLarge()
+  const body = await readRequestBody(req, MAX_BODY_BYTES)
+  if (typeof body !== 'string') return body
 
   try {
     if (!isJsonRpc(JSON.parse(body))) throw new Error('not a JSON-RPC request')

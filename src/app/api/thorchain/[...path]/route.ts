@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { apiError, methodNotAllowed } from '@/lib/api-error'
 import { rateLimit } from '@/lib/rate-limit'
 import { isSameOrigin } from '@/lib/same-origin'
+import { readRequestBody } from '@/lib/request-body'
 
 // Server-side proxy for the hosted THORChain aggregator (api.thorchain.org/v1), so the
 // x-api-key stays on the server instead of shipping in the client bundle. The SDK and
@@ -73,8 +74,9 @@ async function forward(req: NextRequest, path: string[], method: 'GET' | 'POST')
 
   let body: string | undefined
   if (method === 'POST') {
-    body = await req.text()
-    if (body.length > MAX_BODY_BYTES) return apiError(413, 'payload_too_large', 'Request body too large', `At most ${MAX_BODY_BYTES} bytes.`)
+    const payload = await readRequestBody(req, MAX_BODY_BYTES)
+    if (typeof payload !== 'string') return payload
+    body = payload
     if (body) {
       try {
         JSON.parse(body)

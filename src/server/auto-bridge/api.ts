@@ -1,17 +1,13 @@
-import { BridgeConfig } from '@/config'
 import { existsSync } from 'node:fs'
 import { NextRequest, NextResponse } from 'next/server'
 import { sourceTransactionId, sameSourceTransaction } from '@/lib/source-transaction'
 import { minOutputFor, secondLegSellAmount } from '@/lib/bridge'
-import { quoteToken } from '@/lib/cauldron'
 import { rateLimit } from '@/lib/rate-limit'
 import { isSameOrigin } from '@/lib/same-origin'
-import { getOrderStore } from '@/server/auto-bridge/runtime'
 import { OrderError, positiveAmount, type OrderIntent } from '@/server/auto-bridge/types'
 import type { OrderStore } from '@/server/auto-bridge/store'
 
 type Service = { store: OrderStore; quote: (sats: bigint) => Promise<{ output: bigint }>; admit?: () => boolean }
-const currentService = (): Service => ({ store: getOrderStore(), quote: sats => quoteToken({ category: BridgeConfig.pusd.category, side: 'buy', amount: sats }) })
 const headers = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }
 const reply = (body: unknown, status = 200) => NextResponse.json(body, { status, headers })
 const errorReply = (error: unknown) =>
@@ -55,7 +51,7 @@ const guard = (req: NextRequest, mutation: boolean) => {
     throw new OrderError(429, 'Too many order requests')
 }
 
-export async function createOrder(req: NextRequest, service?: Service) {
+export async function createOrder(req: NextRequest, service: Service) {
   try {
     guard(req, true)
     const cap = token(req),
@@ -80,7 +76,7 @@ export async function createOrder(req: NextRequest, service?: Service) {
         !/^\d+(?:\.\d+)?$/.test(source.amount as string)) throw new OrderError(400, 'Invalid source intent')
       intent.source = { chain: source.chain as string, asset: source.asset as string, amount: source.amount as string, address: source.address as string }
     }
-    const { store, quote, admit } = service ?? currentService()
+    const { store, quote, admit } = service
     const old = store.get(input.id)
     if (old) {
       store.create(input.id, cap, intent, old.minPusd)
@@ -102,16 +98,16 @@ export async function createOrder(req: NextRequest, service?: Service) {
   }
 }
 
-export async function getOrder(req: NextRequest, id: string, service?: Service) {
+export async function getOrder(req: NextRequest, id: string, service: Service) {
   try {
     guard(req, false)
-    return reply((service ?? currentService()).store.public(id, token(req)))
+    return reply(service.store.public(id, token(req)))
   } catch (error) {
     return errorReply(error)
   }
 }
 
-export async function attachSource(req: NextRequest, id: string, service?: Service) {
+export async function attachSource(req: NextRequest, id: string, service: Service) {
   try {
     guard(req, true)
     const cap = token(req),
@@ -119,7 +115,7 @@ export async function attachSource(req: NextRequest, id: string, service?: Servi
     const sourceHash = sourceTransactionId(input.sourceHash)
     if (!sourceHash)
       throw new OrderError(400, 'Invalid source transaction identifier')
-    const store = (service ?? currentService()).store,
+    const store = service.store,
       order = store.authorized(id, cap)
     if (order.sourceHash && !sameSourceTransaction(order.sourceHash, sourceHash) && !sameSourceTransaction(order.inboundHash, sourceHash)) throw new OrderError(409, 'Order already has a source transaction')
     if (order.inboundHash && !sameSourceTransaction(order.inboundHash, sourceHash)) throw new OrderError(409, 'Source transaction does not match the observed order')

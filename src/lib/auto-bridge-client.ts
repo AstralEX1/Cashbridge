@@ -6,7 +6,7 @@ import { isUserRejection } from '@/lib/errors'
 import { sourceTransactionId } from '@/lib/source-transaction'
 import { addressToLockingBytecode } from '@/lib/bch'
 import { autoBridgeStore, type SavedAutoOrder } from '@/store/auto-bridge-store'
-import type { PublicOrder } from '@/lib/auto-bridge-contract'
+import { isTerminal, type PublicOrder } from '@/lib/auto-bridge-contract'
 
 export class OrderRequestError extends Error {
   constructor(readonly status: number, message: string) { super(message) }
@@ -50,6 +50,29 @@ export async function restoreAutomaticOrder(reference: SavedAutoOrder): Promise<
   }
   autoBridgeStore.getState().patch(reference.id, { order })
   return order
+}
+
+export type OrderPollSchedule = Map<string, { at: number; attempted: boolean; failed: boolean }>
+
+export async function pollAutomaticOrders(nextPoll: OrderPollSchedule, stopped: () => boolean) {
+  let failed = false
+  for (const reference of autoBridgeStore.getState().orders) {
+    if (stopped()) break
+    const deferred = nextPoll.get(reference.id)
+    if (deferred && deferred.at > Date.now() && deferred.attempted === !!reference.sourceAttempted) {
+      failed ||= deferred.failed
+      continue
+    }
+    try {
+      const order = await restoreAutomaticOrder(reference)
+      const delay = isTerminal(order.state) ? 300000 : reference.sourceAttempted ? 5000 : 60000
+      nextPoll.set(reference.id, { at: Date.now() + delay, attempted: !!reference.sourceAttempted, failed: false })
+    } catch {
+      failed = true
+      nextPoll.set(reference.id, { at: Date.now() + 60000, attempted: !!reference.sourceAttempted, failed: true })
+    }
+  }
+  return failed
 }
 
 export async function startAutomaticSource(

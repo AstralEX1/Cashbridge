@@ -185,7 +185,6 @@ export class BchGateway implements Gateway {
       try {
         const answer = await this.rpcAt<string>(node, 'sendrawtransaction', [attempt.hex])
         if (normalizeTxid(answer) !== attempt.txid) throw new BroadcastUnknown('BCH node returned another transaction id')
-        await broadcastViaCauldron(attempt.hex, attempt.txid).catch(() => undefined)
         return
       } catch (error) {
         if (error instanceof NodeError && error.code === -27) return

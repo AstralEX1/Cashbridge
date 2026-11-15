@@ -63,6 +63,20 @@ test('closed-browser Solana and indexed Cosmos orders discover exact funding wit
   }
 })
 
+test('an existing order paying a service deposit script retains custody without signing', async () => {
+  const env = setup(':memory:', { ...limits, maxPendingSats: 100000000n })
+  try {
+    const order = env.store.create(randomUUID(), randomBytes(32).toString('hex'), {
+      ...intent, recipientAddress: env.signer.binding(2).tokenAddress
+    }, '200')
+    env.store.create(randomUUID(), randomBytes(32).toString('hex'), intent, '200')
+    await processOrder(env.store, gateway([receipt(order, 'AB'.repeat(32))]), noSigner, order, policy)
+    assert.equal(env.store.get(order.id).state, 'manual_review')
+    assert.equal(env.store.exposure(), 1000000n)
+    assert.equal(env.store.attempts(order.id).length, 0)
+  } finally { env.store.close() }
+})
+
 test('multiple inbounds remain quarantined and accounted after the admission reservation expires', async () => {
   const env = setup()
   try {

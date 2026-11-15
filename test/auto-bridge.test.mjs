@@ -57,6 +57,19 @@ test('durable orders allocate unique addresses, preserve immutable intent and au
   }
 })
 
+test('customer payouts cannot point to any previously allocated service deposit script', () => {
+  const signer = wallet(), store = new OrderStore(':memory:', signer.xpub, limits)
+  try {
+    const first = store.create(randomUUID(), capability(), intent, '200')
+    for (const field of ['recipientAddress', 'refundAddress']) {
+      for (const address of [first.binding.cashAddress, first.binding.tokenAddress]) {
+        assert.throws(() => store.create(randomUUID(), capability(), { ...intent, [field]: address }, '200'), error => error.status === 400)
+      }
+    }
+    assert.equal(store.create(randomUUID(), capability(), intent, '200').addressIndex, 1, 'a rejected recipient never allocates another address')
+  } finally { store.close() }
+})
+
 test('creation enforces amount limits and competing updates cannot overwrite newer state', () => {
   const signer = wallet()
   const store = new OrderStore(':memory:', signer.xpub, limits)

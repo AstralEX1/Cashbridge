@@ -13,9 +13,34 @@ globalThis.localStorage = {
   removeItem: key => data.delete(key)
 }
 const { autoBridgeStore } = await import('../src/store/auto-bridge-store.ts')
-const { startAutomaticSource, restoreAutomaticOrder } = await import('../src/lib/auto-bridge-client.ts')
+const { startAutomaticSource, restoreAutomaticOrder, pollAutomaticOrders } = await import('../src/lib/auto-bridge-client.ts')
 const { automaticCompletion, automaticTransactions } = await import('../src/lib/auto-bridge-summary.ts')
 const { automaticEligible } = await import('../src/lib/auto-bridge-contract.ts')
+
+test('terminal automatic orders refresh late custody and payout warnings on a bounded schedule', async t => {
+  t.after(() => { autoBridgeStore.setState({ orders: [] }); data.clear() })
+  const address = bindingFromPubkey(pubkey, 0).cashAddress
+  const reference = { id: randomUUID(), capability: randomBytes(32).toString('hex'), sourceAttempted: true }
+  autoBridgeStore.setState({ orders: [reference] })
+  let now = 1000, calls = 0
+  t.mock.method(Date, 'now', () => now)
+  let response = { id: reference.id, depositAddress: address, minPusd: '100', state: 'completed', recoverySats: '0' }
+  t.mock.method(globalThis, 'fetch', async () => { calls++; return Response.json(response) })
+  const schedule = new Map()
+  assert.equal(await pollAutomaticOrders(schedule, () => false), false)
+  assert.equal(calls, 1)
+  now += 299999
+  await pollAutomaticOrders(schedule, () => false)
+  assert.equal(calls, 1)
+  now++
+  response = { ...response, recoverySats: '12000', error: 'Final payout needs verification' }
+  assert.equal(await pollAutomaticOrders(schedule, () => false), false)
+  assert.equal(calls, 2)
+  assert.equal(autoBridgeStore.getState().orders[0].order.recoverySats, '12000')
+  assert.equal(autoBridgeStore.getState().orders[0].order.error, response.error)
+  await pollAutomaticOrders(schedule, () => true)
+  assert.equal(calls, 2)
+})
 
 test('source authorization is recorded before opening the wallet and a lost callback cannot trigger resubmission', async () => {
   const deposit = bindingFromPubkey(pubkey, 0).cashAddress

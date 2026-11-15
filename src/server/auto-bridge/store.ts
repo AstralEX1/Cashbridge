@@ -113,6 +113,9 @@ export class OrderStore {
     const row = this.db.prepare('SELECT payload FROM orders WHERE id=?').get(id) as { payload: string } | undefined
     return row ? (JSON.parse(row.payload) as Order) : undefined
   }
+  isDepositScript(script: string) {
+    return !!this.db.prepare("SELECT 1 FROM orders WHERE json_extract(payload,'$.binding.lockingBytecode')=? LIMIT 1").get(script)
+  }
   active() {
     // shortcut: poll retained scripts; add a subscription cache before sustained abandoned-order volume.
     return (
@@ -184,7 +187,8 @@ export class OrderStore {
         throw new OrderError(503, 'Bridge capacity reached')
       const { next } = this.db.prepare('SELECT COALESCE(MAX(address_index), -1) + 1 AS next FROM orders').get() as { next: number }
       const binding = this.wallet.binding(next)
-      if ([recipientScript, refundScript].includes(binding.lockingBytecode)) throw new OrderError(400, 'Recipient must be outside the deposit wallet')
+      if ([recipientScript, refundScript].some(script => script === binding.lockingBytecode || this.isDepositScript(script)))
+        throw new OrderError(400, 'Recipient must be outside the deposit wallet')
       const order: Order = {
         ...intent,
         id,

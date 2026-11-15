@@ -10,8 +10,7 @@ import {
   hexToBin,
   lockingBytecodeToCashAddress,
   sha256,
-  type Transaction,
-  utf8ToBin
+  type Transaction
 } from '@bitauth/libauth'
 import { BridgeConfig } from '@/config'
 import { sameSourceTransaction, sourceIdFromMemo } from '@/lib/source-transaction'
@@ -474,7 +473,3 @@ export const getTransactionState = (txid: string) =>
     const verbose = await client.request<{ confirmations?: number }>('blockchain.transaction.get', [normalizeTxid(txid), true]).catch(() => ({}) as { confirmations?: number })
     return { seen: true as const, confirmations: Number(verbose.confirmations ?? 0) }
   })
-
-export const broadcastViaElectrum = (hex: string) => withElectrum(client => client.request<string>('blockchain.transaction.broadcast', [hex]))
-
-export const textToHex = (text: string) => binToHex(utf8ToBin(text))

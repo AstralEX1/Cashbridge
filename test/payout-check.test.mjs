@@ -129,6 +129,21 @@ test('a THORChain-native payout is THORNode’s outbound in the asked asset, lin
   assert.equal(thorchainPayout({ ...out, memo: 'REFUND:00' }, expect), undefined)
 })
 
+test('reported non-EVM payouts do not require an EVM router', async () => {
+  const { default: axios } = await import('axios')
+  const adapter = axios.defaults.adapter
+  const destination = 'thor1destination'
+  axios.defaults.adapter = async config => ({ status: 200, headers: {}, config, data: {
+    out_txs: [{ id: '0'.repeat(64), chain: 'THOR', to_address: destination, coins: [{ asset: 'THOR.RUNE', amount: '123000000' }], memo }]
+  } })
+  try {
+    const { confirmReportedPayout } = await import('../src/lib/reverse-bridge.ts')
+    assert.deepEqual(await confirmReportedPayout({ reverse: { buyAsset: 'THOR.RUNE', destination, deposit: { txid: deposit } } }), {
+      hash: deposit.toUpperCase(), amount: '123000000'
+    })
+  } finally { axios.defaults.adapter = adapter }
+})
+
 test('a deposit to RUNE needs no THOR inbound; memos may name the asset by its short code', () => {
   const inbounds = [{ chain: 'BCH', address: bindingFromPubkey(pubkey, 0).cashAddress, gas_rate: '2' }]
   const ok = checkInbound(inbounds, inbounds[0].address, 'THOR')

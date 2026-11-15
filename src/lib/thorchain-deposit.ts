@@ -1,5 +1,6 @@
 import { binToHex, encodeTransaction, hexToBin, utf8ToBin } from '@bitauth/libauth'
 import { sourceOutputToRelay } from '@wizardconnect/core/hdwalletv1-serialize'
+import { AbiCoder } from 'ethers'
 import { addressToLockingBytecode, normalizeTxid } from '@/lib/bch'
 import { sameAddress } from '@/lib/payout-chains'
 
@@ -151,34 +152,54 @@ export const buildDeposit = (intent: DepositIntent): BuiltDeposit => {
   }
 }
 
+// Use the same transaction sizing for MAX, coin selection and the executable deposit.
+export const maxBchDeposit = (funding: DepositIntent['funding'], lockingBytecode: string, vaultScript: string, feeRate: bigint) => {
+  if (!funding.length) return 0n
+  try {
+    return buildDeposit({ funding, lockingBytecode, vaultScript, memo: 'x'.repeat(MAX_MEMO_BYTES), payAll: true, feeRate }).amountSats
+  } catch (error) {
+    if (error instanceof DepositError) return 0n
+    throw error
+  }
+}
+
+export const pickBchFunding = (funding: DepositIntent['funding'], amountSats: bigint, lockingBytecode: string, vaultScript: string, feeRate: bigint) => {
+  if (amountSats < BCH_DUST_THRESHOLD) throw new DepositError('The deposit is below THORChain’s BCH minimum')
+  const chosen: DepositIntent['funding'] = []
+  let total = 0n
+  for (const coin of [...funding].sort((a, b) => BigInt(a.value) > BigInt(b.value) ? -1 : BigInt(a.value) < BigInt(b.value) ? 1 : 0)) {
+    chosen.push(coin)
+    total += BigInt(coin.value)
+    if (total >= amountSats && maxBchDeposit(chosen, lockingBytecode, vaultScript, feeRate) >= amountSats) return chosen
+  }
+  throw new DepositError('The BCH wallet holds less BCH than this amount and its fee at the connected address')
+}
+
 // --- Payout on the EVM chain -----------------------------------------------------------------------
 
 // keccak256("TransferOut(address,address,address,uint256,string)") of THORChain's router.
 export const TRANSFER_OUT_TOPIC = '0xa9cd03aa3c1b4515114539cd53d22085129d495cb9e9f9af77864526240f1bf7'
 
 export interface RouterLog {
+  address: string
   topics: string[]
   data: string
   transactionHash: string
   blockNumber: number
 }
 
-const word = (data: string, index: number) => data.slice(2 + index * 64, 2 + (index + 1) * 64)
-
 // The router's TransferOut paying `destination` for the deposit `depositTxid` (memo OUT:<txid>).
-// The memo, recipient and asset are read from the event itself.
-export const matchPayout = (logs: RouterLog[], { destination, depositTxid }: { destination: string; depositTxid: string }) => {
+// Match the emitting router and asset too: another contract can emit an identical event.
+export const matchPayout = (logs: RouterLog[], { destination, depositTxid, router, buyAsset }: { destination: string; depositTxid: string; router: string; buyAsset: string }) => {
   const recipient = `0x${'0'.repeat(24)}${destination.toLowerCase().replace(/^0x/, '')}`
   const memo = `OUT:${normalizeTxid(depositTxid)}`.toUpperCase()
+  const expectedAsset = buyAsset.split('-')[1]?.toLowerCase() ?? `0x${'00'.repeat(20)}`
   for (const log of logs) {
-    if (log.topics[0]?.toLowerCase() !== TRANSFER_OUT_TOPIC || log.topics[2]?.toLowerCase() !== recipient) continue
+    if (log.address.toLowerCase() !== router.toLowerCase() || log.topics[0]?.toLowerCase() !== TRANSFER_OUT_TOPIC || log.topics[2]?.toLowerCase() !== recipient) continue
     try {
-      const amount = BigInt(`0x${word(log.data, 1)}`)
-      const memoOffset = Number(BigInt(`0x${word(log.data, 2)}`)) / 32
-      const memoLength = Number(BigInt(`0x${word(log.data, memoOffset)}`))
-      const memoHex = log.data.slice(2 + (memoOffset + 1) * 64, 2 + (memoOffset + 1) * 64 + memoLength * 2)
-      const text = new TextDecoder().decode(hexToBin(memoHex))
-      if (text.toUpperCase() === memo) return { hash: log.transactionHash, amount: amount.toString(), asset: `0x${word(log.data, 0).slice(24)}` }
+      const [asset, amount, text] = AbiCoder.defaultAbiCoder().decode(['address', 'uint256', 'string'], log.data)
+      if (asset.toLowerCase() === expectedAsset && amount > 0n && text.toUpperCase() === memo)
+        return { hash: log.transactionHash, amount: amount.toString(), asset: asset.toLowerCase() }
     } catch {
       // A malformed log is not ours.
     }

@@ -211,6 +211,10 @@ export async function processOrder(
   const history = new Set((await gateway.history(order.binding.lockingBytecode)).map(normalizeTxid))
   await observeDeposit(store, gateway, order, history, clock())
   order = store.get(order.id)!
+  if (store.isDepositScript(order.recipientScript) || store.isDepositScript(order.refundScript)) {
+    store.update(order.id, order.version, { state: 'manual_review', error: 'A customer destination is a service deposit address; operator verification is required.' }, clock())
+    return
+  }
   const inboundIds = new Set<string>([order.inboundHash, order.sourceHash].map(sourceTransactionId).filter((value): value is string => !!value))
   for (const id of history) {
     if (!isTxid(id)) continue

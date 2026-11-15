@@ -567,7 +567,7 @@ export const sourcesOf = (reviewed: Pick<ReviewedSwap, 'sourceOutputs'>): Output
 const ALLOWED_SIGHASH = [0x41, 0x61]
 
 // A P2PKH unlocking script: <signature> <public key>, both direct pushes.
-const parseP2pkhUnlock = (bytecode: Uint8Array) => {
+export const parseP2pkhUnlock = (bytecode: Uint8Array) => {
   const sigLength = bytecode[0]
   if (!sigLength || sigLength > 0x4b) return undefined
   const signature = bytecode.slice(1, 1 + sigLength)
@@ -666,8 +666,12 @@ export const broadcastBchTransaction = async (
       if (ALREADY_KNOWN.test(error.message)) return txid
       throw new BroadcastRejected(error.message || 'Rejected by the network')
     }
-    // Not delivered (no connection, timeout): try the second route with the same bytes.
-    return routes.cauldron(signedHex, txid)
+    // A lost answer can follow acceptance; a backup rejection cannot rule out the first send.
+    try {
+      return await routes.cauldron(signedHex, txid)
+    } catch {
+      throw new BroadcastUnknown('Fulcrum acceptance remains unknown; check the saved transaction')
+    }
   }
   if (normalizeTxid(String(answer)) !== txid) throw new BroadcastUnknown('The BCH server reported a different transaction id')
   return txid

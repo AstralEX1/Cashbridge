@@ -120,3 +120,86 @@ test('on Vercel a caller-supplied cf-connecting-ip does not pick its own rate-li
   }
   assert.equal(clientIp(request({ 'cf-connecting-ip': '6.6.6.6', 'x-forwarded-for': '9.9.9.9, 1.2.3.4' })), '6.6.6.6')
 })
+
+
+test('the body limit counts UTF-8 bytes and cancels oversized streams before buffering the rest', async () => {
+  seen.length = 0
+  assert.equal((await call('POST', ['v1', 'quote'], { body: JSON.stringify({ x: '€'.repeat(6000) }) })).status, 413)
+  let reads = 0, cancelled = false
+  const body = new ReadableStream({
+    pull(controller) {
+      reads++
+      if (reads === 1) controller.enqueue(new Uint8Array(17000).fill(32))
+      else controller.error(new Error('The oversized remainder must never be read'))
+    },
+    cancel() { cancelled = true }
+  }, { highWaterMark: 0 })
+  const req = new NextRequest('http://localhost:3000/api/thorchain/v1/quote', {
+    method: 'POST', body, duplex: 'half', headers: { 'sec-fetch-site': 'same-origin' }
+  })
+  const response = await route.POST(req, { params: Promise.resolve({ path: ['v1', 'quote'] }) })
+  assert.equal(response.status, 413)
+  assert.equal(reads, 1)
+  assert.equal(cancelled, true)
+  assert.equal(seen.length, 0)
+})
+
+
+test('bounded request bodies accept exact UTF-8 limits and report interrupted reads without forwarding', async () => {
+  const { readRequestBody } = await import('../src/lib/request-body.ts')
+  const request = body => new Request('http://localhost', { method: 'POST', body, duplex: 'half' })
+  assert.equal(await readRequestBody(request('€'), 3), '€')
+  assert.equal(await readRequestBody(request(undefined), 3), '')
+  const broken = new ReadableStream({ start(controller) { controller.error(new Error('synthetic stream failure')) } })
+  const response = await readRequestBody(request(broken), 3)
+  assert.equal(response.status, 400)
+  assert.ok(!(await response.text()).includes('synthetic stream failure'))
+})
+
+test('Solana and Blockchair reject oversized streams and preserve valid POST bodies', async () => {
+  const originalFetch = globalThis.fetch, previousKey = process.env.BLOCKCHAIR_API_KEY
+  process.env.BLOCKCHAIR_API_KEY = KEY
+  const solana = await import('../src/app/api/solana/route.ts')
+  const blockchair = await import('../src/app/api/blockchair/[...path]/route.ts')
+  const sent = []
+  globalThis.fetch = async (_url, options) => { sent.push(options); return Response.json({ ok: true }) }
+  try {
+    for (const [handler, limit, path] of [[solana.POST, 100000, undefined], [blockchair.POST, 2 * 1024 * 1024, ['bitcoin', 'push', 'transaction']]]) {
+      let reads = 0, cancelled = false
+      const body = new ReadableStream({
+        pull(controller) {
+          reads++
+          if (reads === 1) controller.enqueue(new Uint8Array(limit + 1))
+          else controller.error(new Error('Must stop at the limit'))
+        },
+        cancel() { cancelled = true }
+      }, { highWaterMark: 0 })
+      const init = { method: 'POST', headers: { 'sec-fetch-site': 'same-origin' } }
+      const context = { params: Promise.resolve({ path }) }
+      const rejected = await handler(new NextRequest('http://localhost/api/proxy', { ...init, body, duplex: 'half' }), context)
+      assert.equal(rejected.status, 413)
+      assert.equal(reads, 1)
+      assert.equal(cancelled, true)
+      const payload = JSON.stringify(path ? { data: '00' } : { jsonrpc: '2.0', id: 1, method: 'getBlockHeight' })
+      assert.equal((await handler(new NextRequest('http://localhost/api/proxy', { ...init, body: payload }), context)).status, 200)
+      assert.equal(sent.at(-1).body, payload)
+      assert.equal(sent.at(-1).method, 'POST')
+    }
+    assert.equal(sent.length, 2)
+  } finally {
+    globalThis.fetch = originalFetch
+    if (previousKey === undefined) delete process.env.BLOCKCHAIR_API_KEY
+    else process.env.BLOCKCHAIR_API_KEY = previousKey
+  }
+})
+
+test('Blockchair refuses cross-origin requests before reading their bodies', async () => {
+  const { POST } = await import('../src/app/api/blockchair/[...path]/route.ts')
+  let reads = 0
+  const body = new ReadableStream({ pull(controller) { reads++; controller.error(new Error('The forbidden body must not be read')) } }, { highWaterMark: 0 })
+  const req = new NextRequest('http://localhost/api/blockchair/bitcoin/push/transaction', {
+    method: 'POST', headers: { 'sec-fetch-site': 'cross-site' }, body, duplex: 'half'
+  })
+  assert.equal((await POST(req, { params: Promise.resolve({ path: ['bitcoin', 'push', 'transaction'] }) })).status, 403)
+  assert.equal(reads, 0)
+})

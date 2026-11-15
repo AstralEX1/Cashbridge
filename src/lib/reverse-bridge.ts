@@ -1,3 +1,4 @@
+import { binToHex } from '@bitauth/libauth'
 import { Chain, EVMChain, getChainConfig, UTXOChain } from '@tcswap/core'
 import { ProviderName } from '@tcswap/helpers'
 import type { QuoteResponseRoute } from '@tcswap/helpers/api'
@@ -5,12 +6,12 @@ import { getProvider } from '@tcswap/toolboxes/evm'
 import type { Asset } from '@/components/swap/asset'
 import { BridgeConfig } from '@/config'
 import { getInboundAddresses, getQuotes, getTxStatus, isBridgeRoute, type TxStatusResponse } from '@/lib/api'
-import { type BchBinding, listWalletCoins, type ScriptUtxo } from '@/lib/bch'
+import { type BchBinding, decodeTx, getTransactionState, listWalletCoins } from '@/lib/bch'
 import { formatBaseUnits, minOutputFor } from '@/lib/bridge'
 import { withLock } from '@/lib/bridge-first-leg'
-import { prepareTokenTrade } from '@/lib/cauldron'
+import { BroadcastRejected, broadcastBchTransaction, parseP2pkhUnlock, prepareTokenTrade } from '@/lib/cauldron'
 import type { CauldronToken } from '@/lib/cauldron-tokens'
-import { buildDeposit, type BuiltDeposit, checkDepositMemo, checkInbound, DepositError, type InboundAddress, matchPayout, TRANSFER_OUT_TOPIC } from '@/lib/thorchain-deposit'
+import { buildDeposit, type BuiltDeposit, checkDepositMemo, checkInbound, DepositError, type InboundAddress, matchPayout, pickBchFunding, TRANSFER_OUT_TOPIC } from '@/lib/thorchain-deposit'
 import { cosmosPayout, type ChainPayout, solanaPayout, thorchainPayout, tronPayout, utxoPayout, xrpPayout } from '@/lib/payout-check'
 import { isEvmChain } from '@/lib/payout-chains'
 import { BLOCKCHAIR_CHAINS } from '@/lib/blockchair'
@@ -49,6 +50,52 @@ export const tokenAsset = (token: CauldronToken): Asset => ({
 export const destinationChainOf = (buyAsset: string) => buyAsset.split('.')[0].toUpperCase()
 
 export { signInWallet, type Signable } from '@/lib/bch-signing'
+
+type Update = ReturnType<typeof transactionStore.getState>['updateBridge']
+
+const rejectedFundingIntact = async (uid: string, signedHex: string, txid: string) => {
+  if ((await getTransactionState(txid)).seen) return false
+  const tx = transactionStore.getState().transactions.find(item => item.uid === uid)
+  const binding = tx?.kind !== 'send' ? tx?.bridge?.binding : undefined
+  if (!binding?.pubkey) return false
+  const inputs = decodeTx(signedHex).inputs.filter(input => {
+    const unlock = parseP2pkhUnlock(input.unlockingBytecode)
+    return unlock && binToHex(unlock.pubkey) === binding.pubkey
+  })
+  if (!inputs.length) return false
+  const { utxos } = await listWalletCoins(binding.lockingBytecode)
+  return inputs.every(input => utxos.some(coin => coin.txid === binToHex(input.outpointTransactionHash) && coin.vout === input.outpointIndex))
+}
+
+export const broadcastSale = async (uid: string, signedHex: string, txid: string, update: Update) => {
+  try {
+    await broadcastBchTransaction(signedHex, txid)
+    update(uid, op => op.reverse?.sale?.txid === txid ? { stage: 'bch_ready', error: undefined } : {})
+  } catch (error) {
+    if (error instanceof BroadcastRejected && await rejectedFundingIntact(uid, signedHex, txid).catch(() => false))
+      return update(uid, op => op.reverse?.sale?.txid === txid ? { stage: 'failed', error: `The swap was rejected: ${error.message}. Nothing was sent.` } : {})
+    update(uid, op => op.reverse?.sale?.txid === txid ? { stage: 'first_leg_unknown', error: error instanceof Error ? error.message : 'Broadcast outcome unknown' } : {})
+  }
+}
+
+export const broadcastDeposit = async (uid: string, signedHex: string, txid: string, update: Update) => {
+  try {
+    await broadcastBchTransaction(signedHex, txid)
+    update(uid, op => op.reverse?.deposit?.txid === txid ? { stage: 'second_leg_pending', error: undefined } : {})
+  } catch (error) {
+    if (error instanceof BroadcastRejected && await rejectedFundingIntact(uid, signedHex, txid).catch(() => false)) {
+      return update(uid, op => op.reverse?.deposit?.txid !== txid ? {} : op.reverse.sale ? {
+        stage: 'bch_ready',
+        error: `The deposit was rejected: ${error.message}. Prepare it again.`,
+        reverse: { ...op.reverse, deposit: undefined, priorDepositTxids: [...(op.reverse.priorDepositTxids ?? []), txid] }
+      } : { stage: 'failed', error: `The deposit was rejected: ${error.message}. Nothing was sent.` })
+    }
+    update(uid, op => op.reverse?.deposit?.txid !== txid ? {} : {
+      stage: 'second_leg_unknown',
+      reverse: { ...op.reverse!, deposit: { ...op.reverse!.deposit!, error: error instanceof Error ? error.message : 'Broadcast outcome unknown' } }
+    })
+  }
+}
 
 // --- Step 1: the Cauldron sale -------------------------------------------------------------------
 
@@ -123,9 +170,10 @@ export const prepareDeposit = async ({
   const chain = destinationChainOf(buyAsset)
   const bchVault = inbounds.find(i => i.chain === 'BCH')?.address
   if (!bchVault) throw new DepositError('THORChain has no BCH vault right now')
-  const { feeRate } = checkInbound(inbounds, bchVault, chain)
+  const { feeRate, vaultScript: sizingVault } = checkInbound(inbounds, bchVault, chain)
+  if (!payAll) funding = pickBchFunding(funding, amountSats ?? 0n, binding.lockingBytecode, sizingVault, feeRate)
   // Sized with the longest memo THORChain reads: the real memo can only make the fee smaller.
-  const sizing = buildDeposit({ funding, lockingBytecode: binding.lockingBytecode, vaultScript: binding.lockingBytecode, memo: 'x'.repeat(80), payAll, amountSats, feeRate })
+  const sizing = buildDeposit({ funding, lockingBytecode: binding.lockingBytecode, vaultScript: sizingVault, memo: 'x'.repeat(80), payAll, amountSats, feeRate })
   const amount = sizing.amountSats
 
   const routes = await getQuotes({
@@ -147,21 +195,11 @@ export const prepareDeposit = async ({
   return { built, route, router }
 }
 
-// Token-free BCH of the bound address covering `amountSats` and the deposit's fee.
-export const pickBchFunding = (utxos: ScriptUtxo[], amountSats: bigint) => {
-  const coins = pick(
-    utxos.filter(u => !u.hasToken),
-    u => u.value,
-    amountSats + 2_000n
-  )
-  if (!coins) throw new DepositError('The BCH wallet holds less BCH than this amount and its fee at the connected address')
-  return coins.map(u => ({ txid: u.txid, vout: u.vout, value: u.value.toString() }))
-}
-
 // A plain BCH deposit of `amountSats` from the bound address, quoted and built, ready to sign.
 export const prepareBchDeposit = async (args: { amountSats: bigint; binding: BchBinding; buyAsset: string; shortCode?: string; destination: string; slippage: number }) => {
   const { utxos } = await listWalletCoins(args.binding.lockingBytecode)
-  return prepareDeposit({ ...args, funding: pickBchFunding(utxos, args.amountSats), payAll: false })
+  const funding = utxos.filter(u => !u.hasToken).map(u => ({ txid: u.txid, vout: u.vout, value: u.value.toString() }))
+  return prepareDeposit({ ...args, funding, payAll: false })
 }
 
 // Where the payout search starts on an EVM chain; other chains are looked up by THORNode's outbound hash.
@@ -209,8 +247,8 @@ export const findPayout = async (op: BridgeOperation) => {
     const to = Math.min(head, from + PAYOUT_SCAN_CHUNK - 1)
     const logs = await provider.getLogs({ address: deposit.router, topics: [TRANSFER_OUT_TOPIC, null, recipient], fromBlock: from, toBlock: to })
     const match = matchPayout(
-      logs.map(l => ({ topics: [...l.topics], data: l.data, transactionHash: l.transactionHash, blockNumber: l.blockNumber })),
-      { destination: reverse.destination, depositTxid: deposit.txid }
+      logs.map(l => ({ address: l.address, topics: [...l.topics], data: l.data, transactionHash: l.transactionHash, blockNumber: l.blockNumber })),
+      { destination: reverse.destination, depositTxid: deposit.txid, router: deposit.router, buyAsset: reverse.buyAsset }
     )
     if (match) return { payout: { hash: match.hash, amount: match.amount }, scannedBlock: to }
     from = to + 1
@@ -242,7 +280,7 @@ const nonEvmPayout = async (chain: string, out: OutTx, expect: { destination: st
   const hash = out.id
   const slug = BLOCKCHAIR_CHAINS[chain as UTXOChain]
   if (slug) {
-    const res = await fetch(`${blockchairProxyUrl()}/${slug}/dashboards/transaction/${encodeURIComponent(hash.toLowerCase())}`)
+    const res = await fetch(`${blockchairProxyUrl()}/${slug}/dashboards/transaction/${encodeURIComponent(hash.toLowerCase())}`, { signal: AbortSignal.timeout(15_000) })
     if (!res.ok) throw new Error(`Blockchair answered ${res.status}`)
     return utxoPayout(await res.json(), hash.toLowerCase(), expect)
   }
@@ -266,7 +304,7 @@ const nonEvmPayout = async (chain: string, out: OutTx, expect: { destination: st
     return tronPayout(tx, info, id, expect)
   }
   if (chain === Chain.Cosmos) {
-    const res = await fetch(`${await rpcBase(Chain.Cosmos)}/tx?hash=0x${hash.replace(/^0x/i, '')}`)
+    const res = await fetch(`${await rpcBase(Chain.Cosmos)}/tx?hash=0x${hash.replace(/^0x/i, '')}`, { signal: AbortSignal.timeout(15_000) })
     const { result } = await res.json()
     return result ? cosmosPayout(result, hash, expect) : undefined
   }
@@ -277,7 +315,7 @@ type OutTx = NonNullable<TxStatusResponse['out_txs']>[number]
 
 // THORNode names the payout's hash, and it counts only once the destination chain's own node shows
 // it paying the destination for this deposit: on an EVM chain a successful receipt whose TransferOut
-// matches (a gap filler when the log search finds nothing: a router that changed, an RPC that limits
+// matches (a gap filler when the log search finds nothing: an RPC that limits
 // log queries); elsewhere the chain's own transaction, the only evidence those chains have.
 export const confirmReportedPayout = async (op: BridgeOperation) => {
   const reverse = op.reverse
@@ -294,13 +332,15 @@ export const confirmReportedPayout = async (op: BridgeOperation) => {
     }
     return undefined
   }
+  const router = reverse.deposit?.router
+  if (!router) return undefined
   const provider = await getProvider(chain as EVMChain)
   for (const out of outs) {
     const receipt = await provider.getTransactionReceipt(out.id.startsWith('0x') ? out.id : `0x${out.id}`)
     if (!receipt || receipt.status !== 1) continue
     const match = matchPayout(
-      receipt.logs.map(l => ({ topics: [...l.topics], data: l.data, transactionHash: receipt.hash, blockNumber: receipt.blockNumber })),
-      { destination: reverse.destination, depositTxid }
+      receipt.logs.map(l => ({ address: l.address, topics: [...l.topics], data: l.data, transactionHash: receipt.hash, blockNumber: receipt.blockNumber })),
+      { destination: reverse.destination, depositTxid, router, buyAsset: reverse.buyAsset }
     )
     if (match) return { hash: match.hash, amount: match.amount }
   }

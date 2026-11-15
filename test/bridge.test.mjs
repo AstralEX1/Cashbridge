@@ -674,6 +674,16 @@ test('the PUSD swap is broadcast through Fulcrum first and through Cauldron only
   assert.deepEqual(calls.splice(0), ['fulcrum'])
 })
 
+test('a backup rejection cannot rule out a broadcast whose Fulcrum answer was lost', async () => {
+  const { broadcastBchTransaction, BroadcastRejected, BroadcastUnknown } = await import('../src/lib/cauldron.ts')
+  const { RpcTimeoutError } = await import('../src/lib/bch.ts')
+  const txid = 'ab'.repeat(32)
+  await assert.rejects(broadcastBchTransaction('00', txid, {
+    fulcrum: async () => { throw new RpcTimeoutError('Broadcast answer lost') },
+    cauldron: async () => { throw new BroadcastRejected('Missing inputs') }
+  }), BroadcastUnknown)
+})
+
 test('the chains decide the first leg: BCH seen at the bound address (0-conf) makes the PUSD swap ready', async () => {
   const { firstLegFromChain } = await import('../src/lib/bridge-tracking.ts')
   const op = { destinationAsset: 'PUSD', firstLeg: { result: 'pending' } }
@@ -781,20 +791,30 @@ test('the payout is the router’s TransferOut to the destination with the depos
   const { AbiCoder } = await import('ethers')
   const destination = '0x76ff6F88f58e083b88A80B1764ae7002e303D1A6'
   const deposit = 'e3a1b0c2d4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b6c8d0e2f4a6b8'
+  const router = '0x00dc6100103BC402d490aEE3F9a5560cBd91f1d4'
+  const want = { destination, depositTxid: deposit, router, buyAsset: 'BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913' }
   const log = (memo, to = destination) => ({
+    address: router,
     topics: [TRANSFER_OUT_TOPIC, `0x${'0'.repeat(24)}718f6c9df785bc4e323086de024ca822efbe8ab9`, `0x${'0'.repeat(24)}${to.slice(2).toLowerCase()}`],
     data: AbiCoder.defaultAbiCoder().encode(['address', 'uint256', 'string'], ['0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', 2_611_061n, memo]),
     transactionHash: '0xfeed',
     blockNumber: 1
   })
-  assert.deepEqual(matchPayout([log(`OUT:${deposit.toUpperCase()}`)], { destination, depositTxid: deposit }), {
+  assert.deepEqual(matchPayout([log(`OUT:${deposit.toUpperCase()}`)], want), {
     hash: '0xfeed',
     amount: '2611061',
     asset: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
   })
-  assert.equal(matchPayout([log(`OUT:${'00'.repeat(32)}`)], { destination, depositTxid: deposit }), undefined)
-  assert.equal(matchPayout([log(`OUT:${deposit}`, '0x000000000000000000000000000000000000dEaD')], { destination, depositTxid: deposit }), undefined)
-  assert.equal(matchPayout([log(`REFUND:${deposit}`)], { destination, depositTxid: deposit }), undefined)
+  assert.equal(matchPayout([log(`OUT:${'00'.repeat(32)}`)], want), undefined)
+  assert.equal(matchPayout([log(`OUT:${deposit}`, '0x000000000000000000000000000000000000dEaD')], want), undefined)
+  assert.equal(matchPayout([log(`REFUND:${deposit}`)], want), undefined)
+  assert.equal(matchPayout([{ ...log(`OUT:${deposit}`), address: destination }], want), undefined, 'another contract can emit the same event')
+  const native = { ...log(`OUT:${deposit}`), data: AbiCoder.defaultAbiCoder().encode(['address', 'uint256', 'string'], ['0x' + '00'.repeat(20), 1000n, `OUT:${deposit}`]) }
+  assert.equal(matchPayout([native], want), undefined, 'receiving native currency is not receiving USDC')
+  assert.equal(matchPayout([native], { ...want, buyAsset: 'BASE.ETH' }).amount, '1000')
+  const zero = { ...log(`OUT:${deposit}`), data: AbiCoder.defaultAbiCoder().encode(['address', 'uint256', 'string'], ['0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', 0n, `OUT:${deposit}`]) }
+  assert.equal(matchPayout([zero], want), undefined)
+  assert.equal(matchPayout([{ ...log(`OUT:${deposit}`), data: '0x00' }], want), undefined)
 })
 
 test('a BCH refund of a deposit is recognised by its REFUND memo', () => {
