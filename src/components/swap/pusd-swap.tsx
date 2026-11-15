@@ -24,6 +24,7 @@ import { useRates } from '@/hooks/use-rates'
 import { getMidgardActions, getTrack, getTxStatus } from '@/lib/api'
 import { checkUnspent, findThorchainOutbound, getTransactionState, historyIncludes, verifyThorchainOutbound } from '@/lib/bch'
 import { sourceTransactionId } from '@/lib/source-transaction'
+import { getTransferStatus } from '@/lib/transfer-status'
 import { firstLegFromChain, formatStepTime, type SourceReceipt, stepTime } from '@/lib/bridge-tracking'
 import { bridgeCompletionTransactions } from '@/lib/bridge-completion'
 import {
@@ -157,9 +158,15 @@ export { BridgeBlocked, FirstLegRejected, startBridgeFirstLeg } from '@/lib/brid
 
 // --- Tracking ----------------------------------------------------------------------------------
 
-// The source transaction's receipt on its own chain (EVM sources; others rely on THORChain's view).
+// The source transaction's receipt on its own chain. EVM sources report their depth; the others
+// only whether the transaction is in a block and succeeded, from their own nodes (transfer-status.ts).
 const sourceReceipt = async (tx: BridgeTx): Promise<SourceReceipt | undefined> => {
-  if (!tx.hash || !EVMChains.includes(tx.assetFrom.chain as EVMChain)) return undefined
+  if (!tx.hash) return undefined
+  if (!EVMChains.includes(tx.assetFrom.chain as EVMChain)) {
+    const status = await getTransferStatus(tx.assetFrom.chain as Chain, tx.hash)
+    if (status === 'unsupported') return undefined
+    return { confirmations: status === 'pending' ? 0 : 1, failed: status === 'failed' }
+  }
   const provider = await getProvider(tx.assetFrom.chain as EVMChain)
   const receipt = await provider.getTransactionReceipt(tx.hash)
   if (!receipt) return { confirmations: 0, failed: false }
