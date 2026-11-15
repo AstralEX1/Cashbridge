@@ -1,14 +1,15 @@
+import { EVMChain, EVMChains } from '@tcswap/core'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { Asset } from '@/components/swap/asset'
 import { BridgeConfig } from '@/config'
+import { type CauldronToken, isCauldronToken, PUSD_TOKEN } from '@/lib/cauldron-tokens'
 import { useLimitSwapStore } from '@/store/limit-swap-store'
 
 const INITIAL_AMOUNT_FROM = 1
-export type BridgeDestination = 'BCH' | 'PUSD'
 
-// The bridge's first leg always buys native BCH: no other buy asset is accepted, and BCH itself
-// cannot be sold into it.
+// The THORChain leg always trades native BCH against one other asset: BCH is never on both sides,
+// and nothing else is bought or sold through THORChain on the BCH side.
 export const isBridgeBuyAsset = (asset?: Pick<Asset, 'identifier'>) => asset?.identifier.toUpperCase() === BridgeConfig.buyAsset
 export const isBridgeSellAsset = (asset?: Asset) => !!asset && !isBridgeBuyAsset(asset) && asset.chain !== 'BCH'
 
@@ -25,9 +26,17 @@ export const INITIAL_SLIPPAGE = 1
 export const INITIAL_CUSTOM_INTERVAL = 0
 export const INITIAL_CUSTOM_QUANTITY = 0
 
+// The reverse bridge pays out on an EVM chain only: its arrival is checked on that chain's own RPC.
+export const isReverseTargetAsset = (asset?: Asset) => isBridgeSellAsset(asset) && EVMChains.includes(asset!.chain as EVMChain)
+
 interface SwapState {
-  destinationAsset: BridgeDestination
-  setDestinationAsset: (asset: BridgeDestination) => void
+  // The BCH side of the bridge: native BCH (null) or a Cauldron token, bought or sold through Cauldron.
+  bchToken: CauldronToken | null
+  setBchToken: (token: CauldronToken | null) => void
+  // false: other chain -> THORChain -> BCH (-> token). true: (token ->) BCH -> THORChain -> EVM chain.
+  // `assetFrom` is the other chain's asset in both directions; `amountFrom` is always what is sent.
+  reverse: boolean
+  setReverse: (reverse: boolean) => void
   assetFrom?: Asset
   assetTo?: Asset
   amountFrom: string
@@ -50,10 +59,12 @@ interface SwapState {
 export const useSwapStore = create<SwapState>()(
   persist(
     (set, get) => ({
-      destinationAsset: 'PUSD',
-      setDestinationAsset: destinationAsset => {
-        if (destinationAsset === 'BCH' || destinationAsset === 'PUSD') set({ destinationAsset })
+      bchToken: PUSD_TOKEN,
+      setBchToken: token => {
+        if (token === null || isCauldronToken(token)) set({ bchToken: token })
       },
+      reverse: false,
+      setReverse: reverse => set({ reverse, amountFrom: '' }),
       slippage: INITIAL_SLIPPAGE,
       customInterval: INITIAL_CUSTOM_INTERVAL,
       customQuantity: INITIAL_CUSTOM_QUANTITY,
@@ -78,28 +89,33 @@ export const useSwapStore = create<SwapState>()(
         set({ assetTo: asset })
       },
 
-      // Reversing the pair would sell BCH, which the bridge never does.
-      swapAssets: () => {},
+      // Swapping the sides is the bridge's direction toggle, not a swap of the asset pair.
+      swapAssets: () => set(state => ({ reverse: !state.reverse, amountFrom: '' })),
 
       setHasHydrated: (state: boolean) => set({ hasHydrated: state })
     }),
     {
       name: 'tc-swap-store',
-      version: 4,
-      // Earlier versions could hold any pair; a restored pair is rechecked against the bridge rules.
-      migrate: () => ({}),
+      version: 5,
+      // Versions before 4 could hold any pair; a restored pair is rechecked against the bridge rules.
+      migrate: (persisted, version) => (version === 4 ? persisted : {}) as never,
       merge: (persisted, current) => {
         const state = { ...current, ...(persisted as Partial<SwapState>) }
         if (!isBridgeSellAsset(state.assetFrom)) state.assetFrom = undefined
         if (!isBridgeBuyAsset(state.assetTo)) state.assetTo = undefined
-        if (state.destinationAsset !== 'BCH' && state.destinationAsset !== 'PUSD') state.destinationAsset = 'PUSD'
+        // Before version 5 the BCH side was a 'BCH' | 'PUSD' choice.
+        const legacy = (persisted as { destinationAsset?: unknown } | undefined)?.destinationAsset
+        if (legacy === 'BCH') state.bchToken = null
+        else if (state.bchToken !== null && !isCauldronToken(state.bchToken)) state.bchToken = PUSD_TOKEN
+        if (typeof state.reverse !== 'boolean') state.reverse = false
         return state
       },
       onRehydrateStorage: () => state => {
         state?.setHasHydrated(true)
       },
       partialize: state => ({
-        destinationAsset: state.destinationAsset,
+        bchToken: state.bchToken,
+        reverse: state.reverse,
         slippage: state.slippage,
         feeWarning: state.feeWarning,
         assetFrom: state.assetFrom,

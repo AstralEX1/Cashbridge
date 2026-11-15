@@ -5,47 +5,47 @@ import { BridgeAssetButton, BridgeAssetPicker, type BridgeInputProps } from '@/c
 import { BridgeInputSwitcher } from '@/components/swap/bridge-input-switcher'
 import { BridgeWalletBadge } from '@/components/swap/bridge-wallet-badge'
 import { PriceImpact } from '@/components/swap/price-impact'
-import { usePusdEstimate } from '@/components/swap/pusd-swap'
+import { useTokenEstimate } from '@/components/swap/pusd-swap'
 import { SwapQuoteTimer } from '@/components/swap/swap-quote-timer'
 import { Tooltip } from '@/components/tooltip'
-import { BridgeConfig } from '@/config'
 import { useQuote } from '@/hooks/use-quote'
 import { useSwapRates } from '@/hooks/use-rates'
 import { useAssetTo } from '@/hooks/use-swap'
 import { formatBaseUnits } from '@/lib/bridge'
 import { formatUsd, pusdUsdPrice } from '@/lib/bridge-summary'
+import { PUSD_TOKEN, sameToken } from '@/lib/cauldron-tokens'
 import { useSwapStore } from '@/store/swap-store'
 
 export const SwapInputTo = ({ priceImpact, selecting, onSelectOpenChange }: BridgeInputProps & { priceImpact?: USwapNumber }) => {
   const t = useTranslations('bridge.form')
   const tSwap = useTranslations('swap')
   const assetTo = useAssetTo()
-  const destination = useSwapStore(state => state.destinationAsset)
+  const token = useSwapStore(state => state.bchToken)
   const { quote, isLoading, refetch } = useQuote()
-  const estimate = usePusdEstimate()
+  const estimate = useTokenEstimate()
   const { rateTo } = useSwapRates()
   const trigger = useRef<HTMLButtonElement>(null)
   const close = () => {
     onSelectOpenChange(false)
     requestAnimationFrame(() => trigger.current?.focus())
   }
-  const isPusd = destination === 'PUSD'
   const output = !quote
     ? undefined
-    : isPusd
-      ? estimate.pusd === undefined || estimate.error
+    : token
+      ? estimate.output === undefined || estimate.error
         ? undefined
-        : formatBaseUnits(estimate.pusd, BridgeConfig.pusd.decimals)
+        : formatBaseUnits(estimate.output, token.decimals)
       : new USwapNumber(quote.expectedBuyAmount).toSignificant()
-  const busy = isLoading || (isPusd && estimate.isLoading)
+  const busy = isLoading || (!!token && estimate.isLoading)
 
-  // USD of what arrives: BCH at its pool price; PUSD at the live Cauldron price (BCH price × pool
-  // rate), or the $1 peg marked "≈" when BCH has no price.
+  // USD of what arrives: BCH at its pool price; a token at the live Cauldron price (BCH price × pool
+  // rate). PUSD falls back to its $1 peg, marked "≈", when BCH has no price.
   const bchUsd = rateTo ? Number(rateTo.toSignificant(12)) : undefined
   const usd = (() => {
     if (busy || output === undefined || !quote) return undefined
-    if (!isPusd) return bchUsd === undefined ? undefined : formatUsd(Number(quote.expectedBuyAmount) * bchUsd)
-    const leg = estimate.quote && { sell: Number(estimate.quote.sellSats) / 1e8, spotOutput: estimate.quote.spotOutput / 10 ** BridgeConfig.pusd.decimals }
+    if (!token) return bchUsd === undefined ? undefined : formatUsd(Number(quote.expectedBuyAmount) * bchUsd)
+    const leg = estimate.quote && { sell: Number(estimate.quote.sell) / 1e8, spotOutput: estimate.quote.spotOutput / 10 ** token.decimals }
+    if (!sameToken(token, PUSD_TOKEN) && (bchUsd === undefined || !leg)) return undefined
     const { price, estimate: approx } = pusdUsdPrice(bchUsd, leg)
     return `${approx ? '≈ ' : ''}${formatUsd(Number(output) * price)}`
   })()
@@ -58,12 +58,13 @@ export const SwapInputTo = ({ priceImpact, selecting, onSelectOpenChange }: Brid
             <BridgeAssetButton
               ref={trigger}
               asset={assetTo}
-              ticker={destination}
+              bch
+              token={token}
               aria-label={t('to')}
               aria-expanded={selecting}
               onClick={() => onSelectOpenChange(true)}
             />
-            <BridgeWalletBadge side="to" />
+            <BridgeWalletBadge kind="bch" />
           </div>
           <output className="bridge-amount" aria-label={t('receiveAmount')} aria-live="polite" aria-busy={busy}>
             {busy ? <span className="bridge-muted animate-pulse">···</span> : (output ?? '')}
@@ -86,7 +87,7 @@ export const SwapInputTo = ({ priceImpact, selecting, onSelectOpenChange }: Brid
         </section>
       </div>
       <div className="bridge-input-switcher__slot bridge-input-switcher__picker-slot" aria-hidden={!selecting} inert={!selecting}>
-        <BridgeAssetPicker side="to" open={selecting} onClose={close} />
+        <BridgeAssetPicker side="to" bch open={selecting} onClose={close} />
       </div>
     </BridgeInputSwitcher>
   )

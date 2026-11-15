@@ -31,6 +31,7 @@ export const startBridgeFirstLeg = async ({
   walletName,
   quotedBchSats,
   destinationAsset = 'PUSD',
+  token,
   execute
 }: {
   base: Omit<SwapTransaction, 'uid' | 'status' | 'bridge' | 'hash'>
@@ -38,6 +39,7 @@ export const startBridgeFirstLeg = async ({
   walletName?: string
   quotedBchSats?: string
   destinationAsset?: BridgeOperation['destinationAsset']
+  token?: BridgeOperation['token']
   execute: () => Promise<string>
 }) => {
   const result = await withLock('bch-bridge-first-leg', async () => {
@@ -54,6 +56,7 @@ export const startBridgeFirstLeg = async ({
         id: uid,
         stage: 'first_leg_signing',
         destinationAsset,
+        token,
         binding,
         walletName,
         quotedBchSats,

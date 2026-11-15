@@ -3,13 +3,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useSearchParams } from 'next/navigation'
-import { ArrowDown } from 'lucide-react'
+import { ArrowDownUp } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { AssetValue } from '@tcswap/core'
 import { BridgeConfig } from '@/config'
 import { Asset } from '@/components/swap/asset'
 import { TransactionHistoryButton } from '@/components/header/transaction-history-button'
 import { SwapButton } from '@/components/swap/swap-button'
+import { ReverseSwapButton } from '@/components/swap/reverse-bridge'
+import { BchInputFrom, ReverseInputTo } from '@/components/swap/reverse-inputs'
 import { BchWalletStatus, BridgeOperationPanel } from '@/components/swap/pusd-swap'
 import { SwapHaltBanner } from '@/components/swap/swap-halt-banner'
 import { SwapInputFrom } from '@/components/swap/swap-input-from'
@@ -24,7 +26,7 @@ import { useTradingHalt } from '@/hooks/use-trading-halt'
 import { urlBuyAsset, useUrlParams } from '@/hooks/use-url-params'
 import { resolvePriceImpact } from '@/lib/swap-helpers'
 import { useIsPrivateSend } from '@/store/limit-swap-store'
-import { useSwapStore } from '@/store/swap-store'
+import { isReverseTargetAsset, useSwapStore } from '@/store/swap-store'
 import { useActiveBridge } from '@/store/transaction-store'
 import './bridge.css'
 
@@ -37,6 +39,8 @@ const BridgeFlowPreview =
 
 const DEFAULT_SELL = 'BTC.BTC'
 const DEFAULT_BUY = BridgeConfig.buyAsset
+// The first payout asset offered in the reverse direction, when the forward source is not an EVM asset.
+const DEFAULT_REVERSE_TARGETS = ['BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913', 'BASE.ETH', 'ETH.ETH']
 
 export const Swap = () => {
   const tBridge = useTranslations('bridge.form')
@@ -51,6 +55,9 @@ export const Swap = () => {
   const setAssetTo = useSetAssetTo()
   const isPrivateSend = useIsPrivateSend()
   const pairKey = useSwapStore(state => `${state.assetFrom?.identifier}|${state.assetTo?.identifier}`)
+  const reverse = useSwapStore(state => state.reverse)
+  const toggleDirection = useSwapStore(state => state.swapAssets)
+  const assetFrom = useSwapStore(state => state.assetFrom)
   const { assets } = useAssets()
   const { quote } = useQuote()
   const { rateFrom, rateTo } = useSwapRates()
@@ -96,14 +103,23 @@ export const Swap = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPrivateTab, isPrivateSend, assets, pairKey])
 
+  // The reverse direction pays out on an EVM chain: a forward source elsewhere gives way to an EVM asset.
+  useEffect(() => {
+    if (!reverse || !assets?.length || isReverseTargetAsset(assetFrom)) return
+    const target = DEFAULT_REVERSE_TARGETS.map(id => assets.find(a => a.identifier.toUpperCase() === id && isReverseTargetAsset(a))).find(Boolean)
+    if (target) setAssetFrom(target)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reverse, assets, assetFrom])
+
+  // `assetFrom` is the other chain's asset in both directions; in reverse it is what is bought.
   const priceImpact = useMemo(() => {
-    return resolvePriceImpact(quote, rateFrom, rateTo)
-  }, [quote, rateFrom, rateTo])
+    return reverse ? resolvePriceImpact(quote, rateTo, rateFrom) : resolvePriceImpact(quote, rateFrom, rateTo)
+  }, [quote, rateFrom, rateTo, reverse])
 
   return (
     <div className="bridge-widget mx-auto w-full max-w-[514px]">
       <div className="bridge-heading">
-        <h1>{tBridge('heading')}</h1>
+        <h1>{tBridge(reverse ? 'headingReverse' : 'heading')}</h1>
       </div>
       <div className="bridge-tools mb-3 flex items-center justify-end">
         <div className="flex items-center gap-2">
@@ -112,20 +128,40 @@ export const Swap = () => {
         </div>
       </div>
 
-      {/* THORChain swap to native BCH, then a separately signed Cauldron swap to PUSD. No limit,
-            private, reverse or memoless entry points. */}
+      {/* Forward: THORChain swap to native BCH, then a separately signed Cauldron swap to the token.
+            Reverse: a Cauldron sale of the token for BCH, then a BCH deposit to THORChain. No limit,
+            private or memoless entry points. */}
       <div className="bridge-card">
-        <SwapInputFrom selecting={picker === 'from'} onSelectOpenChange={open => setPicker(open ? 'from' : undefined)} />
-        <div className="bridge-divider" aria-hidden="true">
-          <span />
-          <span className="bridge-direction">
-            <ArrowDown size={21} />
-          </span>
-          <span />
+        {reverse ? (
+          <BchInputFrom selecting={picker === 'from'} onSelectOpenChange={open => setPicker(open ? 'from' : undefined)} />
+        ) : (
+          <SwapInputFrom selecting={picker === 'from'} onSelectOpenChange={open => setPicker(open ? 'from' : undefined)} />
+        )}
+        <div className="bridge-divider">
+          <span aria-hidden="true" />
+          <button
+            type="button"
+            className="bridge-direction"
+            aria-label={tBridge('switchDirection')}
+            title={tBridge('switchDirection')}
+            disabled={!!picker}
+            onClick={() => toggleDirection()}
+          >
+            <ArrowDownUp size={21} aria-hidden="true" />
+          </button>
+          <span aria-hidden="true" />
         </div>
-        <SwapInputTo priceImpact={priceImpact} selecting={picker === 'to'} onSelectOpenChange={open => setPicker(open ? 'to' : undefined)} />
+        {reverse ? (
+          <ReverseInputTo priceImpact={priceImpact} selecting={picker === 'to'} onSelectOpenChange={open => setPicker(open ? 'to' : undefined)} />
+        ) : (
+          <SwapInputTo priceImpact={priceImpact} selecting={picker === 'to'} onSelectOpenChange={open => setPicker(open ? 'to' : undefined)} />
+        )}
       </div>
-      <SwapButton instantSwapSupported={false} instantSwapAvailable={false} onShowBridge={() => setProgressId(activeBridge?.uid)} />
+      {reverse ? (
+        <ReverseSwapButton onShowBridge={() => setProgressId(activeBridge?.uid)} />
+      ) : (
+        <SwapButton instantSwapSupported={false} instantSwapAvailable={false} onShowBridge={() => setProgressId(activeBridge?.uid)} />
+      )}
       <BchWalletStatus />
 
       <BridgeOperationPanel uid={progressId} onClose={() => setProgressId(undefined)} />

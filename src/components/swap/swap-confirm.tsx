@@ -21,12 +21,12 @@ import { formatExpiration, isHoudiniProvider, isPrivateSend, resolveFees } from 
 import { cn, toCurrencyFixed, truncate } from '@/lib/utils'
 import { useIsLimitSwap, useLimitSwapBuyAmount } from '@/store/limit-swap-store'
 import { shortBridgeAddress } from '@/components/swap/bridge-wallet-badge'
-import { usePusdQuoteFor } from '@/components/swap/pusd-swap'
-import { BridgeConfig } from '@/config'
+import { useTokenQuoteFor } from '@/components/swap/pusd-swap'
+import type { CauldronToken } from '@/lib/cauldron-tokens'
 import { formatBaseUnits, minOutputFor } from '@/lib/bridge'
 import { bridgeSummary, firstLegSeconds, formatAmount, formatMinutes, formatPercent, formatUsd, PUSD_LEG_SECONDS } from '@/lib/bridge-summary'
 import type { Asset } from '@/components/swap/asset'
-import { BchMark, CauldronMark, HoverCard, PusdMark, ThorchainMark } from '@/components/swap/bridge-marks'
+import { BchMark, CauldronMark, HoverCard, ThorchainMark, TokenMark as CauldronTokenMark } from '@/components/swap/bridge-marks'
 
 const THORCHAIN_FEES_URL = 'https://docs.thorchain.org/technical-documentation/technical-deep-dive/fees'
 const toNumber = (value?: USwapNumber) => (value ? Number(value.toSignificant(12)) : undefined)
@@ -39,19 +39,20 @@ const TokenMark = ({ asset }: { asset: Asset }) => (
 
 interface BridgeConfirmProps {
   quote: QuoteResponseRoute
-  destination: 'PUSD' | 'BCH'
+  // The Cauldron token bought with the BCH, or null for native BCH.
+  token: CauldronToken | null
   // The bound BCH wallet's address; the route pays it.
   bchAddress: string
 }
 
 // The bridge's confirm screen: who sends to whom, how much arrives, and one collapsible block with
 // the route, time, gas and the full price impact. Every figure is live (quote, pool prices, Cauldron).
-export const BridgeConfirm = ({ quote, destination, bchAddress }: BridgeConfirmProps) => {
+export const BridgeConfirm = ({ quote, token, bchAddress }: BridgeConfirmProps) => {
   const t = useTranslations('bridge.confirm')
   const assetFrom = useAssetFrom()
   const [open, setOpen] = useState(false)
-  const pusd = destination === 'PUSD'
-  const pusdQuote = usePusdQuoteFor(pusd ? quote.expectedBuyAmount : undefined)
+  const pusd = !!token
+  const pusdQuote = useTokenQuoteFor(token ? quote.expectedBuyAmount : undefined, token)
 
   const identifiers = useMemo(() => quote.fees.map(f => f.asset).sort(), [quote.fees])
   const { rates } = useRates(identifiers, quote.providers[0])
@@ -70,9 +71,9 @@ export const BridgeConfirm = ({ quote, destination, bchAddress }: BridgeConfirmP
     sourceGasUsd: inbound && toNumber(inbound.usd) ? toNumber(inbound.usd) : undefined,
     thorSeconds: firstLegSeconds(quote.estimatedTime),
     pusd: leg && {
-      output: Number(leg.output) / 10 ** BridgeConfig.pusd.decimals,
-      spotOutput: leg.spotOutput / 10 ** BridgeConfig.pusd.decimals,
-      sell: Number(leg.sellSats) / 1e8,
+      output: Number(leg.output) / 10 ** token!.decimals,
+      spotOutput: leg.spotOutput / 10 ** token!.decimals,
+      sell: Number(leg.sell) / 1e8,
       tradeFee: Number(leg.tradeFeeSats) / 1e8,
       minerFee: leg.minerFeeSats === undefined ? undefined : Number(leg.minerFeeSats) / 1e8
     }
@@ -86,7 +87,7 @@ export const BridgeConfirm = ({ quote, destination, bchAddress }: BridgeConfirmP
   const minutes = summary.seconds ? t('minutes', { minutes: formatMinutes(summary.seconds) }) : '—'
   const pusdPending = pusd && !leg
   const received = pusdPending ? undefined : summary.received
-  const receivedTicker = pusd ? BridgeConfig.pusd.ticker : 'BCH'
+  const receivedTicker = token ? token.ticker : 'BCH'
   const usd = (value?: number) => (value === undefined ? '—' : formatUsd(value))
 
   return (
@@ -127,7 +128,7 @@ export const BridgeConfirm = ({ quote, destination, bchAddress }: BridgeConfirmP
                   <strong className={pusdPending ? 'bridge-muted animate-pulse' : undefined}>
                     {received === undefined ? '···' : `${pusd ? '≈ ' : ''}${formatAmount(received)}`}
                   </strong>
-                  {pusd ? <PusdMark /> : <BchMark />}
+                  {token ? <CauldronTokenMark token={token} /> : <BchMark />}
                 </div>
                 <span>
                   {t('on', { ticker: receivedTicker, chain: 'Bitcoin Cash' })}
@@ -135,7 +136,7 @@ export const BridgeConfirm = ({ quote, destination, bchAddress }: BridgeConfirmP
                 </span>
               </div>
             </div>
-            {pusdQuote.error && <p className="bridge-confirm-note">{t('pusdUnavailable')}</p>}
+            {pusdQuote.error && <p className="bridge-confirm-note">{t('pusdUnavailable', { ticker: receivedTicker })}</p>}
           </section>
 
           <section className="bridge-confirm-details">
@@ -194,7 +195,7 @@ export const BridgeConfirm = ({ quote, destination, bchAddress }: BridgeConfirmP
                           <span className="bridge-tip-step">
                             <CauldronMark size={22} />
                             <span>
-                              <strong>{t('routeSwap')}</strong>
+                              <strong>{t('routeSwap', { ticker: receivedTicker })}</strong>
                               <span className="bridge-tip-label">{t('routeSwapDetail', { minutes: formatMinutes(PUSD_LEG_SECONDS) })}</span>
                             </span>
                           </span>
@@ -220,7 +221,7 @@ export const BridgeConfirm = ({ quote, destination, bchAddress }: BridgeConfirmP
                       <Wallet size={16} aria-hidden="true" />
                       {t('minimumReceived')}
                     </dt>
-                    <dd>{leg ? `${formatBaseUnits(minOutputFor(leg.output), BridgeConfig.pusd.decimals)} ${BridgeConfig.pusd.ticker}` : '—'}</dd>
+                    <dd>{leg && token ? `${formatBaseUnits(minOutputFor(leg.output), token.decimals)} ${token.ticker}` : '—'}</dd>
                   </div>
                 )}
 
@@ -242,7 +243,7 @@ export const BridgeConfirm = ({ quote, destination, bchAddress }: BridgeConfirmP
                       </span>
                       {pusd && (
                         <span className="bridge-tip-row">
-                          <span className="bridge-tip-label">{t('gasBch')}</span>
+                          <span className="bridge-tip-label">{t('gasBch', { ticker: receivedTicker })}</span>
                           <span>{usd(summary.bchGasUsd)}</span>
                         </span>
                       )}

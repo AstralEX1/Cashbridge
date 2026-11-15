@@ -5,6 +5,7 @@ import { persist } from 'zustand/middleware'
 import { useShallow } from 'zustand/react/shallow'
 import { Asset } from '@/components/swap/asset'
 import { type BchBinding, isValidBinding, type VerifiedOutput } from '@/lib/bch'
+import { type CauldronToken, isCauldronToken, PUSD_TOKEN } from '@/lib/cauldron-tokens'
 
 // 'broadcast': a send history cannot confirm on its chain - known to be submitted, nothing more.
 export type TxStatus = 'not_started' | 'pending' | 'swapping' | 'completed' | 'failed' | 'expired' | 'refunded' | 'unknown' | 'broadcast'
@@ -37,7 +38,7 @@ interface BaseTransaction {
 export interface SwapTransaction extends BaseTransaction {
   kind?: undefined
   provider: ProviderName
-  // Set on a THORChain -> BCH -> PUSD bridge operation; the record's `status` is then the
+  // Set on a bridge operation (either direction); the record's `status` is then the
   // operation's overall status (bridgeTxStatus), never the first leg's alone.
   bridge?: BridgeOperation
 }
@@ -82,8 +83,11 @@ export interface SecondLeg {
   attempt: string
   category: string
   sellSats: string
+  // Token base units: the approved floor and what the signed trade pays.
   minOutput: string
-  pusdOut: string
+  tokenOut?: string
+  // Operations saved before any token could be bought kept the PUSD amount here.
+  pusdOut?: string
   routerFeeSats: string
   minerFeeSats: string
   txid?: string
@@ -94,11 +98,67 @@ export interface SecondLeg {
   error?: string
 }
 
+// A reverse operation: (token -> BCH on Cauldron, step 1) then a BCH deposit to THORChain paying an
+// EVM address (step 2). Its stages reuse the forward names: first_leg_* is the Cauldron sale,
+// bch_ready the deposit ready to sign, second_leg_* the deposit, completed the payout seen on the
+// EVM chain, refunded THORChain's BCH refund seen at the bound address, kept_bch the user stopping
+// after step 1.
+export interface ReverseSale {
+  attempt: string
+  sellTokens: string
+  // Satoshis: the approved floor and what the signed trade pays out of the pools.
+  minOutput: string
+  bchOut: string
+  minerFeeSats: string
+  txid?: string
+  signedHex?: string
+  // The sale's token-free outputs to the bound address: the BCH the deposit spends.
+  outputs?: { txid: string; vout: number; value: string }[]
+}
+
+export interface ReverseDeposit {
+  attempt: string
+  // Satoshis paid to THORChain's vault, and the deposit's own miner fee.
+  amountSats: string
+  minerFeeSats: string
+  memo: string
+  inboundAddress: string
+  // The THORChain router on the destination chain, whose TransferOut event is the payout.
+  router?: string
+  // The destination chain's block height when the deposit was signed: the payout is searched from it.
+  startBlock?: number
+  // How far the payout search has looked, so a poll resumes there.
+  scannedBlock?: number
+  signedAt?: number
+  expectedOut?: string
+  txid?: string
+  signedHex?: string
+  error?: string
+}
+
+export interface ReverseDetails {
+  // The THORChain buy asset and the EVM address it pays.
+  buyAsset: string
+  destination: string
+  sale?: ReverseSale
+  deposit?: ReverseDeposit
+  // The payout transaction on the destination chain, and its amount in the buy asset's base units.
+  payout?: { hash: string; amount?: string }
+  refund?: { txid: string; amountSats: string }
+  // Deposit txids signed earlier for this operation (a rejected broadcast is re-quoted and re-signed).
+  priorDepositTxids?: string[]
+}
+
 export interface BridgeOperation {
   id: string
   stage: BridgeStage
-  // Absent on older operations, which always continued to PUSD.
-  destinationAsset?: 'BCH' | 'PUSD'
+  // Absent on older (forward) operations.
+  direction?: 'forward' | 'reverse'
+  // The BCH side: 'BCH' is native BCH; anything else is a Cauldron token (`token`, or PUSD on
+  // operations saved before other tokens were possible, which wrote 'PUSD').
+  destinationAsset?: 'BCH' | 'PUSD' | 'TOKEN'
+  token?: CauldronToken
+  reverse?: ReverseDetails
   binding: BchBinding
   walletName?: string
   // Indicative BCH (sats) from the first-leg quote; never used as receipt evidence.
@@ -123,6 +183,11 @@ export interface BridgeOperation {
   error?: string
   updatedAt: number
 }
+
+// The Cauldron token of an operation's BCH side, or undefined for native BCH.
+export const operationToken = (op: Pick<BridgeOperation, 'destinationAsset' | 'token'>): CauldronToken | undefined =>
+  op.destinationAsset === 'BCH' ? undefined : op.token && isCauldronToken(op.token) ? op.token : PUSD_TOKEN
+export const isReverseOperation = (op: Pick<BridgeOperation, 'direction'>) => op.direction === 'reverse'
 
 const TERMINAL_STAGES: BridgeStage[] = ['completed', 'kept_bch', 'refunded', 'failed']
 export const isBridgeTerminal = (op: BridgeOperation) => TERMINAL_STAGES.includes(op.stage)

@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
 import { AnimatedButton } from '@/components/animated-button'
 import { useBchWallet } from '@/components/bch-wallet'
-import { usePusdEstimate } from '@/components/swap/pusd-swap'
+import { useTokenEstimate } from '@/components/swap/pusd-swap'
 import { useActiveBridge } from '@/store/transaction-store'
 import { chainLabel } from '@/components/connect-wallet/config'
 import { ConnectWallet } from '@/components/connect-wallet/connect-wallet'
@@ -68,9 +68,9 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
 
   const [isApproving, setIsApproving] = useState(false)
   const activeBridge = useActiveBridge()
-  const pusdEstimate = usePusdEstimate()
+  const tokenEstimate = useTokenEstimate()
   const bchWallet = useBchWallet()
-  const destinationAsset = useSwapStore(state => state.destinationAsset)
+  const bchToken = useSwapStore(state => state.bchToken)
 
   const { openDialog } = useDialog()
 
@@ -165,11 +165,11 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
       return { text: t('button.enterLimitPrice'), spinner: false, accent: false }
     }
 
-    // Native BCH needs only the THORChain route; PUSD also needs an indicative Cauldron route.
-    if (destinationAsset === 'PUSD') {
-      if (pusdEstimate.isLoading) return { text: t('button.quoting'), spinner: true, accent: false }
-      if (pusdEstimate.error || pusdEstimate.pusd === undefined || pusdEstimate.pusd <= 0n)
-        return { text: t('button.noPusdRoute'), spinner: false, accent: false }
+    // Native BCH needs only the THORChain route; a token also needs an indicative Cauldron route.
+    if (bchToken) {
+      if (tokenEstimate.isLoading) return { text: t('button.quoting'), spinner: true, accent: false }
+      if (tokenEstimate.error || tokenEstimate.output === undefined || tokenEstimate.output <= 0n)
+        return { text: t('button.noPusdRoute', { ticker: bchToken.ticker }), spinner: false, accent: false }
     }
 
     if (isDepositOnlyPrivateSell(isPrivateSwap, assetFrom.chain)) {

@@ -36,7 +36,7 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
   const t = useTranslations('swap')
   const tConfirm = useTranslations('bridge.confirm')
   const tBridge = useTranslations('bridge')
-  const destinationAsset = useSwapStore(state => state.destinationAsset)
+  const bchToken = useSwapStore(state => state.bchToken)
   const uSwap = getUSwap()
   const assetFrom = useAssetFrom()
   const assetTo = useAssetTo()
@@ -96,7 +96,8 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
       binding,
       walletName: bchWalletName ?? undefined,
       quotedBchSats,
-      destinationAsset,
+      destinationAsset: bchToken ? 'TOKEN' : 'BCH',
+      token: bchToken ?? undefined,
       base: {
         provider: provider,
         chainId: getChainConfig(assetFrom.chain).chainId,
@@ -149,7 +150,7 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
       <CredenzaContent className="bridge-confirm-dialog flex h-auto max-h-5/6 flex-col md:max-w-[620px]">
         {quote ? (
           <>
-            <BridgeConfirm quote={quote} destination={destinationAsset === 'BCH' ? 'BCH' : 'PUSD'} bchAddress={binding?.cashAddress ?? quote.destinationAddress ?? ''} />
+            <BridgeConfirm quote={quote} token={bchToken} bchAddress={binding?.cashAddress ?? quote.destinationAddress ?? ''} />
 
             <div className="space-y-3 p-4 pt-2 md:px-7 md:pb-7">
               {requiresLtcWarning && (
@@ -178,7 +179,7 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
                   <LoaderCircle size={20} className="animate-spin" />
                 ) : (
                   <span>
-                    {tConfirm(destinationAsset === 'BCH' ? 'send' : 'sendFirst', {
+                    {tConfirm(bchToken ? 'sendFirst' : 'send', {
                       amount: new USwapNumber(quote.sellAmount).toSignificant(),
                       ticker: assetFrom?.ticker ?? ''
                     })}

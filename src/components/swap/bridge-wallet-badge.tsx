@@ -11,13 +11,17 @@ import { useDialog } from '@/components/global-dialog'
 import { Tooltip } from '@/components/tooltip'
 import { useAssetFrom } from '@/hooks/use-swap'
 import { useConnectedAccount, useDisconnect, useHasHydrated, useSetExternalWalletMode } from '@/hooks/use-wallets'
+import { useSwapStore } from '@/store/swap-store'
 
 export const shortBridgeAddress = (address: string) => {
   const display = address.startsWith('bitcoincash:') ? address.slice('bitcoincash:'.length) : address
   return display.length > 14 ? `${display.slice(0, 6)}…${display.slice(-4)}` : display
 }
 
-export const BridgeWalletBadge = ({ side }: { side: 'from' | 'to' }) => {
+// The wallet of one side of the form: the other chain's wallet ('other') or the BCH wallet ('bch').
+export const BridgeWalletBadge = ({ kind }: { kind: 'other' | 'bch' }) => {
+  const side = kind === 'other' ? 'from' : 'to'
+  const reverse = useSwapStore(state => state.reverse)
   const t = useTranslations('bridge.wallet')
   const assetFrom = useAssetFrom()
   const account = useConnectedAccount(assetFrom?.chain)
@@ -59,7 +63,7 @@ export const BridgeWalletBadge = ({ side }: { side: 'from' | 'to' }) => {
     <WalletAddressBadge
       address={address}
       chain={chain}
-      label={t(side === 'from' ? 'source' : 'destination')}
+      label={t(side === 'from' ? (reverse ? 'payout' : 'source') : 'destination')}
       onDisconnect={() => {
         if (side === 'from' && account) disconnectSource(account.provider)
         else if (side === 'to') void bch.disconnect()

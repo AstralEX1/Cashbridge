@@ -137,7 +137,7 @@ export const TransactionHistoryDialog = ({ isOpen, onOpenChange }: HistoryDialog
               // A bridge operation reads by its own stage: the first leg finishing is not the end of it.
               const bridgeStage = !isSend ? tx.bridge?.stage : undefined
               const statusTitle = bridgeStage
-                ? tBridge(`stage.${bridgeStage}`)
+                ? tBridge(!isSend && tx.bridge?.direction === 'reverse' ? `reverse.history.${bridgeStage}` : `stage.${bridgeStage}`)
                 : t.has(`status.${statusKey}`)
                   ? t(`status.${statusKey}`)
                   : status.replace('_', ' ')

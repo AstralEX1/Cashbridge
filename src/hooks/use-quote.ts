@@ -8,6 +8,9 @@ import { getQuotes } from '@/lib/api'
 import { BelowMinimumError, resolveQuoteError } from '@/lib/errors'
 import { isHoudiniProvider } from '@/lib/swap-helpers'
 import { useIsPrivateSend, useIsPrivateSwap } from '@/store/private-swap-store'
+import { useTokenSale } from '@/hooks/use-token-sale'
+import { BridgeConfig } from '@/config'
+import { useSwapStore } from '@/store/swap-store'
 
 type UseQuote = {
   isLoading: boolean
@@ -32,9 +35,19 @@ export const useQuote = (): UseQuote => {
   // Right after a tab/mode switch the pair lags a render behind (Swap fixes it in an effect); don't quote it.
   const pairMatchesMode = isPrivateSend === (!!assetFrom && assetFrom.identifier === assetTo?.identifier)
 
+  // The reverse bridge sells BCH into `assetFrom` (the other chain's asset). From a token, the BCH
+  // quoted is what the Cauldron sale of the typed amount is expected to leave for THORChain.
+  const reverse = useSwapStore(state => state.reverse)
+  const bchToken = useSwapStore(state => state.bchToken)
+  const sale = useTokenSale(reverse ? bchToken : null, valueFrom.toSignificant())
+  const sellAsset = reverse ? BridgeConfig.buyAsset : assetFrom?.identifier
+  const buyAsset = reverse ? assetFrom?.identifier : assetTo?.identifier
+  const sellAmount = reverse && bchToken ? sale.bridgeAmount : valueFrom.eqValue(0) ? undefined : valueFrom.toSignificant()
+
   const queryKey = [
     'quote',
-    valueFrom.toSignificant(),
+    reverse,
+    sellAmount,
     assetFrom?.identifier,
     assetTo?.identifier,
     assetFrom?.chain,
@@ -55,21 +68,21 @@ export const useQuote = (): UseQuote => {
   } = useQuery({
     queryKey: queryKey,
     queryFn: ({ signal }) => {
-      if (valueFrom.eqValue(0)) return
-      if (!assetFrom?.identifier || !assetTo?.identifier) return
+      if (!sellAmount) return
+      if (!sellAsset || !buyAsset) return
 
-      // The bridge quotes THORChain alone, to BCH.BCH, on the aggregator's own streaming policy.
+      // The bridge quotes THORChain alone, BCH.BCH on one side, on the aggregator's own streaming policy.
       return getQuotes(
         {
-          buyAsset: assetTo.identifier,
-          sellAsset: assetFrom.identifier,
-          sellAmount: valueFrom.toSignificant(),
+          buyAsset,
+          sellAsset,
+          sellAmount,
           slippage: slippage ?? 99,
           providers: AppConfig.providers
         },
         createAbortController(signal)
       ).then(quotes => {
-        if (quotes.length === 0) throw new Error('No THORChain route to BCH for this amount')
+        if (quotes.length === 0) throw new Error(reverse ? 'No THORChain route from BCH for this amount' : 'No THORChain route to BCH for this amount')
 
         if (AppConfig.id === 'thorchain' && !isPrivateSwap) {
           const thorchainQuote =
@@ -86,22 +99,23 @@ export const useQuote = (): UseQuote => {
       })
     },
     placeholderData: previous =>
-      previous && isQuoteFor(previous, assetFrom?.identifier, assetTo?.identifier) && isHoudiniProvider(previous.providers[0]) === isPrivateSwap
+      previous && isQuoteFor(previous, sellAsset, buyAsset) && isHoudiniProvider(previous.providers[0]) === isPrivateSwap
         ? previous
         : undefined,
-    enabled: !!(!valueFrom.eqValue(0) && assetFrom?.identifier && assetTo?.identifier && pairMatchesMode),
+    enabled: !!(sellAmount && sellAsset && buyAsset && (reverse || (assetTo?.identifier && pairMatchesMode))),
     retry: false,
     refetchOnMount: false
   })
 
   const newError = error instanceof USwapError ? resolveQuoteError(error) : error
 
+  const saleError = reverse && bchToken ? sale.error : null
   return {
-    isLoading: isLoading || isRefetching,
+    isLoading: isLoading || isRefetching || (reverse && !!bchToken && sale.isLoading),
     refetch,
     quote: isLoading || isRefetching || isPlaceholderData || error ? undefined : quote,
     pricingQuote: error ? undefined : quote,
-    error: newError,
+    error: saleError ?? newError,
     minimum: error instanceof BelowMinimumError ? error.minimum : undefined
   }
 }

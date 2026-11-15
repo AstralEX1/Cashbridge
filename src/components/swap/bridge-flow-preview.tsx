@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { Chain } from '@tcswap/core'
-import { BchMark, PusdMark } from '@/components/swap/bridge-marks'
+import { BchMark, TokenMark } from '@/components/swap/bridge-marks'
+import { PUSD_TOKEN } from '@/lib/cauldron-tokens'
 import { BridgeFlow, CauldronQuoteBlock, type FlowStage, type FlowToast } from '@/components/swap/pusd-swap'
 
 // Development only (`?bridgeFlowPreview=<stage>` on the swap page): the progress screen's stages
@@ -16,7 +17,10 @@ const ETH_ICON = (
 
 export const BridgeFlowPreview = ({ stage = 'bridging' }: { stage?: string }) => {
   const [dismissed, setDismissed] = useState<string[]>([])
-  const flow = (['bridging', 'ready', 'plain', 'swapping', 'done', 'ended'] as FlowStage[]).includes(stage as FlowStage) ? (stage as FlowStage) : 'bridging'
+  // `reverse-<stage>` previews the reverse direction (PUSD -> BCH -> ETH, or BCH -> ETH for `plain`).
+  const reverse = stage.startsWith('reverse-')
+  const name = reverse ? stage.slice('reverse-'.length) : stage
+  const flow = (['bridging', 'ready', 'plain', 'swapping', 'done', 'ended'] as FlowStage[]).includes(name as FlowStage) ? (name as FlowStage) : 'bridging'
   const pusd = flow !== 'plain'
   const received = flow !== 'bridging' && flow !== 'plain'
   const toasts: FlowToast[] = [
@@ -32,17 +36,35 @@ export const BridgeFlowPreview = ({ stage = 'bridging' }: { stage?: string }) =>
         sourceChain={Chain.Base}
         sourceAddress="0x76ff6F88f58e083b88A80B1764ae7002e303D1A6"
         bchAddress="bitcoincash:qp4qeeh8m6zd8r2yq7h0j3k5x9w2v4u6t8s0rm8w9z"
-        sent={{ amount: '0.001', ticker: 'ETH', usd: '$2.31', icon: ETH_ICON }}
-        bch={{ amount: received ? '0.0072956' : '≈ 0.0073', ticker: 'BCH', usd: '$2.05', icon: <BchMark size={30} /> }}
-        pusd={pusd ? { amount: '≈ 2.04', ticker: 'PUSD', usd: '$2.03', icon: <PusdMark size={30} /> } : undefined}
-        bridgeBar={received ? { fill: 1, done: true } : { fill: 0.6, eta: '≈ 2 min', live: true }}
-        swapBar={pusd ? (flow === 'swapping' ? { fill: 0.6, live: true, eta: '≈ 40 s' } : flow === 'done' ? { fill: 1, done: true } : { fill: 0, eta: '≈ 1 min' }) : undefined}
+        reverse={reverse}
+        sent={
+          reverse
+            ? pusd
+              ? { amount: '2.04', ticker: 'PUSD', usd: '$2.03', icon: <TokenMark token={PUSD_TOKEN} size={30} /> }
+              : { amount: '0.0073', ticker: 'BCH', usd: '$2.05', icon: <BchMark size={30} /> }
+            : { amount: '0.001', ticker: 'ETH', usd: '$2.31', icon: ETH_ICON }
+        }
+        bch={
+          reverse && !pusd
+            ? { amount: '≈ 0.00088', ticker: 'ETH', usd: '$2.02', icon: ETH_ICON }
+            : { amount: received ? '0.0072956' : '≈ 0.0073', ticker: 'BCH', usd: '$2.05', icon: <BchMark size={30} /> }
+        }
+        final={
+          pusd
+            ? reverse
+              ? { amount: '≈ 0.00088', ticker: 'ETH', usd: '$2.02', icon: ETH_ICON }
+              : { amount: '≈ 2.04', ticker: 'PUSD', usd: '$2.03', icon: <TokenMark token={PUSD_TOKEN} size={30} /> }
+            : undefined
+        }
+        firstBar={received ? { fill: 1, done: true } : { fill: 0.6, eta: '≈ 2 min', live: true }}
+        secondBar={pusd ? (flow === 'swapping' ? { fill: 0.6, live: true, eta: '≈ 40 s' } : flow === 'done' ? { fill: 1, done: true } : { fill: 0, eta: '≈ 1 min' }) : undefined}
         details={
           flow === 'ready' ? (
             <CauldronQuoteBlock
               quote={{
-                bchPerPusd: 0.0035565,
-                pusdUsd: 0.997,
+                ticker: 'PUSD',
+                bchPerToken: 0.0035565,
+                tokenUsd: 0.997,
                 lpFeePercent: 0.3,
                 lpFeeUsd: 0.006,
                 networkFeeBch: 0.0000031,

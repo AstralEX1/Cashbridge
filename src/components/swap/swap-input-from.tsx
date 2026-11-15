@@ -32,7 +32,7 @@ export const SwapInputFrom = ({ selecting, onSelectOpenChange }: BridgeInputProp
               aria-expanded={selecting}
               onClick={() => onSelectOpenChange(true)}
             />
-            <BridgeWalletBadge side="from" />
+            <BridgeWalletBadge kind="other" />
           </div>
           <label htmlFor="swap-sell-amount" className="sr-only">
             {t('sendAmount')}
@@ -48,7 +48,7 @@ export const SwapInputFrom = ({ selecting, onSelectOpenChange }: BridgeInputProp
         </section>
       </div>
       <div className="bridge-input-switcher__slot bridge-input-switcher__picker-slot" aria-hidden={!selecting} inert={!selecting}>
-        <BridgeAssetPicker side="from" open={selecting} onClose={close} />
+        <BridgeAssetPicker side="from" bch={false} open={selecting} onClose={close} />
       </div>
     </BridgeInputSwitcher>
   )

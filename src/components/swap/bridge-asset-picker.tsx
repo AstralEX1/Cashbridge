@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Chain } from '@tcswap/core'
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -11,17 +12,24 @@ import { useModeAssets } from '@/hooks/use-assets'
 import { useMimir } from '@/hooks/use-mimir'
 import { useAssetFrom, useSetAssetFrom } from '@/hooks/use-swap'
 import { isAssetHalted } from '@/lib/swap-helpers'
-import { isBridgeSellAsset, useSwapStore } from '@/store/swap-store'
-import { PusdMark } from '@/components/swap/bridge-marks'
+import { type CauldronToken, fetchCauldronTokens, PUSD_TOKEN, sameToken, searchCauldronTokens } from '@/lib/cauldron-tokens'
+import { isBridgeSellAsset, isReverseTargetAsset, useSwapStore } from '@/store/swap-store'
+import { TokenMark } from '@/components/swap/bridge-marks'
 
 export interface BridgeInputProps {
   selecting: boolean
   onSelectOpenChange: (open: boolean) => void
 }
 
-export const BridgeAssetButton = ({ asset, ticker, ...props }: ComponentProps<'button'> & { asset?: Asset; ticker?: string }) => {
+// `bch` shows the BCH side (native BCH when `token` is null); otherwise the other chain's `asset`.
+export const BridgeAssetButton = ({
+  asset,
+  bch,
+  token,
+  ...props
+}: ComponentProps<'button'> & { asset?: Asset; bch?: boolean; token?: CauldronToken | null }) => {
   const t = useTranslations('bridge.form')
-  const chain = asset?.chain ?? (ticker ? Chain.BitcoinCash : undefined)
+  const chain = bch ? Chain.BitcoinCash : asset?.chain
   return (
     <button type="button" className="bridge-pill bridge-asset-button" {...props}>
       {chain ? (
@@ -31,15 +39,17 @@ export const BridgeAssetButton = ({ asset, ticker, ...props }: ComponentProps<'b
           </span>
           <span>{chainLabel(chain)}</span>
           <span className="bridge-asset-icon" aria-hidden="true">
-            {ticker === 'PUSD' ? (
-              <PusdMark size={22} />
+            {bch ? (
+              token ? (
+                <TokenMark token={token} size={22} />
+              ) : (
+                <img src="/networks/bch.svg" width={22} height={22} alt="" />
+              )
             ) : asset ? (
               <AssetIcon asset={asset} className="size-[22px] [&_img]:size-[22px]" showNetworkIcons={false} />
-            ) : (
-              <img src="/networks/bch.svg" width={22} height={22} alt="" />
-            )}
+            ) : null}
           </span>
-          <span>{ticker ?? asset?.ticker}</span>
+          <span>{bch ? (token?.ticker ?? 'BCH') : asset?.ticker}</span>
         </>
       ) : (
         <span>{t('selectSource')}</span>
@@ -49,24 +59,45 @@ export const BridgeAssetButton = ({ asset, ticker, ...props }: ComponentProps<'b
   )
 }
 
-export const BridgeAssetPicker = ({ side, open, onClose }: { side: 'from' | 'to'; open: boolean; onClose: () => void }) => {
+// The picker of one side of the form. `bch` lists native BCH and the Cauldron tokens (the BCH side
+// in either direction); otherwise the other chain's assets: anything THORChain sells into BCH, or in
+// the reverse direction the EVM assets it can pay out.
+export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' | 'to'; bch: boolean; open: boolean; onClose: () => void }) => {
   const t = useTranslations('bridge.form')
   const selected = useAssetFrom()
   const setAssetFrom = useSetAssetFrom()
-  const destination = useSwapStore(state => state.destinationAsset)
-  const setDestination = useSwapStore(state => state.setDestinationAsset)
+  const reverse = useSwapStore(state => state.reverse)
+  const bchToken = useSwapStore(state => state.bchToken)
+  const setBchToken = useSwapStore(state => state.setBchToken)
   const { assets: modeAssets, isLoading } = useModeAssets()
   const { mimir, mayaMimir } = useMimir()
   const [chain, setChain] = useState<Chain | undefined>(selected?.chain)
   const [search, setSearch] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
-  const assets = useMemo(() => modeAssets?.filter(isBridgeSellAsset) ?? [], [modeAssets])
+  const assets = useMemo(() => modeAssets?.filter(reverse ? isReverseTargetAsset : isBridgeSellAsset) ?? [], [modeAssets, reverse])
   const chains = useMemo(() => [...new Set(assets.map(a => a.chain))].sort((a, b) => chainLabel(a).localeCompare(chainLabel(b))), [assets])
-  const activeChain = side === 'to' ? Chain.BitcoinCash : (chain ?? selected?.chain ?? chains[0])
+  const activeChain = bch ? Chain.BitcoinCash : (chain && chains.includes(chain) ? chain : selected && chains.includes(selected.chain) ? selected.chain : chains[0])
   const query = search.trim().toLowerCase()
   const tokens = assets.filter(
     a => a.chain === activeChain && [a.ticker, a.name, a.identifier, chainLabel(a.chain)].some(value => value?.toLowerCase().includes(query))
   )
+
+  const listed = useQuery({ queryKey: ['cauldron-tokens'], queryFn: fetchCauldronTokens, enabled: bch && open, staleTime: 5 * 60_000, retry: 1 })
+  const deferredQuery = useDeferredValue(query)
+  const searched = useQuery({
+    queryKey: ['cauldron-token-search', deferredQuery],
+    queryFn: () => searchCauldronTokens(deferredQuery),
+    enabled: bch && open && deferredQuery.length >= 2,
+    staleTime: 60_000,
+    retry: false
+  })
+  const bchOptions = useMemo(() => {
+    const all = [...(listed.data ?? [PUSD_TOKEN]), ...(searched.data ?? [])]
+    const unique = all.filter((token, i) => all.findIndex(other => sameToken(other, token)) === i)
+    // A category id pasted whole finds its token; otherwise ticker and name are matched.
+    return unique.filter(token => !query || token.category === query || [token.ticker, token.name].some(value => value?.toLowerCase().includes(query)))
+  }, [listed.data, searched.data, query])
+  const showBch = !query || 'bch bitcoin cash'.includes(query)
 
   useEffect(() => {
     if (!open) return
@@ -74,6 +105,11 @@ export const BridgeAssetPicker = ({ side, open, onClose }: { side: 'from' | 'to'
     setSearch('')
     searchInput.current?.focus()
   }, [open, selected?.chain])
+
+  const pickBch = (token: CauldronToken | null) => {
+    setBchToken(token)
+    onClose()
+  }
 
   return (
     <section
@@ -97,7 +133,7 @@ export const BridgeAssetPicker = ({ side, open, onClose }: { side: 'from' | 'to'
           ref={searchInput}
           type="search"
           aria-label={t('search')}
-          placeholder={t('search')}
+          placeholder={t(bch ? 'searchTokens' : 'search')}
           value={search}
           onChange={e => setSearch(e.target.value)}
           autoComplete="off"
@@ -105,7 +141,7 @@ export const BridgeAssetPicker = ({ side, open, onClose }: { side: 'from' | 'to'
       </div>
       <p className="bridge-picker-label">{t('chains')}</p>
       <div className="bridge-options" role="group" aria-label={t('chains')}>
-        {(side === 'to' ? [Chain.BitcoinCash] : chains).map(item => (
+        {(bch ? [Chain.BitcoinCash] : chains).map(item => (
           <button type="button" key={item} className="bridge-pill" aria-pressed={item === activeChain} onClick={() => setChain(item)}>
             <img src={`/networks/${item.toLowerCase()}.svg`} width={20} height={20} alt="" />
             {chainLabel(item)}
@@ -114,65 +150,67 @@ export const BridgeAssetPicker = ({ side, open, onClose }: { side: 'from' | 'to'
       </div>
       <p className="bridge-picker-label">{t('tokens')}</p>
       <div className="bridge-options bridge-token-options" role="group" aria-label={t('tokens')}>
-        {side === 'from'
-          ? tokens.map(asset => {
-              const halted = isAssetHalted(asset, mimir, mayaMimir)
-              return (
-                <button
-                  type="button"
-                  key={asset.identifier}
-                  className="bridge-pill"
-                  aria-pressed={selected?.identifier === asset.identifier}
-                  disabled={halted}
-                  title={halted ? t('halted') : asset.identifier}
-                  onClick={() => {
-                    setAssetFrom(asset)
-                    onClose()
-                  }}
-                >
-                  <AssetIcon asset={asset} className="size-5 [&_img]:size-5" showNetworkIcons={false} />
-                  {asset.ticker}
-                </button>
-              )
-            })
-          : ['BCH', 'PUSD', 'RES', 'NIGGA']
-              .filter(ticker => ticker.toLowerCase().includes(query) || 'bitcoin cash'.includes(query))
-              .map(ticker => {
-                const available = ticker === 'BCH' || ticker === 'PUSD'
-                return (
-                  <button
-                    type="button"
-                    key={ticker}
-                    className="bridge-pill"
-                    aria-pressed={destination === ticker}
-                    disabled={!available}
-                    title={available ? ticker : t('unavailable')}
-                    onClick={() => {
-                      if (ticker === 'BCH' || ticker === 'PUSD') setDestination(ticker)
-                      onClose()
-                    }}
-                  >
-                    {ticker === 'BCH' ? (
-                      <img src="/networks/bch.svg" width={20} height={20} alt="" />
-                    ) : ticker === 'PUSD' ? (
-                      <PusdMark size={20} />
-                    ) : (
-                      <span className="bridge-token-mark" aria-hidden="true">
-                        {ticker[0]}
-                      </span>
-                    )}
-                    {ticker}
-                    {!available && <span className="text-[10px]">{t('unavailableShort')}</span>}
-                  </button>
-                )
-              })}
+        {bch ? (
+          <>
+            {showBch && (
+              <button type="button" className="bridge-pill" aria-pressed={bchToken === null} onClick={() => pickBch(null)}>
+                <img src="/networks/bch.svg" width={20} height={20} alt="" />
+                BCH
+              </button>
+            )}
+            {bchOptions.map(token => (
+              <button
+                type="button"
+                key={token.category}
+                className="bridge-pill"
+                aria-pressed={sameToken(bchToken, token)}
+                title={`${token.name ?? token.ticker} · ${token.category}`}
+                onClick={() => pickBch(token)}
+              >
+                <TokenMark token={token} size={20} />
+                {token.ticker}
+              </button>
+            ))}
+          </>
+        ) : (
+          tokens.map(asset => {
+            const halted = isAssetHalted(asset, mimir, mayaMimir)
+            return (
+              <button
+                type="button"
+                key={asset.identifier}
+                className="bridge-pill"
+                aria-pressed={selected?.identifier === asset.identifier}
+                disabled={halted}
+                title={halted ? t('halted') : asset.identifier}
+                onClick={() => {
+                  setAssetFrom(asset)
+                  onClose()
+                }}
+              >
+                <AssetIcon asset={asset} className="size-5 [&_img]:size-5" showNetworkIcons={false} />
+                {asset.ticker}
+              </button>
+            )
+          })
+        )}
       </div>
-      {side === 'from' && tokens.length === 0 && (
+      {!bch && tokens.length === 0 && (
         <p className="bridge-muted text-sm" role="status">
           {t(isLoading ? 'loading' : !modeAssets ? 'assetsUnavailable' : 'empty')}
         </p>
       )}
-      {side === 'to' && <p className="bridge-muted mt-3 text-xs">{t('destinationNote')}</p>}
+      {bch && (listed.isLoading || searched.isFetching) && (
+        <p className="bridge-muted text-sm" role="status">
+          {t('loading')}
+        </p>
+      )}
+      {bch && listed.isError && (
+        <p className="bridge-muted text-sm" role="status">
+          {t('tokensUnavailable')}
+        </p>
+      )}
+      {bch && <p className="bridge-muted mt-3 text-xs">{t('destinationNote')}</p>}
     </section>
   )
 }

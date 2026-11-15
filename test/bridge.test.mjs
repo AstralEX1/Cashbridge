@@ -88,6 +88,24 @@ test('a returned route must still be THORChain to BCH paying the asked address',
   assert.ok(!isBridgeRoute({ ...route, destinationAddress: undefined }, request))
 })
 
+test('the reverse direction quotes BCH.BCH into one non-BCH asset and nothing else', () => {
+  assert.doesNotThrow(() => assertBridgeQuoteRequest({ sellAsset: 'BCH.BCH', buyAsset: 'BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913', providers: ['THORCHAIN'] }))
+  assert.throws(() => assertBridgeQuoteRequest({ sellAsset: 'BCH.BCH', buyAsset: 'BCH.BCH', providers: ['THORCHAIN'] }))
+  assert.throws(() => assertBridgeQuoteRequest({ sellAsset: 'BCH.BCH', buyAsset: 'ETH.ETH', providers: ['MAYACHAIN'] }))
+  assert.throws(() => assertBridgeQuoteRequest({ sellAsset: 'ETH.ETH', buyAsset: 'ETH.USDC-0XA0B8', providers: ['THORCHAIN'] }))
+})
+
+test('a reverse route must still pay the asked EVM address the asked asset', () => {
+  const dest = '0x76ff6F88f58e083b88A80B1764ae7002e303D1A6'
+  const route = { sellAsset: 'BCH.BCH', buyAsset: 'BASE.ETH', providers: ['THORCHAIN'], destinationAddress: dest }
+  const request = { sellAsset: 'BCH.BCH', buyAsset: 'BASE.ETH', destinationAddress: dest }
+  assert.ok(isBridgeRoute(route, request))
+  assert.ok(isBridgeRoute({ ...route, destinationAddress: dest.toLowerCase() }, request))
+  assert.ok(!isBridgeRoute({ ...route, buyAsset: 'BASE.USDC' }, request))
+  assert.ok(!isBridgeRoute({ ...route, destinationAddress: '0x000000000000000000000000000000000000dEaD' }, request))
+  assert.ok(!isBridgeRoute({ ...route, sellAsset: 'ETH.ETH' }, request))
+})
+
 // --- THORNode first-leg interpretation ---------------------------------------------------------
 
 const done = { swap_status: { pending: false }, swap_finalised: { completed: true }, outbound_signed: { completed: true } }
@@ -200,12 +218,12 @@ test('wrong memo, wrong recipient, token outputs and amount mismatch are refused
 
 const funding = [{ txid: 'cc'.repeat(32), vout: 0, value: '1000000' }]
 const sellSats = 990_000n
-const intent = { funding, lockingBytecode: binding.lockingBytecode, tokenAddress: binding.tokenAddress, cashAddress: binding.cashAddress, sellSats, minOutput: 4_900n }
+const intent = { category: PUSD, side: 'buy', funding, lockingBytecode: binding.lockingBytecode, tokenAddress: binding.tokenAddress, cashAddress: binding.cashAddress, sell: sellSats, minOutput: 4_900n }
 const build = (opts = {}) => swapBuild({ ownScript, funding, sellSats, pusdOut: 5_000n, ...opts })
 
 test('a correct build is accepted and its money flows are computed from the transaction', () => {
   const reviewed = reviewBuild(build(), intent)
-  assert.equal(reviewed.pusdOut, 5_000n)
+  assert.equal(reviewed.output, 5_000n)
   assert.equal(reviewed.routerFeeSats, 0n)
   assert.equal(reviewed.minerFeeSats, 600n)
   assert.deepEqual(reviewed.ownIndexes, [0])
@@ -233,7 +251,7 @@ test('modified outputs and excessive fees are refused', () => {
 
 test('wrong category, NFTs, burns and low output are refused', () => {
   assert.throws(() => reviewBuild(build({ tokenCategory: OTHER_TOKEN }), intent), /different token category|burned/)
-  assert.throws(() => reviewBuild(build({ pusdOut: 4_000n }), intent), /less PUSD/)
+  assert.throws(() => reviewBuild(build({ pusdOut: 4_000n }), intent), /fewer tokens/)
   assert.throws(
     () =>
       reviewBuild(
@@ -361,11 +379,13 @@ const localFunding = [{ txid: 'ee'.repeat(32), vout: 0, value: '1010000' }]
 const localTrade = () => {
   const trade = bestTrade([cauldronPool(108_000_000n, 30_000n)], 1_000_000n)
   const localIntent = {
+    category: PUSD,
+    side: 'buy',
     funding: localFunding,
     lockingBytecode: binding.lockingBytecode,
     tokenAddress: binding.tokenAddress,
     cashAddress: binding.cashAddress,
-    sellSats: trade.summary.supply,
+    sell: trade.summary.supply,
     minOutput: minOutputFor(trade.summary.demand)
   }
   return { trade, localIntent, build: tradeTransaction(trade, localIntent) }
@@ -377,7 +397,7 @@ test('a local trade passes the review, the real pool covenant and the signature 
   // ~1,000,000 sats at ~3,600 sats per unit, less the 0.3% pool fee and price impact.
   assert.ok(trade.summary.demand > 260n && trade.summary.demand < 280n, `got ${trade.summary.demand}`)
   const reviewed = reviewBuild(local, localIntent)
-  assert.equal(reviewed.pusdOut, trade.summary.demand)
+  assert.equal(reviewed.output, trade.summary.demand)
   assert.deepEqual(reviewed.ownIndexes, [1])
   assert.equal(reviewed.routerFeeSats, 0n)
   assert.equal(decodeTransaction(hexToBin(reviewed.unsignedHex)).inputs[1].unlockingBytecode.length, 0, 'the throwaway signature is removed')
@@ -399,6 +419,47 @@ test('the pool covenant refuses a trade that takes more PUSD than the pool pays'
 test('a sale the funding cannot cover is reported as insufficient funds', () => {
   const { trade, localIntent } = localTrade()
   assert.throws(() => tradeTransaction(trade, { ...localIntent, funding: [{ ...localFunding[0], value: '500000' }] }), e => e.code === 'insufficient_funds')
+})
+
+// Selling the token back for BCH: the funding carries the tokens on the bound address, as a wallet holds them.
+const localSale = (tokens = 300n) => {
+  const trade = bestTrade([cauldronPool(108_000_000n, 30_000n)], tokens, PUSD, 'sell')
+  const saleIntent = {
+    category: PUSD,
+    side: 'sell',
+    funding: [{ txid: 'ef'.repeat(32), vout: 1, value: '1000', token: { category: PUSD, amount: '500' } }],
+    lockingBytecode: binding.lockingBytecode,
+    tokenAddress: binding.tokenAddress,
+    cashAddress: binding.cashAddress,
+    sell: trade.summary.supply,
+    minOutput: minOutputFor(trade.summary.demand)
+  }
+  return { trade, saleIntent, build: tradeTransaction(trade, saleIntent) }
+}
+
+test('a local token sale pays BCH to the wallet, returns the unsold tokens and passes every check', () => {
+  const { trade, saleIntent, build: local } = localSale()
+  assert.equal(trade.summary.supply, 300n)
+  // ~300 units at ~3,600 sats each, less the 0.3% pool fee and price impact.
+  assert.ok(trade.summary.demand > 1_000_000n && trade.summary.demand < 1_090_000n, `got ${trade.summary.demand}`)
+  const reviewed = reviewBuild(local, saleIntent)
+  assert.equal(reviewed.side, 'sell')
+  assert.equal(reviewed.tokensSold, 300n)
+  assert.equal(reviewed.output, trade.summary.demand)
+  assert.equal(reviewed.debitSats, 0n)
+  assert.ok(reviewed.bchOutputs.length >= 1 && reviewed.bchOutputs.every(o => o.value > 0n))
+  checkPoolCovenants(reviewed)
+  const signed = signBuild(decodeTransaction(hexToBin(reviewed.unsignedHex)), sourcesOf(reviewed), reviewed.ownIndexes)
+  assert.equal(checkSigned(reviewed.unsignedHex, signed, reviewed.ownIndexes, sourcesOf(reviewed), binding.pubkey), txidOf(signed))
+})
+
+test('a token sale is refused when it sells more than approved, pays too little BCH or spends unapproved tokens', () => {
+  const { saleIntent, build: local } = localSale()
+  assert.throws(() => reviewBuild(local, { ...saleIntent, sell: 299n }), /More tokens leave/)
+  assert.throws(() => reviewBuild(local, { ...saleIntent, minOutput: 10_000_000n }), /less (BCH|than)/)
+  assert.throws(() => reviewBuild(local, { ...saleIntent, funding: [{ ...saleIntent.funding[0], token: { category: PUSD, amount: '501' } }] }), /does not match/)
+  assert.throws(() => reviewBuild(local, { ...saleIntent, side: 'buy' }), /does not match|BCH only/)
+  assert.throws(() => tradeTransaction(localSale().trade, { ...saleIntent, funding: [{ ...saleIntent.funding[0], token: { category: PUSD, amount: '100' } }] }), e => e.code === 'insufficient_funds')
 })
 
 const MIN_SWAP_404 = { providerErrors: [{ provider: 'THORCHAIN', error: 'amount less than min swap amount (recommended_min_amount_in: 36045): invalid request', errorCode: 'unknownApiError' }] }
@@ -491,7 +552,7 @@ test('confirm figures are formatted as the design shows them', async () => {
 })
 
 test('the PUSD swap is broadcast through Fulcrum first and through Cauldron only when Fulcrum cannot be reached', async () => {
-  const { broadcastPusdSwap, BroadcastRejected } = await import('../src/lib/cauldron.ts')
+  const { broadcastBchTransaction, BroadcastRejected } = await import('../src/lib/cauldron.ts')
   const { RpcError } = await import('../src/lib/bch.ts')
   const txid = 'ab'.repeat(32)
   const calls = []
@@ -501,19 +562,19 @@ test('the PUSD swap is broadcast through Fulcrum first and through Cauldron only
   })
 
   // Accepted by Fulcrum: Cauldron is never asked.
-  assert.equal(await broadcastPusdSwap('00', txid, routes(async () => txid)), txid)
+  assert.equal(await broadcastBchTransaction('00', txid, routes(async () => txid)), txid)
   assert.deepEqual(calls.splice(0), ['fulcrum'])
 
   // Fulcrum unreachable: the same bytes go to Cauldron.
-  assert.equal(await broadcastPusdSwap('00', txid, routes(async () => { throw new Error('Could not connect to bch.imaginary.cash') })), txid)
+  assert.equal(await broadcastBchTransaction('00', txid, routes(async () => { throw new Error('Could not connect to bch.imaginary.cash') })), txid)
   assert.deepEqual(calls.splice(0), ['fulcrum', 'cauldron'])
 
   // Already known to the node: success, nothing else is tried.
-  assert.equal(await broadcastPusdSwap('00', txid, routes(async () => { throw new RpcError('1', 'txn-already-known') })), txid)
+  assert.equal(await broadcastBchTransaction('00', txid, routes(async () => { throw new RpcError('1', 'txn-already-known') })), txid)
   assert.deepEqual(calls.splice(0), ['fulcrum'])
 
   // Rejected by the node (e.g. a pool already spent): a rejection, not a retry elsewhere.
-  await assert.rejects(broadcastPusdSwap('00', txid, routes(async () => { throw new RpcError('1', 'the transaction was rejected by network rules. missing-inputs') })), BroadcastRejected)
+  await assert.rejects(broadcastBchTransaction('00', txid, routes(async () => { throw new RpcError('1', 'the transaction was rejected by network rules. missing-inputs') })), BroadcastRejected)
   assert.deepEqual(calls.splice(0), ['fulcrum'])
 })
 
@@ -565,4 +626,85 @@ test('the first leg is timed without a BCH block wait, which the 0-conf bridge d
   assert.equal(firstLegSeconds({ inbound: 24, swap: 6, outbound: 1800, total: 1830 }), 24 + 6 + 90 + 1200)
   assert.equal(firstLegSeconds({ total: 630 }), 630)
   assert.equal(firstLegSeconds(undefined), undefined)
+})
+
+// --- Reverse direction: THORChain deposit -------------------------------------------------------
+
+test('a deposit memo must swap to the asked asset and pay the asked address within 80 bytes', async () => {
+  const { checkDepositMemo } = await import('../src/lib/thorchain-deposit.ts')
+  const want = { buyAsset: 'BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913', destination: '0x76ff6F88f58e083b88A80B1764ae7002e303D1A6' }
+  assert.doesNotThrow(() => checkDepositMemo('=:BASE.USDC:0x76ff6f88f58e083b88a80b1764ae7002e303d1a6:261106164', want))
+  assert.doesNotThrow(() => checkDepositMemo('s:BASE.USDC:0x76ff6F88f58e083b88A80B1764ae7002e303D1A6', want))
+  assert.throws(() => checkDepositMemo('=:BASE.ETH:0x76ff6F88f58e083b88A80B1764ae7002e303D1A6:1', want), /different asset/)
+  assert.throws(() => checkDepositMemo('=:BASE.USDC:0x000000000000000000000000000000000000dEaD:1', want), /different address/)
+  assert.throws(() => checkDepositMemo('+:BASE.USDC:0x76ff6F88f58e083b88A80B1764ae7002e303D1A6', want), /not a swap/)
+  assert.throws(() => checkDepositMemo(`=:BASE.USDC:0x76ff6F88f58e083b88A80B1764ae7002e303D1A6:${'1'.repeat(40)}`, want), /longer/)
+})
+
+test('a deposit pays only THORChain’s current, open BCH vault', async () => {
+  const { checkInbound } = await import('../src/lib/thorchain-deposit.ts')
+  const vault = otherBinding.cashAddress
+  const inbounds = [
+    { chain: 'BCH', address: vault.split(':')[1], halted: false, chain_trading_paused: false, gas_rate: '3' },
+    { chain: 'BASE', address: '0x718f', router: '0x00dc6100103BC402d490aEE3F9a5560cBd91f1d4', halted: false, chain_trading_paused: false }
+  ]
+  const ok = checkInbound(inbounds, vault, 'BASE')
+  assert.equal(ok.vaultScript, otherBinding.lockingBytecode)
+  assert.equal(ok.router, '0x00dc6100103BC402d490aEE3F9a5560cBd91f1d4')
+  assert.equal(ok.feeRate, 3n)
+  assert.throws(() => checkInbound(inbounds, binding.cashAddress, 'BASE'), /not THORChain/)
+  assert.throws(() => checkInbound([{ ...inbounds[0], halted: true }, inbounds[1]], vault, 'BASE'), /paused/)
+  assert.throws(() => checkInbound([inbounds[0], { ...inbounds[1], chain_trading_paused: true }], vault, 'BASE'), /paused/)
+})
+
+test('a deposit pays the vault first, carries the memo, returns change, signs and verifies', async () => {
+  const { buildDeposit } = await import('../src/lib/thorchain-deposit.ts')
+  const memo = '=:BASE.USDC:0x76ff6F88f58e083b88A80B1764ae7002e303D1A6:261106164'
+  const funding = [{ txid: 'ab'.repeat(32), vout: 2, value: '1500000' }]
+  const built = buildDeposit({ funding, lockingBytecode: binding.lockingBytecode, vaultScript: otherBinding.lockingBytecode, memo, amountSats: 1_000_000n, feeRate: 1n })
+  const tx = decodeTransaction(hexToBin(built.unsignedHex))
+  assert.equal(binToHex(tx.outputs[0].lockingBytecode), otherBinding.lockingBytecode)
+  assert.equal(tx.outputs[0].valueSatoshis, 1_000_000n)
+  assert.equal(opReturnText(tx.outputs[1].lockingBytecode), memo)
+  assert.equal(binToHex(tx.outputs[2].lockingBytecode), binding.lockingBytecode)
+  assert.equal(built.amountSats + built.minerFeeSats + built.changeSats, 1_500_000n)
+  assert.ok(built.minerFeeSats > 200n && built.minerFeeSats < 500n, `fee ${built.minerFeeSats}`)
+  const signed = signBuild(tx, sourcesOf(built), built.ownIndexes)
+  assert.equal(checkSigned(built.unsignedHex, signed, built.ownIndexes, sourcesOf(built), binding.pubkey), txidOf(signed))
+
+  const all = buildDeposit({ funding, lockingBytecode: binding.lockingBytecode, vaultScript: otherBinding.lockingBytecode, memo, payAll: true, feeRate: 1n })
+  assert.equal(all.changeSats, 0n)
+  assert.equal(decodeTransaction(hexToBin(all.unsignedHex)).outputs.length, 2)
+  assert.equal(all.amountSats + all.minerFeeSats, 1_500_000n)
+  assert.throws(() => buildDeposit({ funding, lockingBytecode: binding.lockingBytecode, vaultScript: otherBinding.lockingBytecode, memo, amountSats: 5_000n, feeRate: 1n }), /minimum/)
+  assert.throws(() => buildDeposit({ funding, lockingBytecode: binding.lockingBytecode, vaultScript: otherBinding.lockingBytecode, memo, amountSats: 1_499_900n, feeRate: 1n }), /does not cover/)
+})
+
+test('the payout is the router’s TransferOut to the destination with the deposit’s OUT memo', async () => {
+  const { matchPayout, TRANSFER_OUT_TOPIC } = await import('../src/lib/thorchain-deposit.ts')
+  const { AbiCoder } = await import('ethers')
+  const destination = '0x76ff6F88f58e083b88A80B1764ae7002e303D1A6'
+  const deposit = 'e3a1b0c2d4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b6c8d0e2f4a6b8'
+  const log = (memo, to = destination) => ({
+    topics: [TRANSFER_OUT_TOPIC, `0x${'0'.repeat(24)}718f6c9df785bc4e323086de024ca822efbe8ab9`, `0x${'0'.repeat(24)}${to.slice(2).toLowerCase()}`],
+    data: AbiCoder.defaultAbiCoder().encode(['address', 'uint256', 'string'], ['0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', 2_611_061n, memo]),
+    transactionHash: '0xfeed',
+    blockNumber: 1
+  })
+  assert.deepEqual(matchPayout([log(`OUT:${deposit.toUpperCase()}`)], { destination, depositTxid: deposit }), {
+    hash: '0xfeed',
+    amount: '2611061',
+    asset: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+  })
+  assert.equal(matchPayout([log(`OUT:${'00'.repeat(32)}`)], { destination, depositTxid: deposit }), undefined)
+  assert.equal(matchPayout([log(`OUT:${deposit}`, '0x000000000000000000000000000000000000dEaD')], { destination, depositTxid: deposit }), undefined)
+  assert.equal(matchPayout([log(`REFUND:${deposit}`)], { destination, depositTxid: deposit }), undefined)
+})
+
+test('a BCH refund of a deposit is recognised by its REFUND memo', () => {
+  const raw = { hex: outboundTx({ to: ownScript, amount: 900_000n, memo: `REFUND:${inboundHash}` }) }
+  raw.tx = decodeTx(raw.hex)
+  const ctx = { inboundHash, lockingBytecode: binding.lockingBytecode, expectedSats: 900_000n }
+  assert.equal(checkOutbound(raw, ctx, { tip: 1, utxos: [] }).kind, 'invalid', 'an OUT check does not accept a refund')
+  assert.equal(checkOutbound(raw, { ...ctx, action: 'REFUND' }, { tip: 1, utxos: [] }).kind, 'ok')
 })

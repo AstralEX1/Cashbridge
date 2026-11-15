@@ -12,7 +12,7 @@ import { AssetIcon } from '@/components/asset-icon'
 import { useDialog } from '@/components/global-dialog'
 import { TransactionHistoryDialog } from '@/components/header/transaction-history-dialog'
 import { chainLabel } from '@/components/connect-wallet/config'
-import { BchMark, PusdMark } from '@/components/swap/bridge-marks'
+import { BchMark, TokenMark } from '@/components/swap/bridge-marks'
 import { shortBridgeAddress, WalletAddressBadge } from '@/components/swap/bridge-wallet-badge'
 import { useBchWallet } from '@/components/bch-wallet'
 import { GenericButton } from '@/components/generic-button'
@@ -35,17 +35,18 @@ import {
 import {
   BroadcastRejected,
   BroadcastUnknown,
-  broadcastPusdSwap,
-  buildPusdSwap,
+  broadcastBchTransaction,
+  buildTokenTrade,
   CauldronError,
   checkPoolCovenants,
   checkPoolsLive,
   checkSigned,
-  quotePusd,
+  quoteToken,
   type ReviewedSwap,
   reviewBuild,
   sourcesOf
 } from '@/lib/cauldron'
+import { type CauldronToken, PUSD_TOKEN } from '@/lib/cauldron-tokens'
 import { generateId } from '@/lib/utils'
 import { formatAmount, formatMinutes, formatUsd, PUSD_LEG_SECONDS } from '@/lib/bridge-summary'
 import { useSwapStore } from '@/store/swap-store'
@@ -57,6 +58,8 @@ import {
   useSetTransactionDetails,
   useTransaction,
   isBridgeTerminal,
+  isReverseOperation,
+  operationToken,
   useUpdateBridge
 } from '@/store/transaction-store'
 
@@ -64,7 +67,8 @@ type BridgeTx = SwapTransaction & { bridge: BridgeOperation }
 
 const BCH_DECIMALS = 8
 const formatBch = (sats: bigint | string) => formatBaseUnits(sats, BCH_DECIMALS)
-const formatPusd = (units: bigint | string) => formatBaseUnits(units, BridgeConfig.pusd.decimals)
+const formatToken = (units: bigint | string, token: Pick<CauldronToken, 'decimals'>) => formatBaseUnits(units, token.decimals)
+const tokenAmount = (units: bigint | string, token: Pick<CauldronToken, 'decimals'>) => Number(units) / 10 ** token.decimals
 
 // A reviewed second-leg transaction is signed only while this fresh; after that it is rebuilt.
 const REVIEW_TTL_MS = 60_000
@@ -73,6 +77,7 @@ const SIGN_TIMEOUT_MS = 5 * 60_000
 const POLL_MS = 8_000
 
 import { withLock } from '@/lib/bridge-first-leg'
+import { ReverseOperationPanel, syncReverse } from '@/components/swap/reverse-bridge'
 
 // The persisted operation as every tab sees it right now (another tab may have moved it on).
 const freshOperation = async (uid: string) => {
@@ -83,12 +88,13 @@ const freshOperation = async (uid: string) => {
 
 // --- Combined estimate -------------------------------------------------------------------------
 
-// The indicative PUSD the first leg's BCH would buy now. Nothing is reserved: the second leg is
-// quoted again on the BCH actually received, and the user may keep the BCH instead.
-// The Cauldron quote for the BCH a first leg is expected to deliver (`expectedBuyAmount`, in BCH).
-// `destination` overrides the form's choice (a running operation has its own).
-export const usePusdQuoteFor = (expectedBuyAmount?: string, destination?: 'BCH' | 'PUSD') => {
-  const destinationAsset = useSwapStore(state => destination ?? state.destinationAsset)
+// The Cauldron quote for the BCH a first leg is expected to deliver (`expectedBuyAmount`, in BCH):
+// the indicative amount of the token it would buy now. Nothing is reserved: the second leg is quoted
+// again on the BCH actually received, and the user may keep the BCH instead. `token` overrides the
+// form's choice (a running operation has its own); null is native BCH, which needs no quote.
+export const useTokenQuoteFor = (expectedBuyAmount?: string, token?: CauldronToken | null) => {
+  const formToken = useSwapStore(state => state.bchToken)
+  const target = token === undefined ? formToken : token
   const bchSats = useMemo(() => {
     if (!expectedBuyAmount) return undefined
     try {
@@ -100,58 +106,19 @@ export const usePusdQuoteFor = (expectedBuyAmount?: string, destination?: 'BCH' 
   const sellSats = bchSats === undefined ? undefined : secondLegSellAmount(bchSats)
 
   const query = useQuery({
-    queryKey: ['pusd-estimate', sellSats?.toString()],
-    queryFn: () => quotePusd(sellSats!),
-    enabled: destinationAsset === 'PUSD' && !!sellSats && sellSats > 0n,
+    queryKey: ['token-estimate', target?.category, sellSats?.toString()],
+    queryFn: () => quoteToken({ category: target!.category, side: 'buy', amount: sellSats! }),
+    enabled: !!target && !!sellSats && sellSats > 0n,
     retry: false,
     staleTime: 20_000
   })
 
-  return { bchSats, sellSats, pusd: query.data?.output, quote: query.data, isLoading: query.isLoading, error: query.error as Error | null }
+  return { token: target, bchSats, sellSats, output: query.data?.output, quote: query.data, isLoading: query.isLoading, error: query.error as Error | null }
 }
 
-export const usePusdEstimate = () => {
+export const useTokenEstimate = () => {
   const { quote } = useQuote()
-  return usePusdQuoteFor(quote?.expectedBuyAmount)
-}
-
-export const PusdEstimate = () => {
-  const t = useTranslations('bridge')
-  const { bchSats, sellSats, pusd, isLoading, error } = usePusdEstimate()
-  const { rateTo } = useSwapRates()
-  if (bchSats === undefined) return null
-  // What one PUSD costs in dollars at this rate: the live pools need not price it at $1.
-  const bchUsd = rateTo ? Number(rateTo.toSignificant(12)) : NaN
-  const pusdUsd = pusd && sellSats && bchUsd > 0 ? ((Number(sellSats) / 1e8) * bchUsd) / (Number(pusd) / 10 ** BridgeConfig.pusd.decimals) : undefined
-
-  return (
-    <div className="bg-swap-bloc rounded-15 space-y-2 border p-4 text-sm">
-      <div className="flex justify-between">
-        <span className="text-txt-label-small">{t('estimate.step1')}</span>
-        <span>≈ {formatBch(bchSats)} BCH</span>
-      </div>
-      <div className="flex justify-between">
-        <span className="text-txt-label-small">{t('estimate.step2')}</span>
-        <span>
-          {isLoading ? (
-            <LoaderCircle size={14} className="animate-spin" />
-          ) : pusd !== undefined ? (
-            `≈ ${formatPusd(pusd)} ${BridgeConfig.pusd.ticker}`
-          ) : (
-            '—'
-          )}
-        </span>
-      </div>
-      {pusdUsd !== undefined && Number.isFinite(pusdUsd) && (
-        <div className={`text-xs ${Math.abs(pusdUsd - 1) > 0.05 ? 'text-warning' : 'text-txt-label-small'}`}>
-          {t(Math.abs(pusdUsd - 1) > 0.05 ? 'estimate.offPeg' : 'estimate.pusdPrice', { price: pusdUsd.toFixed(2) })}
-        </div>
-      )}
-      {sellSats === 0n && <SwapError error={new Error(t('estimate.tooSmall'))} />}
-      {error && <SwapError error={new Error(t('estimate.noRoute', { reason: error.message }))} />}
-      <div className="text-txt-label-small text-xs">{t('estimate.disclaimer')}</div>
-    </div>
-  )
+  return useTokenQuoteFor(quote?.expectedBuyAmount)
 }
 
 // --- BCH wallet --------------------------------------------------------------------------------
@@ -305,12 +272,12 @@ const syncSecondLeg = async (tx: BridgeTx, update: ReturnType<typeof useUpdateBr
   }
   // Not seen by that server, yet the funding is spent: if the address's history holds any swap this
   // operation signed, that is the spender (a server can lag on the txid), so the swap is done. Only a
-  // genuinely foreign spender means the PUSD swap did not happen.
+  // genuinely foreign spender means the token swap did not happen.
   const checked = await checkUnspent(op.binding.lockingBytecode, op.received ?? [])
   if (checked.some(o => !o.unspent)) {
     const ours = await historyIncludes(op.binding.lockingBytecode, [leg.txid, ...(op.priorSwapTxids ?? [])])
     if (ours.length > 0) return update(tx.uid, () => ({ stage: 'completed', secondLeg: { ...leg, txid: ours[0], confirmations: 0, error: undefined } }))
-    update(tx.uid, () => ({ stage: 'failed', error: 'The BCH was spent by a different transaction; the PUSD swap did not happen' }))
+    update(tx.uid, () => ({ stage: 'failed', error: 'The BCH was spent by a different transaction; the token swap did not happen' }))
   }
 }
 
@@ -332,6 +299,10 @@ export const BridgeTracker = () => {
     queryKey: ['bridge-sync', active?.uid, active?.bridge.stage],
     queryFn: async () => {
       if (!active) return null
+      if (isReverseOperation(active.bridge)) {
+        await syncReverse(active, update)
+        return Date.now()
+      }
       switch (active.bridge.stage) {
         case 'first_leg_pending':
           await syncFirstLeg(active, update, setDetails)
@@ -363,14 +334,14 @@ export const BridgeTracker = () => {
 const timeOf = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 const usdText = (value?: number) => (value === undefined || !Number.isFinite(value) ? undefined : formatUsd(value))
 
-interface FlowToken {
+export interface FlowToken {
   amount: string
   ticker: string
   usd?: string
   icon: ReactNode
 }
 
-interface FlowBar {
+export interface FlowBar {
   // 0..1 of the bar filled; `live` adds the moving shimmer, `done` the check.
   fill: number
   // Time left, or time elapsed once past the estimate.
@@ -393,14 +364,19 @@ export interface BridgeFlowProps {
   stage: FlowStage
   // Read by screen readers as the dialog title.
   title: string
+  // The other chain's wallet; the BCH wallet sits right of it, or left in the reverse direction.
   sourceChain: Chain
   sourceAddress?: string
   bchAddress: string
+  reverse?: boolean
+  // What is sent, the middle asset (BCH forward; BCH, or the payout for plain BCH, in reverse) and
+  // the final asset of a two-step operation.
   sent: FlowToken
   bch: FlowToken
-  pusd?: FlowToken
-  bridgeBar: FlowBar
-  swapBar?: FlowBar
+  final?: FlowToken
+  // Bars of step 1 and step 2 (step 1 alone for a one-transaction operation).
+  firstBar: FlowBar
+  secondBar?: FlowBar
   details?: ReactNode
   actions?: ReactNode
   toasts: FlowToast[]
@@ -497,8 +473,17 @@ const useCollapseOnce = (uid: string | undefined, collapsed: boolean) => {
 // the card but toast-style notes in the page's bottom-right corner; History sits in the top-right.
 export const BridgeFlow = (props: BridgeFlowProps) => {
   const t = useTranslations('bridge.progress')
-  const { stage, pusd } = props
-  const collapsed = !!pusd && (stage === 'ready' || stage === 'swapping' || stage === 'done')
+  const { stage, final, reverse } = props
+  const collapsed = !!final && (stage === 'ready' || stage === 'swapping' || stage === 'done')
+  // Forward: Bridge (1/2) then Swap (2/2). Reverse: the Cauldron swap first, then the bridge.
+  const firstLabel = t(reverse ? 'swapFirstStep' : 'bridgeStep')
+  const secondLabel = t(reverse ? 'bridgeSecondStep' : 'swapStep')
+  const otherWallet = props.sourceAddress ? (
+    <WalletAddressBadge address={props.sourceAddress} chain={props.sourceChain} label={t(reverse ? 'destinationWallet' : 'sourceWallet')} showChainIcon />
+  ) : (
+    <span />
+  )
+  const bchWallet = <WalletAddressBadge address={props.bchAddress} chain={Chain.BitcoinCash} label={t('bchWallet')} showChainIcon />
   return (
     <div className="bridge-flow">
       <div className="bridge-flow-corner">
@@ -514,24 +499,24 @@ export const BridgeFlow = (props: BridgeFlowProps) => {
       <div className="bridge-flow-main">
         <div className="bridge-flow-card">
           <div className="bridge-flow-wallets">
-            {props.sourceAddress ? (
-              <WalletAddressBadge address={props.sourceAddress} chain={props.sourceChain} label={t('sourceWallet')} showChainIcon />
-            ) : (
-              <span />
-            )}
-            <WalletAddressBadge address={props.bchAddress} chain={Chain.BitcoinCash} label={t('bchWallet')} showChainIcon />
+            {reverse ? bchWallet : otherWallet}
+            {reverse ? otherWallet : bchWallet}
           </div>
 
           {collapsed ? (
             <div className="bridge-flow-ready" data-stage={stage} data-animate={props.animateCollapse === false ? 'false' : undefined}>
-              <div className="bridge-flow-tile" role="img" aria-label={t('bridgeDone', { from: props.sent.ticker })}>
+              <div
+                className="bridge-flow-tile"
+                role="img"
+                aria-label={t(reverse ? 'swapDone' : 'bridgeDone', { from: props.sent.ticker })}
+              >
                 <div className="bridge-flow-tile-inner">
                   <span className="bridge-flow-tile-icons">
                     {props.sent.icon}
                     <ArrowRight size={14} strokeWidth={2.6} aria-hidden="true" />
                     {props.bch.icon}
                   </span>
-                  <span>{t('bridge')}</span>
+                  <span>{t(reverse ? 'swap' : 'bridge')}</span>
                   <span className="bridge-flow-check">
                     <Check size={14} strokeWidth={3} aria-hidden="true" />
                   </span>
@@ -541,35 +526,35 @@ export const BridgeFlow = (props: BridgeFlowProps) => {
                 <div className="bridge-flow-tokens is-compact bridge-flow-slide">
                   <FlowAmount token={props.bch} />
                   <FlowArrow live={stage !== 'done'} />
-                  <FlowAmount token={pusd} />
+                  <FlowAmount token={final} />
                 </div>
-                {props.swapBar && (
+                {props.secondBar && (
                   <div className="bridge-flow-slide">
-                    <ProgressBar label={t('swapStep')} bar={props.swapBar} />
+                    <ProgressBar label={secondLabel} bar={props.secondBar} />
                   </div>
                 )}
               </div>
             </div>
           ) : (
             <>
-              <div className={`bridge-flow-tokens${pusd ? ' is-compact' : ''}`}>
+              <div className={`bridge-flow-tokens${final ? ' is-compact' : ''}`}>
                 <FlowAmount token={props.sent} />
                 <FlowArrow live={stage === 'bridging' || stage === 'plain'} />
                 <FlowAmount token={props.bch} />
-                {pusd && (
+                {final && (
                   <>
                     <FlowArrow live={false} />
-                    <FlowAmount token={pusd} />
+                    <FlowAmount token={final} />
                   </>
                 )}
               </div>
-              {pusd ? (
+              {final ? (
                 <div className="bridge-flow-bars">
-                  <ProgressBar label={t('bridgeStep')} bar={props.bridgeBar} />
-                  {props.swapBar && <ProgressBar label={t('swapStep')} bar={props.swapBar} />}
+                  <ProgressBar label={firstLabel} bar={props.firstBar} />
+                  {props.secondBar && <ProgressBar label={secondLabel} bar={props.secondBar} />}
                 </div>
               ) : (
-                <ProgressBar label={t('bridge')} bar={props.bridgeBar} />
+                <ProgressBar label={t('bridge')} bar={props.firstBar} />
               )}
             </>
           )}
@@ -609,8 +594,10 @@ export const BridgeFlow = (props: BridgeFlowProps) => {
 
 // The Cauldron quote for the swap-ready stage: the trade on the live pools for the BCH received.
 export interface CauldronQuoteView {
-  bchPerPusd: number
-  pusdUsd?: number
+  ticker: string
+  // BCH per one token unit, and that token unit in USD.
+  bchPerToken: number
+  tokenUsd?: number
   lpFeePercent: number
   lpFeeUsd?: number
   networkFeeBch: number
@@ -627,8 +614,8 @@ export const CauldronQuoteBlock = ({ quote }: { quote: CauldronQuoteView }) => {
     <section className="bridge-confirm-details bridge-flow-quote">
       <button type="button" className="bridge-confirm-summary" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span className="bridge-confirm-rate">
-          {t('quoteRate', { bch: formatAmount(quote.bchPerPusd) })}
-          {quote.pusdUsd !== undefined && <span className="bridge-flow-muted"> ({formatUsd(quote.pusdUsd)})</span>}
+          {t('quoteRate', { ticker: quote.ticker, bch: formatAmount(quote.bchPerToken) })}
+          {quote.tokenUsd !== undefined && <span className="bridge-flow-muted"> ({formatUsd(quote.tokenUsd)})</span>}
         </span>
         {totalFee !== undefined && (
           <span className="bridge-confirm-chip bridge-flow-fee">
@@ -669,31 +656,46 @@ export const CauldronQuoteBlock = ({ quote }: { quote: CauldronQuoteView }) => {
   )
 }
 
+// Figures of a Cauldron trade for display. `side` 'buy' sells BCH for the token (minOutput in token
+// units); 'sell' sells the token for BCH (minOutput in sats). The pools' fee is always in BCH.
 export const cauldronQuoteView = (
-  leg: { sellSats: bigint; output: bigint; spotOutput: number; tradeFeeSats: bigint; minerFeeSats?: bigint; minOutput: bigint },
+  leg: { side?: 'buy' | 'sell'; sell: bigint; output: bigint; spotOutput: number; tradeFeeSats: bigint; minerFeeSats?: bigint; minOutput: bigint },
+  token: Pick<CauldronToken, 'ticker' | 'decimals'>,
   bchUsd?: number
 ): CauldronQuoteView | undefined => {
-  if (leg.output <= 0n || leg.sellSats <= 0n) return undefined
-  const sell = Number(leg.sellSats) / 1e8
-  const output = Number(leg.output) / 10 ** BridgeConfig.pusd.decimals
+  if (leg.output <= 0n || leg.sell <= 0n) return undefined
+  const selling = leg.side === 'sell'
+  const bch = Number(selling ? leg.output : leg.sell) / 1e8
+  const tokens = tokenAmount(selling ? leg.sell : leg.output, token)
   const fee = Number(leg.tradeFeeSats) / 1e8
-  const spot = leg.spotOutput / 10 ** BridgeConfig.pusd.decimals
   const miner = leg.minerFeeSats === undefined ? 0 : Number(leg.minerFeeSats) / 1e8
-  const bchPerPusd = sell / output
-  const afterFee = spot * (1 - fee / sell)
+  const bchPerToken = bch / tokens
+  // The trade's own output against what the same sale buys at spot after the fee.
+  const spot = selling ? leg.spotOutput / 1e8 : leg.spotOutput / 10 ** token.decimals
+  const output = selling ? bch : tokens
+  const feeShare = selling ? fee / (bch + fee) : fee / bch
+  const afterFee = spot * (1 - feeShare)
   return {
-    bchPerPusd,
-    pusdUsd: bchUsd ? bchPerPusd * bchUsd : undefined,
-    lpFeePercent: (fee / sell) * 100,
+    ticker: token.ticker,
+    bchPerToken,
+    tokenUsd: bchUsd ? bchPerToken * bchUsd : undefined,
+    lpFeePercent: feeShare * 100,
     lpFeeUsd: bchUsd ? fee * bchUsd : undefined,
     networkFeeBch: miner,
     networkFeeUsd: bchUsd ? miner * bchUsd : undefined,
     priceImpactPercent: afterFee > 0 ? Math.max(0, (1 - output / afterFee) * 100) : 0,
-    minimum: `${formatPusd(leg.minOutput)} ${BridgeConfig.pusd.ticker}`
+    minimum: selling ? `${formatBch(leg.minOutput)} BCH` : `${formatToken(leg.minOutput, token)} ${token.ticker}`
   }
 }
 
+// The progress screen of the operation `uid`, in its own direction.
 export const BridgeOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => void }) => {
+  const tx = useTransaction(uid)
+  const reverse = !!tx && tx.kind !== 'send' && !!tx.bridge && isReverseOperation(tx.bridge)
+  return reverse ? <ReverseOperationPanel uid={uid} onClose={onClose} /> : <ForwardOperationPanel uid={uid} onClose={onClose} />
+}
+
+const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => void }) => {
   const t = useTranslations('bridge')
   const tx = useTransaction(uid)
   const { openDialog } = useDialog()
@@ -708,24 +710,25 @@ export const BridgeOperationPanel = ({ uid, onClose }: { uid?: string; onClose: 
 
   const bridgeTx = tx && tx.kind !== 'send' && tx.bridge ? (tx as BridgeTx) : undefined
   const op = bridgeTx?.bridge
-  const pusd = op?.destinationAsset !== 'BCH'
+  const token = op ? operationToken(op) : undefined
+  const hasToken = !!token
   const receivedSats = (op?.received ?? []).reduce((sum, o) => sum + BigInt(o.value), 0n)
   const bchSats = receivedSats > 0n ? receivedSats : op?.quotedBchSats ? BigInt(op.quotedBchSats) : undefined
-  const pusdEstimate = usePusdQuoteFor(pusd && bchSats !== undefined && !op?.secondLeg ? formatBch(bchSats) : undefined, 'PUSD')
+  const pusdEstimate = useTokenQuoteFor(token && bchSats !== undefined && !op?.secondLeg ? formatBch(bchSats) : undefined, token ?? null)
   const { rates } = useRates(bridgeTx ? [bridgeTx.assetFrom.identifier, 'BCH.BCH'].sort() : [])
   const collapsedNow =
-    !!op && pusd && ['bch_ready', 'second_leg_signed', 'second_leg_unknown', 'second_leg_pending', 'completed'].includes(op.stage)
+    !!op && hasToken && ['bch_ready', 'second_leg_signed', 'second_leg_unknown', 'second_leg_pending', 'completed'].includes(op.stage)
   const animateCollapse = useCollapseOnce(bridgeTx?.uid, collapsedNow)
 
   if (!bridgeTx || !op) return null
   const active = bridgeTx
   const terminal = isBridgeTerminal(op)
-  const completed = op.stage === 'completed' || (!pusd && op.stage === 'kept_bch' && !!op.received?.length)
+  const completed = op.stage === 'completed' || (!hasToken && op.stage === 'kept_bch' && !!op.received?.length)
   const firstDone =
     ['bch_ready', 'second_leg_signed', 'second_leg_unknown', 'second_leg_pending', 'completed', 'kept_bch'].includes(op.stage) ||
     (terminal && !!op.received?.length)
   const secondStarted = ['second_leg_signed', 'second_leg_unknown', 'second_leg_pending'].includes(op.stage)
-  const ready = op.stage === 'bch_ready' && pusd
+  const ready = op.stage === 'bch_ready' && hasToken
   const stage: FlowStage = completed
     ? 'done'
     : terminal
@@ -734,7 +737,7 @@ export const BridgeOperationPanel = ({ uid, onClose }: { uid?: string; onClose: 
         ? 'ready'
         : secondStarted
           ? 'swapping'
-          : pusd
+          : hasToken
             ? 'bridging'
             : 'plain'
 
@@ -749,14 +752,14 @@ export const BridgeOperationPanel = ({ uid, onClose }: { uid?: string; onClose: 
         ? t('progress.seconds', { seconds: label.value })
         : t('progress.elapsedTime', { time: label.value })
   }
-  const bridgeBar: FlowBar = firstDone
+  const firstBar: FlowBar = firstDone
     ? { fill: 1, done: true }
     : {
         fill: estimate ? Math.min(0.95, Math.max(0.05, (now - start) / (estimate * 1000))) : 0.5,
         eta: eta(stepTime(now, start, estimate)),
         live: !terminal && op.stage !== 'first_leg_unknown'
       }
-  const swapBar: FlowBar | undefined = !pusd
+  const secondBar: FlowBar | undefined = !hasToken
     ? undefined
     : op.stage === 'completed'
       ? { fill: 1, done: true }
@@ -769,9 +772,10 @@ export const BridgeOperationPanel = ({ uid, onClose }: { uid?: string; onClose: 
   const bchUsd = rateOf('BCH.BCH')
   const bchAmount = bchSats === undefined ? undefined : Number(bchSats) / 1e8
   const leg = pusdEstimate.quote
-  const pusdUnitUsd = leg && bchUsd && leg.spotOutput > 0 ? ((Number(leg.sellSats) / 1e8) * bchUsd) / (leg.spotOutput / 10 ** BridgeConfig.pusd.decimals) : undefined
-  const pusdUnits = op.secondLeg ? BigInt(op.secondLeg.pusdOut) : leg?.output
-  const pusdAmount = pusdUnits === undefined ? undefined : Number(pusdUnits) / 10 ** BridgeConfig.pusd.decimals
+  const pusdUnitUsd = token && leg && bchUsd && leg.spotOutput > 0 ? ((Number(leg.sell) / 1e8) * bchUsd) / tokenAmount(BigInt(Math.round(leg.spotOutput)), token) : undefined
+  const signedOut = op.secondLeg?.tokenOut ?? op.secondLeg?.pusdOut
+  const pusdUnits = signedOut !== undefined ? BigInt(signedOut) : leg?.output
+  const pusdAmount = pusdUnits === undefined || !token ? undefined : tokenAmount(pusdUnits, token)
 
   const sent: FlowToken = {
     amount: active.amountFrom,
@@ -789,12 +793,12 @@ export const BridgeOperationPanel = ({ uid, onClose }: { uid?: string; onClose: 
     usd: usdText(bchAmount !== undefined && bchUsd ? bchAmount * bchUsd : undefined),
     icon: <BchMark size={30} />
   }
-  const pusdToken: FlowToken | undefined = pusd
+  const pusdToken: FlowToken | undefined = token
     ? {
         amount: pusdAmount === undefined ? '—' : `${op.stage === 'completed' ? '' : '≈ '}${formatAmount(pusdAmount, 4)}`,
-        ticker: BridgeConfig.pusd.ticker,
+        ticker: token.ticker,
         usd: usdText(pusdAmount !== undefined && pusdUnitUsd ? pusdAmount * pusdUnitUsd : undefined),
-        icon: <PusdMark size={30} />
+        icon: <TokenMark token={token} size={30} />
       }
     : undefined
 
@@ -821,6 +825,7 @@ export const BridgeOperationPanel = ({ uid, onClose }: { uid?: string; onClose: 
             id: `swap:${op.secondLeg.txid}`,
             // Complete at 0-conf; the depth is only a detail.
             title: t(op.stage === 'completed' ? 'progress.toastPusdReceived' : 'progress.toastSwapSent', {
+              ticker: token?.ticker ?? '',
               confirmations: op.secondLeg.confirmations ?? 0
             }),
             hash: op.secondLeg.txid,
@@ -838,9 +843,9 @@ export const BridgeOperationPanel = ({ uid, onClose }: { uid?: string; onClose: 
     bchAddress: op.binding.cashAddress,
     sent,
     bch,
-    pusd: pusdToken,
-    bridgeBar,
-    swapBar,
+    final: pusdToken,
+    firstBar,
+    secondBar,
     toasts,
     onDismissToast: (id: string) => setDismissed(list => [...list, id]),
     onHistory: () => openDialog(TransactionHistoryDialog, {}),
@@ -856,8 +861,8 @@ export const BridgeOperationPanel = ({ uid, onClose }: { uid?: string; onClose: 
       {ended && <p className="bridge-flow-message">{t(`stage.${op.stage}`)}</p>}
       {completed && (
         <p className="bridge-flow-message is-success">
-          {pusd && pusdAmount !== undefined
-            ? t('progress.completedPusd', { amount: formatAmount(pusdAmount, 6) })
+          {token && pusdAmount !== undefined
+            ? t('progress.completedPusd', { amount: formatAmount(pusdAmount, 6), ticker: token.ticker })
             : t('progress.completeTitle')}
         </p>
       )}
@@ -874,7 +879,7 @@ export const BridgeOperationPanel = ({ uid, onClose }: { uid?: string; onClose: 
         {t(completed ? 'progress.newTransfer' : 'progress.done')}
       </GenericButton>
     ) : op.stage === 'first_leg_unknown' ? null : stage === 'bridging' ? (
-      <WaitingButton>{t('progress.swapAction')}</WaitingButton>
+      <WaitingButton>{t('progress.swapAction', { ticker: token?.ticker ?? '' })}</WaitingButton>
     ) : stage === 'plain' ? (
       <WaitingButton>{t('progress.bridgingAction')}</WaitingButton>
     ) : null
@@ -890,7 +895,9 @@ export const BridgeOperationPanel = ({ uid, onClose }: { uid?: string; onClose: 
     >
       <DialogContent className="bridge-flow-layer" showCloseButton={false}>
         <DialogTitle className="sr-only">{title}</DialogTitle>
-        <DialogDescription className="sr-only">{t(pusd ? 'progress.firstDescription' : 'progress.nativeDescription')}</DialogDescription>
+        <DialogDescription className="sr-only">
+          {token ? t('progress.firstDescription', { ticker: token.ticker }) : t('progress.nativeDescription')}
+        </DialogDescription>
         {ready ? (
           <ReadyStage key={active.uid} tx={active} bchUsd={bchUsd} common={common} />
         ) : (
@@ -903,25 +910,26 @@ export const BridgeOperationPanel = ({ uid, onClose }: { uid?: string; onClose: 
 
 type CommonFlowProps = Omit<BridgeFlowProps, 'stage' | 'title' | 'details' | 'actions'>
 
-// BCH received, the PUSD swap (2/2) ready to sign: the live Cauldron quote and the swap action.
+// BCH received, the token swap (2/2) ready to sign: the live Cauldron quote and the swap action.
 const ReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: number; common: CommonFlowProps }) => {
   const t = useTranslations('bridge')
   const leg = useSecondLeg(tx)
+  const token = leg.token
   // Shown from the live trade at once; the reviewed build (exact figures) replaces it when ready.
-  const live = usePusdQuoteFor(leg.reviewed ? undefined : formatBch(leg.total), 'PUSD')
+  const live = useTokenQuoteFor(leg.reviewed ? undefined : formatBch(leg.total), token)
   const figures = leg.reviewed
     ? live.quote && {
         ...live.quote,
-        output: leg.reviewed.pusdOut,
-        sellSats: leg.reviewed.sellSats,
+        output: leg.reviewed.output,
+        sell: leg.reviewed.sell,
         minerFeeSats: leg.reviewed.minerFeeSats,
         minOutput: leg.reviewed.minOutput
       }
     : live.quote && { ...live.quote, minOutput: minOutputFor(live.quote.output) }
-  const quote = figures ? cauldronQuoteView(figures, bchUsd) : undefined
-  const pusdToken = common.pusd && {
-    ...common.pusd,
-    amount: figures ? `≈ ${formatAmount(Number(figures.output) / 10 ** BridgeConfig.pusd.decimals, 4)}` : common.pusd.amount
+  const quote = figures ? cauldronQuoteView(figures, token, bchUsd) : undefined
+  const finalToken = common.final && {
+    ...common.final,
+    amount: figures ? `≈ ${formatAmount(tokenAmount(figures.output, token), 4)}` : common.final.amount
   }
 
   return (
@@ -929,7 +937,7 @@ const ReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: number; com
       stage="ready"
       title={t('progress.readyTitle')}
       {...common}
-      pusd={pusdToken}
+      final={finalToken}
       details={
         <>
           {quote && <CauldronQuoteBlock quote={quote} />}
@@ -946,7 +954,7 @@ const ReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: number; com
             disabled={!leg.reviewed || !!leg.busy || !leg.walletMatches}
           >
             {leg.busy && <LoaderCircle size={18} className="animate-spin" />}
-            {t('progress.swapAction')}
+            {t('progress.swapAction', { ticker: token.ticker })}
           </GenericButton>
           {!leg.reviewed && !leg.busy && leg.error && (
             <button type="button" className="bridge-flow-link" onClick={leg.prepare}>
@@ -1025,6 +1033,7 @@ const useSecondLeg = (tx: BridgeTx) => {
   const [error, setError] = useState<string>()
   const [now, setNow] = useState(Date.now())
   const op = tx.bridge
+  const token = operationToken(op) ?? PUSD_TOKEN
   const total = (op.received ?? []).reduce((sum, o) => sum + BigInt(o.value), 0n)
   // The binding outlives a wallet that is briefly away (see bch-wallet.tsx); signing needs it live.
   const walletMatches = walletState === 'connected' && !!binding && binding.pubkey === op.binding.pubkey
@@ -1054,21 +1063,23 @@ const useSecondLeg = (tx: BridgeTx) => {
       let lastError: unknown
       for (let attempt = 0; attempt < 3; attempt++) {
         const sellSats = secondLegSellAmount(total, attempt)
-        if (sellSats <= 0n) throw new Error(t('second.tooSmall'))
+        if (sellSats <= 0n) throw new Error(t('second.tooSmall', { ticker: token.ticker }))
         try {
-          const quote = await quotePusd(sellSats)
+          const quote = await quoteToken({ category: token.category, side: 'buy', amount: sellSats })
           const minOutput = minOutputFor(quote.output)
-          if (minOutput <= 0n) throw new Error(t('second.tooSmall'))
+          if (minOutput <= 0n) throw new Error(t('second.tooSmall', { ticker: token.ticker }))
           const intent = {
+            category: token.category,
+            side: 'buy' as const,
             funding,
             lockingBytecode: op.binding.lockingBytecode,
             tokenAddress: op.binding.tokenAddress,
             cashAddress: op.binding.cashAddress,
             // Build exactly what the route priced (it may round the requested amount down).
-            sellSats: quote.sellSats,
+            sell: quote.sell,
             minOutput
           }
-          const build = await buildPusdSwap(intent)
+          const build = await buildTokenTrade(intent)
           const reviewed = reviewBuild(build, intent)
           checkPoolCovenants(reviewed)
           await checkPoolsLive(reviewed)
@@ -1120,10 +1131,10 @@ const useSecondLeg = (tx: BridgeTx) => {
         update(tx.uid, () => ({
           secondLeg: {
             attempt,
-            category: BridgeConfig.pusd.category,
-            sellSats: reviewed.sellSats.toString(),
+            category: token.category,
+            sellSats: reviewed.sell.toString(),
             minOutput: reviewed.minOutput.toString(),
-            pusdOut: reviewed.pusdOut.toString(),
+            tokenOut: reviewed.output.toString(),
             routerFeeSats: reviewed.routerFeeSats.toString(),
             minerFeeSats: reviewed.minerFeeSats.toString()
           }
@@ -1135,7 +1146,7 @@ const useSecondLeg = (tx: BridgeTx) => {
               transaction: unsigned,
               sourceOutputs: reviewed.sourceOutputs as never,
               broadcast: false,
-              userPrompt: `Swap ${formatBch(reviewed.sellSats)} BCH for at least ${formatPusd(reviewed.minOutput)} PUSD`
+              userPrompt: `Swap ${formatBch(reviewed.sell)} BCH for at least ${formatToken(reviewed.minOutput, token)} ${token.ticker}`
             },
             inputPaths
           },
@@ -1165,7 +1176,7 @@ const useSecondLeg = (tx: BridgeTx) => {
   }
 
   const keep = () => update(tx.uid, current => (current.stage === 'bch_ready' ? { stage: 'kept_bch' } : {}))
-  return { reviewed: expired ? undefined : review?.reviewed, busy, error, walletMatches, prepare, sign, keep, total }
+  return { token, reviewed: expired ? undefined : review?.reviewed, busy, error, walletMatches, prepare, sign, keep, total }
 }
 
 const rejectedAndFundingIntact = async (uid: string, txid: string) => {
@@ -1179,7 +1190,7 @@ const rejectedAndFundingIntact = async (uid: string, txid: string) => {
 
 const broadcast = async (uid: string, signedHex: string, txid: string, update: ReturnType<typeof useUpdateBridge>) => {
   try {
-    await broadcastPusdSwap(signedHex, txid)
+    await broadcastBchTransaction(signedHex, txid)
     // Accepted by the network: complete at 0-conf (the tracker no longer needs to follow it).
     update(uid, op => ({ stage: 'completed', secondLeg: { ...op.secondLeg!, confirmations: op.secondLeg?.confirmations ?? 0, error: undefined } }))
   } catch (error) {
@@ -1193,7 +1204,7 @@ const broadcast = async (uid: string, signedHex: string, txid: string, update: R
           // The next signature starts a fresh second leg; this txid is remembered as one of ours.
           secondLeg: undefined,
           priorSwapTxids: [...(op.priorSwapTxids ?? []), txid],
-          error: `PUSD swap rejected: ${error.message}. Get a new quote.`,
+          error: `Token swap rejected: ${error.message}. Get a new quote.`,
           received: op.received
         }))
         return
