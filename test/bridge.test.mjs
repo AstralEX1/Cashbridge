@@ -857,3 +857,15 @@ test('the payout time comes from THORNode’s confirmation countdown, not the qu
   const delayed = { stages: { inbound_observed: { completed: true }, inbound_confirmation_counted: { completed: true }, outbound_delay: { remaining_delay_seconds: 30, completed: false } } }
   assert.equal(depositReadyAt(delayed, now), now + 90 * 1000)
 })
+
+test('price impact is the whole loss: slippage, or the value lost to fixed fees when larger', async () => {
+  const { resolvePriceImpact } = await import('../src/lib/swap-helpers.ts')
+  const { USwapNumber } = await import('@tcswap/core')
+  const quote = (buy, slippageBps) => ({ sellAmount: '1', expectedBuyAmount: buy, meta: { slippageBps } })
+  const usd = n => new USwapNumber(n)
+  // 1 USDC in, $0.73 out: the outbound fee is 27%, the pool slippage only 0.19%.
+  assert.equal(resolvePriceImpact(quote('0.73', 19), usd(1), usd(1)).toSignificant(4), '27')
+  assert.equal(resolvePriceImpact(quote('0.999', 19), usd(1), usd(1)).toSignificant(4), '0.19')
+  assert.equal(resolvePriceImpact(quote('0.73', 19)).toSignificant(4), '0.19', 'without rates only slippage is known')
+  assert.equal(resolvePriceImpact(quote('0.9', undefined), usd(1), usd(1)).toSignificant(4), '10')
+})

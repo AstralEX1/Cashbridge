@@ -66,16 +66,19 @@ export const resolveFees = (quote: QuoteResponseRoute, rates: AssetRateMap) => {
   }
 }
 
+// The whole loss of a quote: the pool's slippage, or what the output is worth against the input
+// when that is more (fixed outbound and network fees dominate small amounts and are not slippage).
 export const resolvePriceImpact = (quote?: QuoteResponseRoute, rateFrom?: USwapNumber, rateTo?: USwapNumber) => {
   const slippageBps = quote?.meta?.slippageBps
-  if (slippageBps) return new USwapNumber(slippageBps).div(100)
+  const slippage = slippageBps ? new USwapNumber(slippageBps).div(100) : undefined
 
-  // Fallback for providers that don't return slippageBps
   const sellAmountInUsd = quote && rateFrom && new USwapNumber(quote.sellAmount).mul(rateFrom)
   const buyAmountInUsd = quote && rateTo && new USwapNumber(quote.expectedBuyAmount).mul(rateTo)
   const hundredPercent = new USwapNumber(100)
-  const toPriceRatio = buyAmountInUsd && sellAmountInUsd && buyAmountInUsd.mul(hundredPercent).div(sellAmountInUsd)
-  return toPriceRatio && toPriceRatio.lte(hundredPercent) ? hundredPercent.sub(toPriceRatio) : undefined
+  const toPriceRatio = buyAmountInUsd && sellAmountInUsd?.gt(0) ? buyAmountInUsd.mul(hundredPercent).div(sellAmountInUsd) : undefined
+  const valueLoss = toPriceRatio && toPriceRatio.lte(hundredPercent) ? hundredPercent.sub(toPriceRatio) : undefined
+  if (slippage && valueLoss) return valueLoss.gt(slippage) ? valueLoss : slippage
+  return slippage ?? valueLoss
 }
 
 export const providerLabel = (provider: ProviderName): string => {
