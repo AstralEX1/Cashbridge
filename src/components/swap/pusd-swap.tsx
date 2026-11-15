@@ -1087,7 +1087,7 @@ interface Review {
 const useSecondLeg = (tx: BridgeTx) => {
   const t = useTranslations('bridge')
   const update = useUpdateBridge()
-  const { binding, manager, state: walletState } = useBchWallet()
+  const { binding, signer, state: walletState } = useBchWallet()
   const [review, setReview] = useState<Review>()
   const [busy, setBusy] = useState<'quote' | 'sign'>()
   const [phase, setPhase] = useState<SignPhase>('idle')
@@ -1160,7 +1160,7 @@ const useSecondLeg = (tx: BridgeTx) => {
   }, [expired])
 
   const sign = async () => {
-    if (!review || expired || !manager || !binding || !walletMatches || signing.current) return
+    if (!review || expired || !signer || !binding || !walletMatches || signing.current) return
     signing.current = true
     const controller = new AbortController()
     abort.current = controller
@@ -1188,7 +1188,7 @@ const useSecondLeg = (tx: BridgeTx) => {
         }))
 
         const { txid, signedHex } = await signInWallet(
-          manager,
+          signer,
           op.binding,
           reviewed,
           `Swap ${formatBch(reviewed.sell)} BCH for at least ${formatToken(reviewed.minOutput, token)} ${token.ticker}`,

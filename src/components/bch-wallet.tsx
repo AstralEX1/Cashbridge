@@ -2,13 +2,16 @@
 
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useWizardConnect, WizardConnectQRDialog } from '@wizardconnect/react'
-import type { DappConnectionManager } from '@wizardconnect/dapp'
 import { AppConfig } from '@/config'
+import { BchWalletChooser, WalletConnectDialog, type BchConnection } from '@/components/bch-wallet-dialogs'
+import { useBchWalletConnect, walletConnectEnabled } from '@/components/bch-walletconnect'
 import { type BchBinding, BINDING_PATHS, type BindingPath, bindingFromPubkey, isValidBinding, isWatchOnly } from '@/lib/bch'
+import type { BchSigner } from '@/lib/bch-signing'
 import { useActiveBridge } from '@/store/transaction-store'
 
-// The user's own BCH wallet, connected over WizardConnect. It receives the first leg's BCH and
-// signs the second leg. The public binding (key, path, index, addresses) is remembered in
+// The user's own BCH wallet, connected over WizardConnect (Selene and others) or, when a WalletConnect
+// project ID is configured, over WalletConnect v2 (Paytaca, Cashonize; see bch-walletconnect.tsx).
+// Only one connection is live at a time. It receives the first leg's BCH and signs the second leg. The public binding (key, path, index, addresses) is remembered in
 // localStorage. The relay session stays remembered until the user or the wallet disconnects.
 // A restored connection is still checked to be the same key.
 
@@ -75,7 +78,10 @@ const writeSaved = (saved?: SavedBinding) => {
 interface BchWalletContextValue {
   state: ReturnType<typeof useWizardConnect>['state']
   walletName: string | null
-  manager: DappConnectionManager | null
+  // Which connection is live (or being set up): WizardConnect or WalletConnect.
+  connection: BchConnection
+  // Signs for the binding; null while the wallet cannot be asked.
+  signer: BchSigner | null
   // The connected wallet's binding, set only while connected and matching what is required.
   binding?: BchBinding
   // What an active operation is bound to: only that wallet may connect while it runs.
@@ -89,8 +95,9 @@ interface BchWalletContextValue {
   // A stored session is being resumed (no QR), and whether that has taken too long.
   reconnecting: boolean
   reconnectStalled: boolean
+  // Starts a pairing: straight to WizardConnect's QR, or a wallet chooser when WalletConnect is available.
   connect: () => void
-  // Drops the stored session and starts a new QR pairing.
+  // Drops the stored session and starts a new pairing.
   pairAgain: () => void
   disconnect: () => Promise<void>
   forget: () => void
@@ -102,9 +109,11 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
   // Lazy state runs during this render, before the hook's mount effect reads the stored session.
   useState(migrateLegacyBchSession)
   const wc = useWizardConnect({ dappName: AppConfig.appName, persistSession: true, sessionKey: SESSION_KEY })
+  const wc2 = useBchWalletConnect()
+  const wc2Active = wc2.state !== 'idle'
   const activeBridge = useActiveBridge()
   const [saved, setSaved] = useState<SavedBinding | undefined>()
-  const [derived, setDerived] = useState<BchBinding | undefined>()
+  const [wizardDerived, setDerived] = useState<BchBinding | undefined>()
   const [deriveError, setDeriveError] = useState<string | null>(null)
 
   useEffect(() => setSaved(readSaved()), [])
@@ -157,7 +166,8 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
     // emits 'reconnecting' again after 75 s of silence.
     ;(wc.manager as unknown as { startPingInterval?: () => void }).startPingInterval?.()
   }, [wc.state, wc.manager, liveness.lost])
-  const state = wc.state === 'reconnecting' && liveness.heard > liveness.lost ? 'connected' : wc.state
+  const wizardState = wc.state === 'reconnecting' && liveness.heard > liveness.lost ? 'connected' : wc.state
+  const state = wc2Active ? (wc2.state === 'connected' ? 'connected' : 'connecting') : wizardState
 
   // WizardConnect closes the relay whenever the tab is hidden, which is exactly when the user turns to
   // the wallet to approve: a sign request still in flight fails with "relay connection closed by us"
@@ -201,24 +211,28 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
     }
   }, [wc.state, wc.manager, wc.walletName, walletReady, expected?.addressIndex, expected?.path])
 
+  // The key the live connection holds: WizardConnect derives it from the shared xpub, WalletConnect
+  // proves it with a signed message at connect time.
+  const derived = wc2Active ? wc2.binding : wizardDerived
   const mismatch = !!derived && !!expected && derived.pubkey !== expected.pubkey
   // While a stored session resumes after a reload (no QR, waiting for the wallet app to answer), the
   // address last derived from this wallet stands in, so a closed wallet app does not read as
   // disconnected. The live derivation replaces it, and the mismatch check still applies, once it answers.
-  const resuming = wc.state === 'connecting' && !wc.uri
+  const resuming = !wc2Active && wc.state === 'connecting' && !wc.uri
   const resumed = resuming && !derived && saved && (!expected || saved.binding.pubkey === expected.pubkey) ? saved.binding : undefined
-  const live = (wc.state === 'connected' || wc.state === 'reconnecting') && derived && !mismatch ? derived : undefined
+  const live = (wc2Active ? wc2.state === 'connected' : wc.state === 'connected' || wc.state === 'reconnecting') && derived && !mismatch ? derived : undefined
   const binding = live ?? resumed
 
   // Remember the last wallet connected (public data only). While an operation runs only its own
   // wallet derives a matching binding, so the remembered one cannot drift from it.
+  const liveWalletName = wc2Active ? wc2.walletName : wc.walletName
   useEffect(() => {
     if (!derived || (expected && derived.pubkey !== expected.pubkey)) return
-    if (saved?.binding.pubkey === derived.pubkey && saved.walletName === (wc.walletName ?? undefined)) return
-    const next = { binding: derived, walletName: wc.walletName ?? undefined }
+    if (saved?.binding.pubkey === derived.pubkey && saved.walletName === (liveWalletName ?? undefined)) return
+    const next = { binding: derived, walletName: liveWalletName ?? undefined }
     writeSaved(next)
     setSaved(next)
-  }, [derived, expected, saved, wc.walletName])
+  }, [derived, expected, saved, liveWalletName])
 
   const forget = useCallback(() => {
     if (activeBridge) return
@@ -226,17 +240,47 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
     setSaved(undefined)
   }, [activeBridge])
 
-  const connect = useCallback(() => {
+  const connectWizard = useCallback(() => {
     if (wc.state === 'disconnected') clearBchSession()
     wc.connect()
   }, [wc])
 
   // Documented order: clear the stored session, then the hook sends the wallet a disconnect and
   // tears down the relay.
-  const disconnect = useCallback(async () => {
+  const disconnectWizard = useCallback(async () => {
     clearBchSession()
     await wc.disconnect()
   }, [wc.disconnect])
+
+  const disconnect = useCallback(async () => {
+    if (wc2Active) await wc2.disconnect()
+    else await disconnectWizard()
+  }, [wc2Active, wc2.disconnect, disconnectWizard])
+
+  const [choosing, setChoosing] = useState(false)
+  const connect = useCallback(() => {
+    if (walletConnectEnabled()) setChoosing(true)
+    else connectWizard()
+  }, [connectWizard])
+
+  // The other connection is closed first, so only one wallet is ever live. WizardConnect ignores
+  // connect() while its relay is open, so that pairing waits for the disconnect to land ('idle').
+  const [pairPending, setPairPending] = useState(false)
+  const choose = useCallback(
+    (kind: BchConnection) => {
+      setChoosing(false)
+      if (kind === 'walletconnect') {
+        if (wc.state !== 'idle') void disconnectWizard()
+        void wc2.connect()
+        return
+      }
+      if (wc2Active) void wc2.disconnect()
+      if (wc.state === 'idle' || wc.state === 'disconnected') return connectWizard()
+      setPairPending(true)
+      void disconnectWizard()
+    },
+    [wc.state, wc2, wc2Active, connectWizard, disconnectWizard]
+  )
 
   // The wallet ended the session: the hook already clears it; clearing here too keeps a
   // wallet-ended session from resuming on reload whatever the library version does.
@@ -246,7 +290,7 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
 
   // Resuming a stored session shows no QR (the hook only exposes one for a new pairing) and stays
   // 'connecting' until the wallet answers, which it does only while its app is open.
-  const reconnecting = (wc.state === 'connecting' && !wc.uri) || state === 'reconnecting'
+  const reconnecting = !wc2Active && ((wc.state === 'connecting' && !wc.uri) || state === 'reconnecting')
   const [reconnectStalled, setReconnectStalled] = useState(false)
   useEffect(() => {
     setReconnectStalled(false)
@@ -255,13 +299,17 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timer)
   }, [reconnecting])
 
-  // The hook ignores connect() while a relay is open, so pairing again waits for the disconnect
-  // to land ('idle') before starting the new one.
-  const [pairPending, setPairPending] = useState(false)
+  // Pairing again drops the live connection; with a choice of connections the chooser opens,
+  // otherwise WizardConnect's new QR starts once its disconnect has landed ('idle').
   const pairAgain = useCallback(() => {
+    if (walletConnectEnabled()) {
+      void disconnect()
+      setChoosing(true)
+      return
+    }
     setPairPending(true)
-    void disconnect()
-  }, [disconnect])
+    void disconnectWizard()
+  }, [disconnect, disconnectWizard])
   useEffect(() => {
     if (!pairPending || wc.state !== 'idle') return
     setPairPending(false)
@@ -271,13 +319,14 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
   const value = useMemo<BchWalletContextValue>(
     () => ({
       state,
-      walletName: wc.walletName ?? saved?.walletName ?? null,
-      manager: wc.manager,
+      walletName: liveWalletName ?? saved?.walletName ?? null,
+      connection: wc2Active ? 'walletconnect' : 'wizardconnect',
+      signer: wc2Active ? wc2.signer : wc.manager,
       binding,
       expected,
       remembered: saved?.binding,
       mismatch,
-      error: wc.error ?? deriveError,
+      error: wc2.error ?? (wc2Active ? null : (wc.error ?? deriveError)),
       reconnecting,
       reconnectStalled,
       connect,
@@ -287,7 +336,10 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
     }),
     [
       state,
-      wc.walletName,
+      liveWalletName,
+      wc2Active,
+      wc2.signer,
+      wc2.error,
       wc.manager,
       wc.error,
       disconnect,
@@ -317,6 +369,8 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
           subtitle="Scan with a WizardConnect wallet. It receives the BCH and signs the PUSD swap."
         />
       )}
+      <BchWalletChooser open={choosing} onOpenChange={setChoosing} onChoose={choose} />
+      <WalletConnectDialog state={wc2.state} uri={wc2.uri} onClose={() => void wc2.disconnect()} />
     </BchWalletContext.Provider>
   )
 }
@@ -342,7 +396,8 @@ export const useBchWallet = (): BchWalletContextValue => {
     ...context,
     state: 'idle',
     walletName: null,
-    manager: null,
+    connection: 'wizardconnect',
+    signer: null,
     binding: undefined,
     expected: undefined,
     remembered: undefined,

@@ -50,5 +50,8 @@ export const BridgeConfig = {
   // the second leg trades against. Empty turns the feed off and uses the indexer alone.
   rostrumUrls: (process.env.NEXT_PUBLIC_CAULDRON_ROSTRUM_URLS ?? 'wss://rostrum.riften.net:443,wss://rostrum.cauldron.quest:50004').split(',').map(u => u.trim()).filter(Boolean),
   // Fulcrum (Electrum protocol) servers used to verify BCH transactions and unspent outputs.
-  electrumUrls: (process.env.NEXT_PUBLIC_BCH_ELECTRUM_URLS || 'wss://bch.imaginary.cash:50004').split(',').map(u => u.trim()).filter(Boolean)
+  electrumUrls: (process.env.NEXT_PUBLIC_BCH_ELECTRUM_URLS || 'wss://bch.imaginary.cash:50004').split(',').map(u => u.trim()).filter(Boolean),
+  // WalletConnect (Reown) project ID for BCH wallets that speak WalletConnect v2 (Paytaca, Cashonize).
+  // Public by design. Empty hides that option and leaves WizardConnect as the only BCH connection.
+  walletConnectProjectId: (process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || '').trim()
 }

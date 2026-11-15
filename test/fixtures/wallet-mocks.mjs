@@ -53,6 +53,7 @@ export const Credenza = ({ children }) => children
 export const CredenzaContent = Credenza
 export const CredenzaHeader = Credenza
 export const CredenzaTitle = Credenza
+export const CredenzaDescription = Credenza
 export const ScrollArea = Credenza
 export const WalletType = { browser: 'browser' }
 export const ALL_CHAINS = [Chain.Ethereum, Chain.Base, Chain.Bitcoin]

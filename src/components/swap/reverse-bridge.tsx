@@ -99,12 +99,12 @@ const freshOperation = async (uid: string) => {
 const sendDeposit = async (uid: string, prepared: PreparedDeposit, update: Update, wallet: ReturnType<typeof useBchWallet>, signal?: AbortSignal) => {
   const tx = await freshOperation(uid)
   const op = tx?.bridge
-  if (!op?.reverse || !wallet.manager || !wallet.binding) throw new Error('The BCH wallet is not connected')
+  if (!op?.reverse || !wallet.signer || !wallet.binding) throw new Error('The BCH wallet is not connected')
   const { built, route, router } = prepared
   const startBlock = await blockHeight(destinationChainOf(op.reverse.buyAsset)).catch(() => undefined)
   const asset = tx!.assetTo.ticker
   const { txid, signedHex } = await signInWallet(
-    wallet.manager,
+    wallet.signer,
     op.binding,
     built,
     `Send ${formatBch(built.amountSats)} BCH to THORChain for at least ${route.expectedBuyAmountMaxSlippage ?? route.expectedBuyAmount} ${asset}`,
@@ -461,7 +461,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
   const ticker = token?.ticker ?? 'BCH'
 
   const onConfirm = async () => {
-    if (inFlight.current || !binding || !wallet.manager || !destination || !units) return
+    if (inFlight.current || !binding || !wallet.signer || !destination || !units) return
     inFlight.current = true
     const controller = new AbortController()
     abort.current = controller
@@ -506,7 +506,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
         })
         setPhase('signing')
         const { txid, signedHex } = await signInWallet(
-          wallet.manager,
+          wallet.signer,
           binding,
           reviewed,
           `Swap ${formatBaseUnits(reviewed.tokensSold, token.decimals)} ${token.ticker} for at least ${formatBch(reviewed.minOutput)} BCH`,
@@ -696,7 +696,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
           </div>
         </ScrollArea>
         <div className="space-y-3 p-4 pt-2 md:px-7 md:pb-7">
-          <GenericButton colorType="3" size="large" className="w-full" onClick={onConfirm} disabled={submitting || !wallet.manager || wallet.state !== 'connected'}>
+          <GenericButton colorType="3" size="large" className="w-full" onClick={onConfirm} disabled={submitting || !wallet.signer || wallet.state !== 'connected'}>
             {submitting && <LoaderCircle size={20} className="animate-spin" />}
             <span>
               {phase === 'signing'
