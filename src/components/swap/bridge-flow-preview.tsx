@@ -22,8 +22,9 @@ export const BridgeFlowPreview = ({ stage = 'bridging' }: { stage?: string }) =>
   // `reverse-<stage>` previews the reverse direction (PUSD -> BCH -> ETH, or BCH -> ETH for `plain`).
   const reverse = stage.startsWith('reverse-')
   const name = reverse ? stage.slice('reverse-'.length) : stage
-  const flow = (['bridging', 'ready', 'plain', 'swapping', 'done', 'ended'] as FlowStage[]).includes(name as FlowStage) ? (name as FlowStage) : 'bridging'
-  const pusd = flow !== 'plain'
+  const nativeBch = name === 'done-bch'
+  const flow = nativeBch ? 'done' : (['bridging', 'ready', 'plain', 'swapping', 'done', 'ended'] as FlowStage[]).includes(name as FlowStage) ? (name as FlowStage) : 'bridging'
+  const pusd = !nativeBch && flow !== 'plain'
   const received = flow !== 'bridging' && flow !== 'plain'
   const toasts: FlowToast[] = [
     ...(received ? [{ id: 'receive', title: 'BCH received', hash: 'b7d0e2c4f1a9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f541c8', chain: Chain.BitcoinCash }] : []),
@@ -60,6 +61,23 @@ export const BridgeFlowPreview = ({ stage = 'bridging' }: { stage?: string }) =>
         }
         firstBar={received ? { fill: 1, done: true, href: PREVIEW_TX } : { fill: 0.6, eta: '≈ 2 min', live: true, href: PREVIEW_TX }}
         secondBar={pusd ? (flow === 'swapping' ? { fill: 0.6, live: true, eta: '≈ 40 s' } : flow === 'done' ? { fill: 1, done: true } : { fill: 0, eta: '≈ 1 min' }) : undefined}
+        completion={flow === 'done' ? {
+          received: reverse
+            ? { amount: '0.00088', ticker: 'ETH', icon: <img src="/networks/eth.svg" width={48} height={48} alt="" /> }
+            : nativeBch
+              ? { amount: '0.0072956', ticker: 'BCH', icon: <BchMark size={48} /> }
+              : { amount: '1.01', ticker: 'PUSD', icon: <TokenMark token={PUSD_TOKEN} size={48} /> },
+          transactions: reverse ? [
+            { key: 'sale', kind: 'swapOnCauldron', chain: Chain.BitcoinCash, hash: '1'.repeat(64) },
+            { key: 'deposit', kind: 'bridgeFrom', chain: Chain.BitcoinCash, hash: '2'.repeat(64) },
+            { key: 'payout', kind: 'receiveOn', chain: Chain.Base, hash: `0x${'3'.repeat(64)}` }
+          ] : [
+            { key: 'send', kind: 'bridgeFrom', chain: Chain.Base, hash: `0x${'1'.repeat(64)}` },
+            { key: 'receive', kind: 'receiveOn', chain: Chain.BitcoinCash, hash: '2'.repeat(64) },
+            ...(!nativeBch ? [{ key: 'swap', kind: 'swapOnCauldron' as const, chain: Chain.BitcoinCash, hash: '3'.repeat(64) }] : [])
+          ],
+          liquidityCategory: reverse ? undefined : PUSD_TOKEN.category
+        } : undefined}
         details={
           flow === 'ready' ? (
             <CauldronQuoteBlock

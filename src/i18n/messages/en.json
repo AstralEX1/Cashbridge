@@ -664,6 +664,18 @@
     }
   },
   "bridge": {
+    "completion": {
+      "received": "Received",
+      "history": "Transaction history",
+      "bridgeFrom": "Bridge from {chain}",
+      "receiveOn": "Receive on {chain}",
+      "swapOnCauldron": "Swap on Cauldron",
+      "refundOn": "Refund on {chain}",
+      "earn": "Earn {apy}% APY",
+      "provideLiquidity": "Provide liquidity",
+      "apySource": "Cauldron's aggregated pool APY over the last 30 days.",
+      "historyUnavailable": "Transaction details are unavailable for this transfer."
+    },
     "progress": {
       "transfer": "Transfer ID",
       "processing": "Processing…",

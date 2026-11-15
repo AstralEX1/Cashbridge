@@ -19,7 +19,7 @@ import { TransactionHistoryDialog } from '@/components/header/transaction-histor
 import type { Asset } from '@/components/swap/asset'
 import { BchMark, CauldronMark, HoverCard, ThorchainMark, TokenMark } from '@/components/swap/bridge-marks'
 import { shortBridgeAddress } from '@/components/swap/bridge-wallet-badge'
-import { BridgeFlow, chainTxUrl, CompletedLink, type FlowBar, type FlowStage, type FlowToast, type FlowToken, thorchainTxUrl } from '@/components/swap/pusd-swap'
+import { BridgeFlow, chainTxUrl, type FlowBar, type FlowStage, type FlowToast, type FlowToken, thorchainTxUrl } from '@/components/swap/pusd-swap'
 import { useBchSideBalance } from '@/components/swap/reverse-inputs'
 import { SwapError } from '@/components/swap/swap-error'
 import { Credenza, CredenzaContent, CredenzaDescription, CredenzaHeader, CredenzaTitle } from '@/components/ui/credenza'
@@ -34,11 +34,12 @@ import { useConnectedAccount, useSetExternalWalletMode } from '@/hooks/use-walle
 import { checkUnspent, findThorchainOutbound, getTransactionState, historyIncludes } from '@/lib/bch'
 import { formatBaseUnits, toBaseUnits } from '@/lib/bridge'
 import { withLock } from '@/lib/bridge-first-leg'
+import { bridgeCompletionTransactions } from '@/lib/bridge-completion'
 import { formatStepTime, stepTime } from '@/lib/bridge-tracking'
 import { formatAmount, formatMinutes, formatPercent, formatUsd, PUSD_LEG_SECONDS } from '@/lib/bridge-summary'
 import { BroadcastRejected, broadcastBchTransaction, type ReviewedSwap } from '@/lib/cauldron'
 import { SignCancelled, SignDeclined, SignTimedOut, SignUndelivered } from '@/lib/bch-signing'
-import type { CauldronToken } from '@/lib/cauldron-tokens'
+import { type CauldronToken, PUSD_TOKEN } from '@/lib/cauldron-tokens'
 import { readableError } from '@/lib/errors'
 import { getTxStatus } from '@/lib/api'
 import {
@@ -922,7 +923,8 @@ export const ReverseOperationPanel = ({ uid, onClose }: { uid?: string; onClose:
   const token = operationToken(op)
   const target = active.assetTo
   const terminal = isBridgeTerminal(op)
-  const completed = op.stage === 'completed'
+  const keptBch = op.stage === 'kept_bch' && !!reverse.sale?.outputs?.length && !op.error
+  const completed = op.stage === 'completed' || keptBch
   const saleDone = !!token && !['first_leg_signing', 'first_leg_pending', 'first_leg_unknown'].includes(op.stage) && !!reverse.sale?.txid
   const depositing = ['second_leg_signed', 'second_leg_unknown', 'second_leg_pending'].includes(op.stage)
   const ready = op.stage === 'bch_ready' && !!token
@@ -1009,6 +1011,13 @@ export const ReverseOperationPanel = ({ uid, onClose }: { uid?: string; onClose:
     final: token ? out : undefined,
     firstBar,
     secondBar,
+    completion: {
+      received: keptBch
+        ? { amount: formatBaseUnits(reverse.sale!.bchOut, 8), ticker: 'BCH', icon: <BchMark size={48} /> }
+        : { amount: reverse.payout?.amount === undefined ? '—' : formatBaseUnits(reverse.payout.amount, target.decimals), ticker: target.ticker, icon: <AssetIcon asset={target} showNetworkIcons={false} /> },
+      transactions: bridgeCompletionTransactions(active),
+      liquidityCategory: keptBch ? PUSD_TOKEN.category : undefined
+    },
     toasts,
     onDismissToast: (id: string) => setDismissed(list => [...list, id]),
     onHistory: () => openDialog(TransactionHistoryDialog, {}),
@@ -1020,11 +1029,6 @@ export const ReverseOperationPanel = ({ uid, onClose }: { uid?: string; onClose:
   const details = (
     <>
       {terminal && !completed && <p className="bridge-flow-message">{t(`reverse.stage.${op.stage}`)}</p>}
-      {completed && (
-        <p className="bridge-flow-message is-success">
-          <CompletedLink href={bridgeHref}>{t('reverse.completed', { amount: formatAmount(outAmount, 6), ticker: target.ticker })}</CompletedLink>
-        </p>
-      )}
       {error}
     </>
   )

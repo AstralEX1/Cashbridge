@@ -29,6 +29,8 @@ globalThis.document = {
 const { useWalletStore, connectedAccount } = await import('../src/store/wallets-store.ts')
 const { SESSION_KEY, clearBchSession, migrateLegacyBchSession } = await import('../src/components/bch-wallet.tsx')
 const { BridgeWalletBadge } = await import('../src/components/swap/bridge-wallet-badge.tsx')
+const { BridgeCompletion } = await import('../src/components/swap/bridge-completion.tsx')
+const { PUSD_TOKEN } = await import('../src/lib/cauldron-tokens.ts')
 const { SwapBalance } = await import('../src/components/swap/swap-balance.tsx')
 const { useBalance } = await import('../src/hooks/use-balance.ts')
 const { ConnectWallet } = await import('../src/components/connect-wallet/connect-wallet.tsx')
@@ -68,6 +70,47 @@ beforeEach(() => {
   controls.walletState = undefined
   controls.queryData = undefined
   useWalletStore.setState({ accounts: [], selected: undefined, connectedWallets: [], hasHydrated: true, externalWalletMode: false })
+})
+
+test('the completion receipt links each transaction and puts the live Earn button under Received', () => {
+  let closed = 0
+  controls.queryData = 8.597885945977747
+  const txs = [
+    { key: 'send', kind: 'bridgeFrom', chain: Chain.Base, hash: `0x${'a'.repeat(64)}` },
+    { key: 'receive', kind: 'receiveOn', chain: Chain.BitcoinCash, hash: 'b'.repeat(64) },
+    { key: 'swap', kind: 'swapOnCauldron', chain: Chain.BitcoinCash, hash: 'c'.repeat(64) }
+  ]
+  const { tree, html } = render(BridgeCompletion, {
+    received: { amount: '1.01', ticker: 'PUSD', icon: createElement('img', { src: '/tokens/pusd.svg', alt: '' }) },
+    transactions: txs, liquidityCategory: PUSD_TOKEN.category, onClose: () => { closed++ }
+  })
+  assert.match(html, /Received/)
+  assert.match(html, /1\.01 PUSD/)
+  assert.match(html, /Earn 8\.60% APY/)
+  assert.ok(html.indexOf('Earn 8.60% APY') < html.indexOf('Transaction history'))
+  assert.match(html, /Bridge from Base/)
+  assert.match(html, /Receive on Bitcoin Cash/)
+  assert.match(html, /Swap on Cauldron/)
+  for (const tx of txs) {
+    assert.ok(html.includes(`title="${tx.hash}"`))
+    assert.ok(!html.includes(`>${tx.hash}<`), 'hashes are available on hover, not repeated in rows')
+  }
+  assert.ok(html.includes(`https://app.cauldron.quest/add/${PUSD_TOKEN.category}`))
+  assert.doesNotMatch(html, /Completed|View all transfers|Sent to wallet|Put your/)
+  findElement(tree, node => node.props?.children === 'New transfer').props.onClick()
+  assert.equal(closed, 1)
+})
+
+test('Earn falls back without a rate, uses the category over the ticker, and is absent for EVM receipts', () => {
+  const category = 'a'.repeat(64)
+  const props = { received: { amount: '0.000001', ticker: 'ETH', icon: null }, transactions: [], onClose() {} }
+  assert.doesNotMatch(render(BridgeCompletion, props).html, /Provide liquidity|Earn|app\.cauldron/)
+  const fallback = render(BridgeCompletion, { ...props, liquidityCategory: category }).html
+  assert.match(fallback, /Provide liquidity/)
+  assert.ok(fallback.includes(`/add/${category}`))
+  assert.doesNotMatch(fallback, /n%|NaN|Earn/)
+  controls.queryData = 0
+  assert.match(render(BridgeCompletion, { ...props, liquidityCategory: category }).html, /Earn 0\.00% APY/)
 })
 
 test('a rejected or empty connection rejects the caller instead of reporting success', async () => {

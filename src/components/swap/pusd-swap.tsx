@@ -13,6 +13,7 @@ import { useDialog } from '@/components/global-dialog'
 import { TransactionHistoryDialog } from '@/components/header/transaction-history-dialog'
 import { chainLabel } from '@/components/connect-wallet/config'
 import { BchMark, TokenMark } from '@/components/swap/bridge-marks'
+import { BridgeCompletion, type BridgeCompletionProps } from '@/components/swap/bridge-completion'
 import { shortBridgeAddress, WalletAddressBadge } from '@/components/swap/bridge-wallet-badge'
 import { useBchWallet } from '@/components/bch-wallet'
 import { GenericButton } from '@/components/generic-button'
@@ -23,6 +24,7 @@ import { useRates } from '@/hooks/use-rates'
 import { getMidgardActions, getTrack, getTxStatus } from '@/lib/api'
 import { checkUnspent, findThorchainOutbound, getTransactionState, historyIncludes, isTxid, normalizeTxid, verifyThorchainOutbound } from '@/lib/bch'
 import { firstLegFromChain, formatStepTime, type SourceReceipt, stepTime } from '@/lib/bridge-tracking'
+import { bridgeCompletionTransactions } from '@/lib/bridge-completion'
 import {
   formatBaseUnits,
   inboundMatchesBinding,
@@ -384,6 +386,7 @@ export interface BridgeFlowProps {
   secondBar?: FlowBar
   details?: ReactNode
   actions?: ReactNode
+  completion?: Omit<BridgeCompletionProps, 'onClose'>
   toasts: FlowToast[]
   onDismissToast: (id: string) => void
   onHistory: () => void
@@ -427,17 +430,6 @@ const ProgressBar = ({ label, bar }: { label: string; bar: FlowBar }) => {
     meter
   )
 }
-
-// The "Completed · …" line, linking to the transaction that delivered it.
-export const CompletedLink = ({ href, children }: { href?: string; children: ReactNode }) =>
-  href ? (
-    <a className="bridge-flow-done-link" href={href} target="_blank" rel="noopener noreferrer">
-      {children}
-      <ExternalLink size={14} aria-hidden="true" />
-    </a>
-  ) : (
-    <>{children}</>
-  )
 
 // `children` as a link to a transaction (new tab) when `href` is known, else as a plain block.
 export const TxLink = ({ href, className, label, title, children }: { href?: string; className: string; label: string; title?: string; children: ReactNode }) =>
@@ -511,11 +503,11 @@ const useCollapseOnce = (uid: string | undefined, collapsed: boolean) => {
   return !seen
 }
 
-// The progress screen after Send: one component for every stage. The transactions are not part of
-// the card but toast-style notes in the page's bottom-right corner; History sits in the top-right.
+// Pending transactions stay in corner toasts; the finished operation has its own receipt.
 export const BridgeFlow = (props: BridgeFlowProps) => {
   const t = useTranslations('bridge.progress')
   const { stage, final, reverse } = props
+  if (stage === 'done' && props.completion) return <BridgeCompletion {...props.completion} onClose={props.onClose} />
   const collapsed = !!final && (stage === 'ready' || stage === 'swapping' || stage === 'done')
   // Forward: Bridge (1/2) then Swap (2/2). Reverse: the Cauldron swap first, then the bridge.
   const firstLabel = t(reverse ? 'swapFirstStep' : 'bridgeStep')
@@ -768,7 +760,7 @@ const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => 
   if (!bridgeTx || !op) return null
   const active = bridgeTx
   const terminal = isBridgeTerminal(op)
-  const completed = op.stage === 'completed' || (!hasToken && op.stage === 'kept_bch' && !!op.received?.length)
+  const completed = op.stage === 'completed' || (op.stage === 'kept_bch' && !!op.received?.length && !op.error)
   const firstDone =
     ['bch_ready', 'second_leg_signed', 'second_leg_unknown', 'second_leg_pending', 'completed', 'kept_bch'].includes(op.stage) ||
     (terminal && !!op.received?.length)
@@ -896,6 +888,13 @@ const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => 
     final: pusdToken,
     firstBar,
     secondBar,
+    completion: {
+      received: op.stage === 'completed' && token
+        ? { amount: signedOut === undefined ? '—' : formatToken(signedOut, token), ticker: token.ticker, icon: <TokenMark token={token} size={48} /> }
+        : { amount: formatBch(receivedSats), ticker: 'BCH', icon: <BchMark size={48} /> },
+      transactions: bridgeCompletionTransactions(active),
+      liquidityCategory: op.stage === 'completed' && token ? token.category : PUSD_TOKEN.category
+    },
     toasts,
     onDismissToast: (id: string) => setDismissed(list => [...list, id]),
     onHistory: () => openDialog(TransactionHistoryDialog, {}),
@@ -904,20 +903,10 @@ const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => 
   }
 
   const ended = terminal && !completed
-  // Completed is the final word: no error is shown next to it.
   const error = op.error && !completed && op.stage !== 'first_leg_unknown' ? <SwapError error={new Error(op.error)} /> : null
   const details = (
     <>
       {ended && <p className="bridge-flow-message">{t(`stage.${op.stage}`)}</p>}
-      {completed && (
-        <p className="bridge-flow-message is-success">
-          <CompletedLink href={token ? swapHref : (op.received?.[0] ? chainTxUrl(Chain.BitcoinCash, op.received[0].txid) : bridgeHref)}>
-            {token && pusdAmount !== undefined
-              ? t('progress.completedPusd', { amount: formatAmount(pusdAmount, 6), ticker: token.ticker })
-              : t('progress.completeTitle')}
-          </CompletedLink>
-        </p>
-      )}
       {error}
       {op.stage === 'first_leg_unknown' && <UnknownFirstLeg tx={active} />}
     </>

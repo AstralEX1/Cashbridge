@@ -57,7 +57,7 @@ export const ScrollArea = Credenza
 export const WalletType = { browser: 'browser' }
 export const ALL_CHAINS = [Chain.Ethereum, Chain.Base, Chain.Bitcoin]
 export const COMING_SOON_CHAINS = []
-export const chainLabel = chain => ({ [Chain.Ethereum]: 'Ethereum', [Chain.Base]: 'Base', [Chain.Bitcoin]: 'Bitcoin' })[chain] ?? chain
+export const chainLabel = chain => ({ [Chain.Ethereum]: 'Ethereum', [Chain.Base]: 'Base', [Chain.Bitcoin]: 'Bitcoin', [Chain.BitcoinCash]: 'Bitcoin Cash' })[chain] ?? chain
 export const isWalletAvailable = () => true
 export const WALLETS = [{ key: 'rabby', label: 'Rabby Wallet', option: WalletOption.RABBY, type: 'browser', supportedChains: [Chain.Ethereum, Chain.Base] }]
 export default function Image({ src, alt }) { return createElement('img', { src, alt }) }
@@ -71,6 +71,15 @@ export const useQuery = options => {
   return { data: controls.queryData, refetch() {}, isLoading: false, error: null }
 }
 const labels = {
+  'bridge.completion.received': 'Received',
+  'bridge.completion.history': 'Transaction history',
+  'bridge.completion.bridgeFrom': 'Bridge from {chain}',
+  'bridge.completion.receiveOn': 'Receive on {chain}',
+  'bridge.completion.swapOnCauldron': 'Swap on Cauldron',
+  'bridge.completion.earn': 'Earn {apy}% APY',
+  'bridge.completion.provideLiquidity': 'Provide liquidity',
+  'bridge.progress.newTransfer': 'New transfer',
+  'bridge.progress.close': 'Close',
   'bridge.wallet.connectSource': 'Connect wallet',
   'bridge.wallet.connectDestination': 'Connect BCH wallet',
   'bridge.wallet.connecting': 'Connecting…',

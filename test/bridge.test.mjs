@@ -9,11 +9,91 @@ import { formatBaseUnits, inboundMatchesBinding, interpretMidgard, interpretTxSt
 import { assertBridgeQuoteRequest, getQuotes, isBridgeRoute } from '../src/lib/api.ts'
 import { BelowMinimumError, minimumFromProviderErrors, resolveQuoteError } from '../src/lib/errors.ts'
 import { BridgeConfig } from '../src/config.ts'
+import { Chain } from '@tcswap/core'
+import { bridgeCompletionTransactions } from '../src/lib/bridge-completion.ts'
+import { cauldronLiquidityUrl, getCauldronApy, parseCauldronApy } from '../src/lib/cauldron-liquidity.ts'
 import { inboundHash, otherKey, otherPubkey, OTHER_TOKEN, outboundTx, pubkey, PUSD, signBuild, swapBuild } from './fixtures/bridge-fixtures.mjs'
 
 const binding = bindingFromPubkey(pubkey, 0)
 const ownScript = hexToBin(binding.lockingBytecode)
 const otherBinding = bindingFromPubkey(otherPubkey, 0)
+
+test('completion history keeps every distinct delivery and swap in order, without toast state', () => {
+  const source = `0x${'a'.repeat(64)}`
+  const delivery = 'b'.repeat(64)
+  const extra = 'c'.repeat(64)
+  const swap = 'd'.repeat(64)
+  const tx = {
+    hash: source, assetFrom: { chain: Chain.Base }, assetTo: { chain: Chain.BitcoinCash },
+    bridge: { stage: 'completed', received: [{ txid: delivery }, { txid: delivery.toUpperCase() }, { txid: extra }], secondLeg: { txid: swap } }
+  }
+  const history = bridgeCompletionTransactions(tx)
+  assert.deepEqual(history.map(({ kind, chain, hash }) => ({ kind, chain, hash })), [
+    { kind: 'bridgeFrom', chain: Chain.Base, hash: source },
+    { kind: 'receiveOn', chain: Chain.BitcoinCash, hash: delivery },
+    { kind: 'receiveOn', chain: Chain.BitcoinCash, hash: extra },
+    { kind: 'swapOnCauldron', chain: Chain.BitcoinCash, hash: swap }
+  ])
+  assert.equal(new Set(history.map(tx => tx.key)).size, 4)
+  tx.bridge.stage = 'kept_bch'
+  assert.equal(bridgeCompletionTransactions(tx).length, 3, 'keeping BCH does not claim a token swap')
+  tx.bridge.stage = 'second_leg_pending'
+  assert.deepEqual(bridgeCompletionTransactions(tx), [], 'pending transactions get no success receipt')
+  tx.bridge.stage = 'failed'
+  assert.deepEqual(bridgeCompletionTransactions(tx), [])
+})
+
+test('completion history handles reverse, BCH-only, missing hashes and confirmed refunds', () => {
+  const sale = 'a'.repeat(64), deposit = 'b'.repeat(64), payout = `0x${'c'.repeat(64)}`, refund = 'd'.repeat(64)
+  const tx = {
+    assetFrom: { chain: Chain.BitcoinCash }, assetTo: { chain: Chain.Base },
+    bridge: { stage: 'completed', direction: 'reverse', reverse: { sale: { txid: sale }, deposit: { txid: deposit }, payout: { hash: payout } } }
+  }
+  assert.deepEqual(bridgeCompletionTransactions(tx).map(item => item.kind), ['swapOnCauldron', 'bridgeFrom', 'receiveOn'])
+  tx.bridge.stage = 'kept_bch'
+  assert.deepEqual(bridgeCompletionTransactions(tx).map(item => item.hash), [sale])
+  delete tx.bridge.reverse.sale
+  tx.bridge.stage = 'completed'
+  assert.deepEqual(bridgeCompletionTransactions(tx).map(item => item.hash), [deposit, payout], 'native BCH has no Cauldron sale')
+  tx.bridge.reverse.refund = { txid: refund }
+  assert.equal(bridgeCompletionTransactions(tx).at(-1).kind, 'refundOn')
+  tx.bridge = { stage: 'completed', received: [{ txid: '' }, {}], refunds: [{ txid: refund, pending: true }, { txid: deposit, pending: false }] }
+  assert.deepEqual(bridgeCompletionTransactions(tx).map(item => item.hash), [deposit])
+})
+
+test('completion history preserves case-sensitive non-hex source transaction IDs', () => {
+  const hash = '4EXnNpJZ9RLzJCpH9BvbdvABQaSMQ7RQbEVjGRxAwyCSTPXnCYdbmCfXbNfF'
+  const tx = { hash, assetFrom: { chain: Chain.Solana }, bridge: { stage: 'completed' } }
+  assert.equal(bridgeCompletionTransactions(tx)[0].hash, hash)
+  tx.hash = 'not a transaction'
+  assert.deepEqual(bridgeCompletionTransactions(tx), [])
+})
+
+test('LP links use the token category, and APY rejects missing or invalid pool data', () => {
+  assert.equal(cauldronLiquidityUrl(PUSD), `https://app.cauldron.quest/add/${PUSD}`)
+  assert.equal(cauldronLiquidityUrl(OTHER_TOKEN), `https://app.cauldron.quest/add/${OTHER_TOKEN}`)
+  assert.throws(() => cauldronLiquidityUrl('../add'), /category/)
+  assert.equal(parseCauldronApy({ apy: '8.597885945977747012808480970', pools: 63 }), 8.597885945977747)
+  assert.equal(parseCauldronApy({ apy: '0', pools: 1 }), 0)
+  for (const apy of ['', '  ', '0x10', '-1', 'NaN', 'Infinity', -1, Infinity, null, {}]) {
+    assert.equal(parseCauldronApy({ apy, pools: 1 }), null)
+  }
+  for (const pools of [0, -1, '3', 1.5, undefined]) assert.equal(parseCauldronApy({ apy: '10', pools }), null)
+  assert.equal(parseCauldronApy(null), null)
+})
+
+test('APY uses the public aggregate endpoint and fails without inventing a rate', async t => {
+  const fetchMock = t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(url, `${BridgeConfig.cauldronIndexerUrl}/cauldron/pool/aggregated_apy?token=${PUSD}`)
+    assert.ok(options.signal instanceof AbortSignal)
+    return { ok: true, json: async () => ({ apy: '9.25', pools: 3 }) }
+  })
+  assert.equal(await getCauldronApy(PUSD), 9.25)
+  await assert.rejects(getCauldronApy('../bad'), /category/)
+  assert.equal(fetchMock.mock.callCount(), 1)
+  fetchMock.mock.mockImplementation(async () => ({ ok: false }))
+  await assert.rejects(getCauldronApy(PUSD), /Could not read/)
+})
 
 // --- Identity and addresses --------------------------------------------------------------------
 
