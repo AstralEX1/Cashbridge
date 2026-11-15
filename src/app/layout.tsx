@@ -5,11 +5,8 @@ import { ThemeProvider } from 'next-themes'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
 import { Toaster } from '@/components/ui/sonner'
-import { WebMcpTools } from '@/components/webmcp-tools'
-import { ChatwootWidget } from '@/components/chatwoot-widget'
 import { ReactQueryProvider } from '@/components/react-query/react-query-provider'
 import { WalletStoreHydration } from '@/components/wallet-store-hydration'
-import { ReferralCapture } from '@/components/referral-capture'
 import { AppConfig } from '@/config'
 import { BchWalletProvider } from '@/components/bch-wallet'
 import { BridgeTracker } from '@/components/swap/pusd-swap'
@@ -138,14 +135,8 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   return (
     <html lang={locale} dir={getLangDir(locale)} data-brand={AppConfig.id} suppressHydrationWarning>
       <body className={`${crit.variable} ${notoRunic.variable} bg-body font-sans antialiased`}>
-        {/* Agent discovery links; React hoists them into <head>. */}
-        <link rel="mcp-server-card" type="application/mcp-server-card+json" href="/.well-known/mcp/server-card.json" />
-        <link rel="ai-catalog" type="application/json" href="/.well-known/ai-catalog.json" />
-        <link rel="alternate" type="text/markdown" title="llms.txt" href="/llms.txt" />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />
-        <WebMcpTools />
         <WalletStoreHydration />
-        <ReferralCapture />
         <ReactQueryProvider>
           <NextIntlClientProvider locale={locale} messages={messages}>
             <ThemeProvider defaultTheme="light" attribute="class" disableTransitionOnChange>
@@ -153,7 +144,6 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                 {children}
                 <BridgeTracker />
               </BchWalletProvider>
-              <ChatwootWidget />
             </ThemeProvider>
           </NextIntlClientProvider>
         </ReactQueryProvider>
