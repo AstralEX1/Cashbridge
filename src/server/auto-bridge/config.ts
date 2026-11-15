@@ -33,14 +33,15 @@ export function loadConfig() {
     maxOpenOrders: integer('AUTO_BRIDGE_MAX_OPEN_ORDERS', 500, 1, 10000)
   }
   if (limits.maxPendingSats < limits.maxOrderSats) throw new OrderError(503, 'Invalid bridge exposure limits')
-  const zero = process.env.AUTO_BRIDGE_ZERO_CONF_MAX_SATS ?? '0'
+  // Owner policy: swap and pay out at 0-conf, like the manual flow. Override only to require depth.
+  const zero = process.env.AUTO_BRIDGE_ZERO_CONF_MAX_SATS ?? limits.maxOrderSats.toString()
   if (!/^\d{1,16}$/.test(zero) || BigInt(zero) > limits.maxOrderSats) throw new OrderError(503, 'Invalid zero-confirmation limit')
   return {
     xpub: readCredential(process.env.AUTO_BRIDGE_XPUB_FILE),
     database: resolve(process.env.AUTO_BRIDGE_DB ?? 'var/auto-bridge/orders.sqlite'),
     guardFile: process.env.AUTO_BRIDGE_RECOVERY_GUARD ? resolve(process.env.AUTO_BRIDGE_RECOVERY_GUARD) : undefined,
     limits,
-    minConfirmations: integer('AUTO_BRIDGE_MIN_CONFIRMATIONS', 1, 0, 100),
+    minConfirmations: integer('AUTO_BRIDGE_MIN_CONFIRMATIONS', 0, 0, 100),
     zeroConfMaxSats: BigInt(zero),
     maxWaitMs: integer('AUTO_BRIDGE_MAX_WAIT_SECONDS', 1800, 60, 86400) * 1000,
     pollMs: integer('AUTO_BRIDGE_POLL_SECONDS', 5, 1, 60) * 1000
