@@ -36,7 +36,7 @@ import { formatBaseUnits, toBaseUnits } from '@/lib/bridge'
 import { withLock } from '@/lib/bridge-first-leg'
 import { bridgeCompletionTransactions } from '@/lib/bridge-completion'
 import { formatStepTime, stepTime } from '@/lib/bridge-tracking'
-import { formatAmount, formatMinutes, formatPercent, formatUsd, PUSD_LEG_SECONDS } from '@/lib/bridge-summary'
+import { formatAmount, formatMinutes, formatPercent, formatUsd, PUSD_LEG_SECONDS, valueImpact } from '@/lib/bridge-summary'
 import { BroadcastRejected, broadcastBchTransaction, type ReviewedSwap } from '@/lib/cauldron'
 import { SignCancelled, SignDeclined, SignTimedOut, SignUndelivered } from '@/lib/bch-signing'
 import { type CauldronToken, PUSD_TOKEN } from '@/lib/cauldron-tokens'
@@ -496,9 +496,8 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
   const gasUsd = bchUsd ? bchGas * bchUsd : undefined
   // Value lost from what is sent to what arrives, BCH network fees aside.
   // A token is valued at what it is worth at the pools' spot price, before Cauldron's fee and impact.
-  const sentValueUsd = token ? (sale.quote && bchUsd ? (sale.quote.spotOutput / 1e8) * bchUsd : undefined) : sentUsd
-  const impactUsd = receivedUsd !== undefined && sentValueUsd !== undefined ? receivedUsd - sentValueUsd : undefined
-  const impactPercent = impactUsd !== undefined && sentValueUsd ? (impactUsd / sentValueUsd) * 100 : undefined
+  const sentValueUsd = token ? (!sale.error && sale.quote && bchUsd ? (sale.quote.spotOutput / 1e8) * bchUsd : undefined) : sentUsd
+  const { impactUsd, impactPercent } = valueImpact(sentValueUsd, receivedUsd)
   const cauldronFeeUsd = token && sale.quote && bchUsd ? (Number(sale.quote.tradeFeeSats) / 1e8) * bchUsd : undefined
   const thorFeeUsd = fees ? toNumber(fees.included) : undefined
   const ticker = token?.ticker ?? 'BCH'

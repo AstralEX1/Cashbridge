@@ -888,6 +888,7 @@
       "gasBch": "Bitcoin Cash network ({ticker} swap)",
       "priceImpact": "Price impact",
       "impactTotal": "Total price impact",
+      "impactTooltip": "Value difference across the full route, including THORChain and any Cauldron swap fees and pool price impact. Gas is shown separately on Confirm.",
       "thorFee": "THORChain bridge fee",
       "cauldronFee": "Cauldron swap fee",
       "poolImpact": "Pool price impact",

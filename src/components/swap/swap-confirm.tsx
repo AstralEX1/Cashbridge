@@ -63,7 +63,7 @@ export const BridgeConfirm = ({ quote, token, bchAddress, automatic }: BridgeCon
 
   const sent = Number(quote.sellAmount)
   const bch = Number(quote.expectedBuyAmount)
-  const leg = pusdQuote.quote
+  const leg = pusdQuote.error ? undefined : pusdQuote.quote
   const summary = bridgeSummary({
     sent,
     sentUsd: rateFrom ? sent * toNumber(rateFrom)! : undefined,
@@ -88,6 +88,7 @@ export const BridgeConfirm = ({ quote, token, bchAddress, automatic }: BridgeCon
   const thorMinutes = bridgeSeconds ? formatMinutes(bridgeSeconds) : undefined
   const minutes = summary.seconds ? t('minutes', { minutes: formatMinutes(summary.seconds) }) : '—'
   const pusdPending = pusd && !leg
+  const impact = pusdPending ? undefined : summary
   const received = pusdPending ? undefined : summary.received
   const receivedTicker = token ? token.ticker : 'BCH'
   const usd = (value?: number) => (value === undefined ? '—' : formatUsd(value))
@@ -135,7 +136,7 @@ export const BridgeConfirm = ({ quote, token, bchAddress, automatic }: BridgeCon
                 </div>
                 <span>
                   {automatic ? tAuto('minimumLabel') : t('on', { ticker: receivedTicker, chain: 'Bitcoin Cash' })}
-                  {!automatic && summary.receivedUsd !== undefined ? ` · ${usd(summary.receivedUsd)}` : ''}
+                  {!automatic && !pusdPending && summary.receivedUsd !== undefined ? ` · ${usd(summary.receivedUsd)}` : ''}
                 </span>
               </div>
             </div>
@@ -264,13 +265,13 @@ export const BridgeConfirm = ({ quote, token, bchAddress, automatic }: BridgeCon
                     {t('priceImpact')}
                   </dt>
                   <dd>
-                    <HoverCard label={summary.impactPercent === undefined ? '—' : formatPercent(summary.impactPercent)}>
+                    <HoverCard label={impact?.impactPercent === undefined ? '—' : formatPercent(impact.impactPercent)}>
                       <span className="bridge-tip-row bridge-tip-head">
                         <span>{t('impactTotal')}</span>
                         <span className="bridge-tip-label">
-                          {summary.impactUsd === undefined
+                          {impact?.impactUsd === undefined
                             ? '—'
-                            : `${formatUsd(summary.impactUsd)} (${formatPercent(summary.impactPercent ?? 0)})`}
+                            : `${formatUsd(impact.impactUsd)} (${formatPercent(impact.impactPercent ?? 0)})`}
                         </span>
                       </span>
                       <span className="bridge-tip-sep" />
@@ -286,7 +287,7 @@ export const BridgeConfirm = ({ quote, token, bchAddress, automatic }: BridgeCon
                       )}
                       <span className="bridge-tip-row">
                         <span className="bridge-tip-label">{t('poolImpact')}</span>
-                        <span>{usd(summary.poolImpactUsd)}</span>
+                        <span>{usd(impact?.poolImpactUsd)}</span>
                       </span>
                       <a className="bridge-tip-link" href={THORCHAIN_FEES_URL} target="_blank" rel="noopener noreferrer">
                         {t('learnFees')}

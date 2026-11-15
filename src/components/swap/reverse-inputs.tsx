@@ -11,7 +11,7 @@ import { useBchWallet } from '@/components/bch-wallet'
 import { BridgeAssetButton, BridgeAssetPicker, type BridgeInputProps } from '@/components/swap/bridge-asset-picker'
 import { BridgeInputSwitcher } from '@/components/swap/bridge-input-switcher'
 import { BridgeWalletBadge } from '@/components/swap/bridge-wallet-badge'
-import { PriceImpact } from '@/components/swap/price-impact'
+import { BridgePriceImpact } from '@/components/swap/price-impact'
 import { SwapQuoteTimer } from '@/components/swap/swap-quote-timer'
 import { Tooltip } from '@/components/tooltip'
 import { BridgeConfig } from '@/config'
@@ -21,7 +21,7 @@ import { useAssetFrom } from '@/hooks/use-swap'
 import { useTokenSale } from '@/hooks/use-token-sale'
 import { listWalletCoins } from '@/lib/bch'
 import { formatBaseUnits } from '@/lib/bridge'
-import { formatUsd } from '@/lib/bridge-summary'
+import { formatUsd, valueImpact } from '@/lib/bridge-summary'
 import type { CauldronToken } from '@/lib/cauldron-tokens'
 import { DEPOSIT_FEE_RESERVE } from '@/lib/thorchain-deposit'
 import { useSwapStore } from '@/store/swap-store'
@@ -121,12 +121,14 @@ export const BchInputFrom = ({ selecting, onSelectOpenChange }: BridgeInputProps
   )
 }
 
-export const ReverseInputTo = ({ priceImpact, selecting, onSelectOpenChange }: BridgeInputProps & { priceImpact?: USwapNumber }) => {
+export const ReverseInputTo = ({ selecting, onSelectOpenChange }: BridgeInputProps) => {
   const t = useTranslations('bridge.form')
-  const tSwap = useTranslations('swap')
   const asset = useAssetFrom()
+  const token = useSwapStore(state => state.bchToken)
+  const amount = useSwapStore(state => state.amountFrom)
+  const sale = useTokenSale(token, amount)
   const { quote, isLoading, refetch, error } = useQuote()
-  const { rates } = useRates(asset ? [asset.identifier] : [])
+  const { rates } = useRates([BridgeConfig.buyAsset, ...(asset ? [asset.identifier] : [])], quote?.providers[0])
   const trigger = useRef<HTMLButtonElement>(null)
   const close = () => {
     onSelectOpenChange(false)
@@ -134,7 +136,12 @@ export const ReverseInputTo = ({ priceImpact, selecting, onSelectOpenChange }: B
   }
   const output = quote ? new USwapNumber(quote.expectedBuyAmount).toSignificant() : undefined
   const rate = asset ? rates[asset.identifier] : undefined
-  const usd = quote && rate && !isLoading ? formatUsd(Number(quote.expectedBuyAmount) * Number(rate.toSignificant(12))) : undefined
+  const receivedUsd = quote && rate ? Number(quote.expectedBuyAmount) * Number(rate.toSignificant(12)) : undefined
+  const usd = receivedUsd !== undefined && !isLoading ? formatUsd(receivedUsd) : undefined
+  const bchUsd = rates[BridgeConfig.buyAsset]
+  const sentBch = token ? (!sale.error && sale.quote ? sale.quote.spotOutput / 1e8 : undefined) : Number(amount)
+  const sentUsd = sentBch !== undefined && bchUsd ? sentBch * Number(bchUsd.toSignificant(12)) : undefined
+  const { impactPercent } = valueImpact(sentUsd, receivedUsd)
 
   return (
     <BridgeInputSwitcher selecting={selecting}>
@@ -150,13 +157,7 @@ export const ReverseInputTo = ({ priceImpact, selecting, onSelectOpenChange }: B
           <div className="bridge-input-meta">
             <span>{usd ?? (error && !isLoading ? t('noRoute') : t('receiveAmount'))}</span>
             <div className="flex items-center gap-2">
-              {priceImpact && (
-                <Tooltip content={tSwap('confirm.priceImpact')}>
-                  <span>
-                    <PriceImpact priceImpact={priceImpact} />
-                  </span>
-                </Tooltip>
-              )}
+              <BridgePriceImpact percent={isLoading || (token && sale.isLoading) ? undefined : impactPercent} />
               <SwapQuoteTimer quote={quote} isLoading={isLoading} refetch={refetch} />
             </div>
           </div>

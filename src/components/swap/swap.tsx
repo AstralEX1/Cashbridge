@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useSearchParams } from 'next/navigation'
 import { ArrowDownUp } from 'lucide-react'
@@ -21,13 +21,10 @@ import { RouterToggle } from '@/components/swap/automatic-bridge-controls'
 import { AutomaticOrders } from '@/components/swap/auto-bridge-progress'
 import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
 import { isAssetInMode, useAssets } from '@/hooks/use-assets'
-import { useQuote } from '@/hooks/use-quote'
-import { useSwapRates } from '@/hooks/use-rates'
 import { useResolveSource } from '@/hooks/use-resolve-source'
 import { useSetAssetFrom, useSetAssetTo } from '@/hooks/use-swap'
 import { useTradingHalt } from '@/hooks/use-trading-halt'
 import { urlBuyAsset, useUrlParams } from '@/hooks/use-url-params'
-import { resolvePriceImpact } from '@/lib/swap-helpers'
 import { useIsPrivateSend } from '@/store/limit-swap-store'
 import { isReverseTargetAsset, useSwapStore } from '@/store/swap-store'
 import { useActiveBridge } from '@/store/transaction-store'
@@ -63,8 +60,6 @@ export const Swap = () => {
   const toggleDirection = useSwapStore(state => state.swapAssets)
   const assetFrom = useSwapStore(state => state.assetFrom)
   const { assets } = useAssets()
-  const { quote } = useQuote()
-  const { rateFrom, rateTo } = useSwapRates()
   const { isHalted, chains: haltedChains } = useTradingHalt()
   const searchParams = useSearchParams()
   const flowPreview = process.env.NODE_ENV !== 'production' ? searchParams.get('bridgeFlowPreview') : null
@@ -115,11 +110,6 @@ export const Swap = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reverse, assets, assetFrom])
 
-  // `assetFrom` is the other chain's asset in both directions; in reverse it is what is bought.
-  const priceImpact = useMemo(() => {
-    return reverse ? resolvePriceImpact(quote, rateTo, rateFrom) : resolvePriceImpact(quote, rateFrom, rateTo)
-  }, [quote, rateFrom, rateTo, reverse])
-
   return (
     <div className="bridge-widget mx-auto w-full max-w-[514px]">
       <div className="bridge-heading">
@@ -157,9 +147,9 @@ export const Swap = () => {
           <span aria-hidden="true" />
         </div>
         {reverse ? (
-          <ReverseInputTo priceImpact={priceImpact} selecting={picker === 'to'} onSelectOpenChange={open => setPicker(open ? 'to' : undefined)} />
+          <ReverseInputTo selecting={picker === 'to'} onSelectOpenChange={open => setPicker(open ? 'to' : undefined)} />
         ) : (
-          <SwapInputTo priceImpact={priceImpact} selecting={picker === 'to'} onSelectOpenChange={open => setPicker(open ? 'to' : undefined)} />
+          <SwapInputTo selecting={picker === 'to'} onSelectOpenChange={open => setPicker(open ? 'to' : undefined)} />
         )}
       </div>
       {reverse ? (

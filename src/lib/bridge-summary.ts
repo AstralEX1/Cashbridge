@@ -48,13 +48,18 @@ export interface BridgeSummary {
 
 const known = (...values: (number | undefined)[]) => values.every(v => v !== undefined && Number.isFinite(v))
 
+export const valueImpact = (sentUsd?: number, receivedUsd?: number) => {
+  const impactUsd = known(sentUsd, receivedUsd) && sentUsd! > 0 ? receivedUsd! - sentUsd! : undefined
+  return { impactUsd, impactPercent: impactUsd === undefined ? undefined : (impactUsd / sentUsd!) * 100 }
+}
+
 export const bridgeSummary = (input: BridgeSummaryInput): BridgeSummary => {
   const { sent, sentUsd, bch, bchUsd, thorFeeUsd, sourceGasUsd, thorSeconds, pusd } = input
   const seconds = thorSeconds !== undefined && thorSeconds > 0 ? thorSeconds + (pusd ? PUSD_LEG_SECONDS : 0) : undefined
 
   if (!pusd) {
     const receivedUsd = known(bchUsd) ? bch * bchUsd! : undefined
-    const impactUsd = known(receivedUsd, sentUsd) ? receivedUsd! - sentUsd! : undefined
+    const { impactUsd, impactPercent } = valueImpact(sentUsd, receivedUsd)
     return {
       received: bch,
       receivedUsd,
@@ -62,7 +67,7 @@ export const bridgeSummary = (input: BridgeSummaryInput): BridgeSummary => {
       gasUsd: sourceGasUsd,
       seconds,
       impactUsd,
-      impactPercent: known(impactUsd) && sentUsd ? (impactUsd! / sentUsd) * 100 : undefined,
+      impactPercent,
       poolImpactUsd: known(impactUsd, thorFeeUsd) ? Math.min(0, impactUsd! + thorFeeUsd!) : undefined
     }
   }
@@ -73,7 +78,7 @@ export const bridgeSummary = (input: BridgeSummaryInput): BridgeSummary => {
   const changeUsd = known(bchUsd) ? Math.max(0, bch - pusd.sell - (pusd.minerFee ?? 0)) * bchUsd! : undefined
   const bchGasUsd = known(bchUsd, pusd.minerFee) ? pusd.minerFee! * bchUsd! : undefined
   const keptUsd = known(receivedUsd, changeUsd) ? receivedUsd! + changeUsd! + (bchGasUsd ?? 0) : undefined
-  const impactUsd = known(keptUsd, sentUsd) ? keptUsd! - sentUsd! : undefined
+  const { impactUsd, impactPercent } = valueImpact(sentUsd, keptUsd)
   const cauldronFeeUsd = known(bchUsd) ? pusd.tradeFee * bchUsd! : undefined
 
   return {
@@ -84,7 +89,7 @@ export const bridgeSummary = (input: BridgeSummaryInput): BridgeSummary => {
     bchGasUsd,
     seconds,
     impactUsd,
-    impactPercent: known(impactUsd) && sentUsd ? (impactUsd! / sentUsd) * 100 : undefined,
+    impactPercent,
     cauldronFeeUsd,
     poolImpactUsd: known(impactUsd, thorFeeUsd, cauldronFeeUsd) ? Math.min(0, impactUsd! + thorFeeUsd! + cauldronFeeUsd!) : undefined,
     pusdUsd
