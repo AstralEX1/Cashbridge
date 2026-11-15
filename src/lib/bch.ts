@@ -141,7 +141,8 @@ export const opReturnText = (lockingBytecode: Uint8Array): string | undefined =>
 // --- JSON over WebSocket -----------------------------------------------------------------------
 
 // One request/response client for both Fulcrum (Electrum JSON-RPC) and the Cauldron Router, which
-// share the `{ id, method, params } -> { id, result | error }` shape. Opened per use and closed after.
+// share the `{ id, method, params } -> { id, result | error }` shape. Opened per use and closed after,
+// unless a caller listens for server notifications (`onNotification`, a subscription) and keeps it open.
 export class WsRpc {
   private ws?: WebSocket
   private nextId = 1
@@ -149,7 +150,14 @@ export class WsRpc {
 
   constructor(
     private readonly url: string,
-    private readonly options: { jsonrpc?: boolean; timeoutMs?: number } = {}
+    private readonly options: {
+      jsonrpc?: boolean
+      timeoutMs?: number
+      // A message the server pushes without a request: a subscription's updates.
+      onNotification?: (method: string, params: unknown) => void
+      // The socket went away, whether the server closed it or `close()` did.
+      onClose?: () => void
+    } = {}
   ) {}
 
   async open(): Promise<this> {
@@ -168,7 +176,10 @@ export class WsRpc {
         clearTimeout(timer)
         reject(new Error(`Could not connect to ${new URL(this.url).host}`))
       }
-      ws.onclose = () => this.failAll(new Error('Connection closed'))
+      ws.onclose = () => {
+        this.failAll(new Error('Connection closed'))
+        this.options.onClose?.()
+      }
       ws.onmessage = event => this.onMessage(event.data)
       this.ws = ws
     })
@@ -195,13 +206,22 @@ export class WsRpc {
   }
 
   private onMessage(data: unknown) {
-    let message: { id?: unknown; result?: unknown; error?: { code?: unknown; message?: unknown } }
+    let message: { id?: unknown; method?: unknown; params?: unknown; result?: unknown; error?: { code?: unknown; message?: unknown } }
     try {
       message = JSON.parse(String(data))
     } catch {
       return
     }
-    if (typeof message?.id !== 'number') return
+    if (typeof message?.id !== 'number') {
+      if (typeof message?.method === 'string') {
+        try {
+          this.options.onNotification?.(message.method, message.params)
+        } catch {
+          // A listener's failure must not take the connection down.
+        }
+      }
+      return
+    }
     const entry = this.pending.get(message.id)
     if (!entry) return
     this.pending.delete(message.id)

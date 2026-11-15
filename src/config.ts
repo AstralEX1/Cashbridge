@@ -46,6 +46,9 @@ export const BridgeConfig = {
   // Cauldron's public pool indexer: the PUSD pools the second leg trades against. Each pool a trade
   // picks is checked unspent on a Fulcrum server first, since the list can lag the chain.
   cauldronIndexerUrl: process.env.NEXT_PUBLIC_CAULDRON_INDEXER_URL || 'https://indexer.cauldron.quest',
+  // Rostrum servers (Electrum protocol with Cauldron's `cauldron.contract.subscribe`): the live pool feed
+  // the second leg trades against. Empty turns the feed off and uses the indexer alone.
+  rostrumUrls: (process.env.NEXT_PUBLIC_CAULDRON_ROSTRUM_URLS ?? 'wss://rostrum.riften.net:443,wss://rostrum.cauldron.quest:50004').split(',').map(u => u.trim()).filter(Boolean),
   // Fulcrum (Electrum protocol) servers used to verify BCH transactions and unspent outputs.
   electrumUrls: (process.env.NEXT_PUBLIC_BCH_ELECTRUM_URLS || 'wss://bch.imaginary.cash:50004').split(',').map(u => u.trim()).filter(Boolean)
 }
