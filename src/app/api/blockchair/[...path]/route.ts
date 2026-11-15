@@ -55,7 +55,7 @@ async function forward(req: NextRequest, path: string[], endpoints: string[], bo
       403,
       'forbidden',
       'Cross-origin requests are not allowed',
-      'This proxy only serves the THORChain Swap frontend. Query api.blockchair.com directly with your own API key instead.'
+      'This proxy only serves the Cash Bridge frontend. Query api.blockchair.com directly with your own API key instead.'
     )
   }
 

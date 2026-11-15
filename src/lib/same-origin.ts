@@ -8,8 +8,8 @@ import { NextRequest } from 'next/server'
  * send any header it likes; the rate limit is the brake for those.
  *
  * The client builds its URL from `window.location.origin`, so a real request is
- * same-origin whichever host serves the app -- swap.thorchain.org, a tcy./bond./
- * pool. subdomain, or localhost in dev -- and no host allowlist is needed.
+ * same-origin whichever host serves the app -- the production domain, a preview
+ * deployment, or localhost in dev -- and no host allowlist is needed.
  */
 export function isSameOrigin(req: NextRequest) {
   const site = req.headers.get('sec-fetch-site')

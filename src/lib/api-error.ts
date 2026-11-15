@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server'
-import { AppConfig } from '@/config'
 
 // Structured JSON error body for the public /api/* endpoints. `error` keeps the
-// original human-readable string for existing clients; `code` and `hint` give
-// agents a stable machine-readable code and a resolution hint.
+// human-readable string; `code` and `hint` give callers a stable
+// machine-readable code and a resolution hint.
 export function apiError(status: number, code: string, message: string, hint: string, headers?: HeadersInit) {
   return NextResponse.json(
-    { error: message, code, hint, documentation: `${AppConfig.baseUrl}/developers` },
+    { error: message, code, hint },
     { status, headers }
   )
 }

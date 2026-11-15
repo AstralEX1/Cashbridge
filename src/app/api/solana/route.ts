@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
       403,
       'forbidden',
       'Cross-origin requests are not allowed',
-      'This proxy only serves the THORChain Swap frontend. Use your own Solana RPC endpoint instead.'
+      'This proxy only serves the Cash Bridge frontend. Use your own Solana RPC endpoint instead.'
     )
   }
 

@@ -16,92 +16,25 @@ import './globals.css'
 export const metadata: Metadata = {
   metadataBase: new URL(AppConfig.baseUrl),
   title: AppConfig.title,
-  icons: {
-    icon: AppConfig.favicon,
-    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }]
-  },
+  description: AppConfig.description,
   appleWebApp: {
     capable: true,
-    title: 'THORChain Swap',
+    title: AppConfig.appName,
     statusBarStyle: 'black-translucent'
   },
   openGraph: {
     title: AppConfig.title,
     description: AppConfig.description,
     url: AppConfig.baseUrl,
-    siteName: 'THORChain Swap',
-    images: [
-      {
-        url: `${AppConfig.baseUrl}/og-image.png`,
-        width: 2400,
-        height: 1260,
-        alt: AppConfig.title
-      }
-    ],
+    siteName: AppConfig.appName,
     type: 'website',
     locale: 'en_US'
   },
   twitter: {
-    card: 'summary_large_image',
+    card: 'summary',
     title: AppConfig.title,
-    description: AppConfig.description,
-    images: [
-      {
-        url: `${AppConfig.baseUrl}/og-image.png`,
-        width: 2400,
-        height: 1260,
-        alt: AppConfig.title
-      }
-    ]
+    description: AppConfig.description
   }
-}
-
-// JSON-LD structured data so search engines and AI agents can parse the
-// site's identity programmatically.
-const structuredData = {
-  '@context': 'https://schema.org',
-  '@graph': [
-    {
-      '@type': 'Organization',
-      '@id': `${AppConfig.baseUrl}/#organization`,
-      name: 'THORChain',
-      url: 'https://www.thorchain.org',
-      logo: `${AppConfig.baseUrl}/logo.svg`,
-      sameAs: ['https://www.thorchain.org', 'https://x.com/THORChain', AppConfig.telegramLink],
-      contactPoint: {
-        '@type': 'ContactPoint',
-        email: AppConfig.supportEmail,
-        contactType: 'customer support'
-      }
-    },
-    {
-      '@type': 'WebSite',
-      '@id': `${AppConfig.baseUrl}/#website`,
-      name: 'THORChain Swap',
-      url: AppConfig.baseUrl,
-      publisher: { '@id': `${AppConfig.baseUrl}/#organization` }
-    },
-    {
-      '@type': 'WebApplication',
-      '@id': `${AppConfig.baseUrl}/#webapplication`,
-      name: 'THORChain Swap',
-      url: AppConfig.baseUrl,
-      description: AppConfig.description,
-      applicationCategory: 'FinanceApplication',
-      operatingSystem: 'Any',
-      browserRequirements: 'Requires JavaScript',
-      image: `${AppConfig.baseUrl}/og-image.png`,
-      isPartOf: { '@id': `${AppConfig.baseUrl}/#website` },
-      sameAs: ['https://github.com/thorchain/swap.thorchain'],
-      subjectOf: { '@id': `${AppConfig.baseUrl}/developers#webpage` },
-      offers: {
-        '@type': 'Offer',
-        price: '0',
-        priceCurrency: 'USD'
-      },
-      publisher: { '@id': `${AppConfig.baseUrl}/#organization` }
-    }
-  ]
 }
 
 const crit = localFont({
@@ -135,7 +68,6 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   return (
     <html lang={locale} dir={getLangDir(locale)} data-brand={AppConfig.id} suppressHydrationWarning>
       <body className={`${crit.variable} ${notoRunic.variable} bg-body font-sans antialiased`}>
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />
         <WalletStoreHydration />
         <ReactQueryProvider>
           <NextIntlClientProvider locale={locale} messages={messages}>

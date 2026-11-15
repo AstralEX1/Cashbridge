@@ -1,24 +1,20 @@
 import { ProviderName } from '@tcswap/helpers'
 
 export const AppConfig = {
+  // Internal id: selects the brand palette in globals.css and THORChain-first quote ordering.
   id: 'thorchain',
-  appName: 'THORChain Swap',
-  title: 'THORChain Swap | Cross-Chain BTC, ETH & Crypto Swaps',
+  appName: 'Cash Bridge',
+  title: 'Cash Bridge | Bridge to Bitcoin Cash and PUSD',
   description:
-    'Swap Bitcoin to Ethereum and other cryptocurrencies instantly with THORChain. Native BTC swaps with no bridges, wrapping, or centralized exchanges.',
-  baseUrl: 'https://swap.thorchain.org',
+    'Bridge stablecoins and other assets to Bitcoin Cash through THORChain, then swap to PUSD on Cauldron. Self-custodial: every step is signed in your own wallet.',
+  baseUrl: process.env.NEXT_PUBLIC_SITE_URL || 'https://cashbridge.vercel.app',
   // The bridge's first leg is THORChain alone (see BridgeConfig).
   providers: [ProviderName.THORCHAIN],
   // The PRIVATE tab quotes this provider alone; its assets are listed only there.
   privateProvider: ProviderName.HOUDINI,
-  favicon: '/favicon.ico',
   logo: '/logo.svg',
-  logoLink: 'https://www.thorchain.org',
-  affiliateLink: 'https://affiliate.thorchain.org',
-  telegramLink: 'https://t.me/thorchain_org',
-  privacyPolicyLink: 'https://www.thorchain.org/privacy-policy',
-  tosLink: 'https://www.thorchain.org/terms-of-use',
-  supportEmail: 'contact@thorchain.org'
+  // Trezor Connect requires a contact email in its manifest.
+  supportEmail: process.env.NEXT_PUBLIC_SUPPORT_EMAIL || ''
 }
 
 // The aggregator API key stays on the server, so the SDK and src/lib/api.ts talk to our own
@@ -28,17 +24,6 @@ export function aggregatorApiUrl() {
   const origin = typeof window === 'undefined' ? AppConfig.baseUrl : window.location.origin
   return `${origin}/api/thorchain/v1`
 }
-
-export const PRIMARY_HOST = 'swap.thorchain.org'
-
-export const SUBDOMAIN_ROUTES = [
-  { path: '/tcy', host: 'tcy.thorchain.org' },
-  { path: '/bond', host: 'bond.thorchain.org' },
-  { path: '/memo', host: 'memo.thorchain.org' },
-  { path: '/pool', host: 'pool.thorchain.org' },
-  { path: '/thorname', host: 'thorname.thorchain.org' },
-  { path: '/affiliate', host: 'affiliate.thorchain.org' }
-] as const
 
 // THORChain -> BCH -> PUSD bridge. The first leg always buys native BCH through THORChain; PUSD is
 // only ever bought in a second, separately authorized Cauldron transaction. Never discover PUSD by

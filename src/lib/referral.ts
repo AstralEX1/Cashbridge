@@ -1,4 +1,4 @@
-// KOL referral links: `https://swap.thorchain.org/?ref=<code>`. The code is kept
+// KOL referral links: `<site>/?ref=<code>`. The code is kept
 // client-side for an attribution window and attached to quote requests so the
 // server can credit swaps to the link that brought the user in.
 
