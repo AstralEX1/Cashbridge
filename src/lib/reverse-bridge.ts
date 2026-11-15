@@ -4,7 +4,7 @@ import type { QuoteResponseRoute } from '@tcswap/helpers/api'
 import { getProvider } from '@tcswap/toolboxes/evm'
 import type { Asset } from '@/components/swap/asset'
 import { BridgeConfig } from '@/config'
-import { getInboundAddresses, getQuotes, getTxStatus, isBridgeRoute } from '@/lib/api'
+import { getInboundAddresses, getQuotes, getTxStatus, isBridgeRoute, type TxStatusResponse } from '@/lib/api'
 import { type BchBinding, listWalletCoins, type ScriptUtxo } from '@/lib/bch'
 import { formatBaseUnits, minOutputFor } from '@/lib/bridge'
 import { withLock } from '@/lib/bridge-first-leg'
@@ -207,6 +207,21 @@ export const findPayout = async (op: BridgeOperation) => {
     from = to + 1
   }
   return { scannedBlock: from }
+}
+
+// THORChain swaps and pays out about this long after the deposit is final on BCH.
+const SWAP_AND_PAYOUT_SECONDS = 60
+
+// When the payout is expected, from THORNode's own countdown: the BCH confirmations it still waits
+// for (it may need several blocks, more than the quote's estimate), any outbound delay, then the
+// swap and the payout. Timing only: the payout itself is always seen on the destination chain.
+export const depositReadyAt = (status: TxStatusResponse, nowMs = Date.now()) => {
+  const stages = status.stages
+  if (!stages?.inbound_observed?.completed) return undefined
+  const confirming = stages.inbound_confirmation_counted?.completed === false ? (stages.inbound_confirmation_counted.remaining_confirmation_seconds ?? 0) : 0
+  const delayed = stages.outbound_delay?.completed === false ? (stages.outbound_delay.remaining_delay_seconds ?? 0) : 0
+  const seconds = confirming + delayed + SWAP_AND_PAYOUT_SECONDS
+  return Number.isFinite(seconds) ? nowMs + seconds * 1000 : undefined
 }
 
 // Gap filler when the log search finds nothing (a router that changed, an RPC that limits log

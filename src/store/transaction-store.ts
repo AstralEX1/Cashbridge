@@ -130,6 +130,8 @@ export interface ReverseDeposit {
   // How far the payout search has looked, so a poll resumes there.
   scannedBlock?: number
   signedAt?: number
+  // When THORNode's countdown expects the payout (display only).
+  readyAt?: number
   expectedOut?: string
   txid?: string
   signedHex?: string

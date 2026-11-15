@@ -387,6 +387,7 @@ export interface TxStatusResponse {
   planned_out_txs?: { chain: string; to_address: string; coin: { asset: string; amount: string }; refund: boolean }[]
   stages?: {
     inbound_observed?: { completed?: boolean }
+    inbound_confirmation_counted?: { remaining_confirmation_seconds?: number; completed?: boolean }
     inbound_finalised?: { completed?: boolean }
     swap_status?: { pending?: boolean; streaming?: { interval: number; quantity: number; count: number } }
     swap_finalised?: { completed?: boolean }

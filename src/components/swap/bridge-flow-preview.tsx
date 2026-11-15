@@ -15,6 +15,8 @@ const ETH_ICON = (
   </span>
 )
 
+const PREVIEW_TX = 'https://thorchain.net/'
+
 export const BridgeFlowPreview = ({ stage = 'bridging' }: { stage?: string }) => {
   const [dismissed, setDismissed] = useState<string[]>([])
   // `reverse-<stage>` previews the reverse direction (PUSD -> BCH -> ETH, or BCH -> ETH for `plain`).
@@ -56,7 +58,7 @@ export const BridgeFlowPreview = ({ stage = 'bridging' }: { stage?: string }) =>
               : { amount: '≈ 2.04', ticker: 'PUSD', usd: '$2.03', icon: <TokenMark token={PUSD_TOKEN} size={30} /> }
             : undefined
         }
-        firstBar={received ? { fill: 1, done: true } : { fill: 0.6, eta: '≈ 2 min', live: true }}
+        firstBar={received ? { fill: 1, done: true, href: PREVIEW_TX } : { fill: 0.6, eta: '≈ 2 min', live: true, href: PREVIEW_TX }}
         secondBar={pusd ? (flow === 'swapping' ? { fill: 0.6, live: true, eta: '≈ 40 s' } : flow === 'done' ? { fill: 1, done: true } : { fill: 0, eta: '≈ 1 min' }) : undefined}
         details={
           flow === 'ready' ? (

@@ -1788,3 +1788,26 @@ button.bridge-flow-primary:disabled {
   text-decoration: underline;
   cursor: pointer;
 }
+.bridge-flow-bar-anchor {
+  display: block;
+  border-radius: 14px;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.bridge-flow-bar-anchor:focus-visible {
+  outline: 2px solid #0ac18e;
+  outline-offset: 2px;
+}
+.bridge-flow-bar-link {
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+@media (hover: hover) {
+  .bridge-flow-bar-anchor:hover .bridge-flow-bar {
+    box-shadow: inset 0 0 0 2px rgba(10, 193, 142, 0.55);
+  }
+  .bridge-flow-bar-anchor:hover .bridge-flow-bar-link {
+    opacity: 1;
+  }
+}

@@ -731,7 +731,8 @@
       "bridgeSecondStep": "Bridge (2/2)",
       "destinationWallet": "Destination wallet",
       "swap": "Swap",
-      "swapDone": "Swap {from} → BCH done"
+      "swapDone": "Swap {from} → BCH done",
+      "openStepTx": "Open this step’s transaction"
     },
     "form": {
       "heading": "Bridge to Bitcoin Cash",

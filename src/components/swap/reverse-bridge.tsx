@@ -19,7 +19,7 @@ import { TransactionHistoryDialog } from '@/components/header/transaction-histor
 import type { Asset } from '@/components/swap/asset'
 import { BchMark, CauldronMark, HoverCard, ThorchainMark, TokenMark } from '@/components/swap/bridge-marks'
 import { shortBridgeAddress } from '@/components/swap/bridge-wallet-badge'
-import { BridgeFlow, type FlowBar, type FlowStage, type FlowToast, type FlowToken } from '@/components/swap/pusd-swap'
+import { BridgeFlow, chainTxUrl, type FlowBar, type FlowStage, type FlowToast, type FlowToken, thorchainTxUrl } from '@/components/swap/pusd-swap'
 import { useBchSideBalance } from '@/components/swap/reverse-inputs'
 import { SwapError } from '@/components/swap/swap-error'
 import { Credenza, CredenzaContent, CredenzaDescription, CredenzaHeader, CredenzaTitle } from '@/components/ui/credenza'
@@ -40,10 +40,12 @@ import { BroadcastRejected, broadcastBchTransaction, type ReviewedSwap } from '@
 import { SignCancelled, SignDeclined, SignTimedOut, SignUndelivered } from '@/lib/bch-signing'
 import type { CauldronToken } from '@/lib/cauldron-tokens'
 import { readableError } from '@/lib/errors'
+import { getTxStatus } from '@/lib/api'
 import {
   bchAsset,
   blockHeight,
   confirmReportedPayout,
+  depositReadyAt,
   destinationChainOf,
   findPayout,
   prepareBchDeposit,
@@ -210,9 +212,12 @@ export const syncReverse = async (tx: BridgeTx, update: Update) => {
     }
     case 'second_leg_pending': {
       if (!deposit?.txid) return
-      const [found, refund] = await Promise.all([
+      const [found, refund, readyAt] = await Promise.all([
         findPayout(op).catch(() => undefined),
-        findThorchainOutbound(deposit.txid, op.binding.lockingBytecode, 'REFUND').catch(() => undefined)
+        findThorchainOutbound(deposit.txid, op.binding.lockingBytecode, 'REFUND').catch(() => undefined),
+        getTxStatus(deposit.txid)
+          .then(status => depositReadyAt(status))
+          .catch(() => undefined)
       ])
       // THORChain's own report fills the gap after a while, still checked on the destination chain.
       const reported =
@@ -230,8 +235,11 @@ export const syncReverse = async (tx: BridgeTx, update: Update) => {
           reverse: { ...current.reverse!, refund: { txid: refund.outputs[0].txid, amountSats: refund.total } }
         }))
       }
-      if (found && found.scannedBlock !== deposit.scannedBlock) {
-        update(tx.uid, current => ({ reverse: { ...current.reverse!, deposit: { ...current.reverse!.deposit!, scannedBlock: found.scannedBlock } } }))
+      const scannedBlock = found?.scannedBlock ?? deposit.scannedBlock
+      if (scannedBlock !== deposit.scannedBlock || (readyAt !== undefined && readyAt !== deposit.readyAt)) {
+        update(tx.uid, current => ({
+          reverse: { ...current.reverse!, deposit: { ...current.reverse!.deposit!, scannedBlock, readyAt: readyAt ?? current.reverse!.deposit!.readyAt } }
+        }))
       }
       return
     }
@@ -930,20 +938,31 @@ export const ReverseOperationPanel = ({ uid, onClose }: { uid?: string; onClose:
   }
   const start = new Date(active.timestamp).getTime()
   const depositStart = reverse.deposit?.signedAt ?? op.updatedAt
+  // THORNode's own countdown (it can wait for several BCH blocks) replaces the quote's estimate.
+  const bridgeSeconds = reverse.deposit?.readyAt ? Math.max(1, Math.round((reverse.deposit.readyAt - depositStart) / 1000)) : active.estimatedTime
+  // Each bar opens its step's transaction: the sale on the BCH explorer; the deposit on THORChain's
+  // explorer (which follows the swap to the payout), then the payout on the destination chain's.
+  const saleHref = reverse.sale?.txid ? chainTxUrl(Chain.BitcoinCash, reverse.sale.txid) : undefined
+  const bridgeHref = reverse.payout
+    ? chainTxUrl(target.chain, reverse.payout.hash)
+    : reverse.deposit?.txid
+      ? thorchainTxUrl(reverse.deposit.txid)
+      : undefined
   const bridgeBar = (): FlowBar =>
     completed
-      ? { fill: 1, done: true }
+      ? { fill: 1, done: true, href: bridgeHref }
       : depositing
         ? {
-            fill: active.estimatedTime ? Math.min(0.95, Math.max(0.05, (now - depositStart) / (active.estimatedTime * 1000))) : 0.5,
-            eta: eta(stepTime(now, depositStart, active.estimatedTime)),
-            live: op.stage !== 'second_leg_unknown'
+            fill: bridgeSeconds ? Math.min(0.95, Math.max(0.05, (now - depositStart) / (bridgeSeconds * 1000))) : 0.5,
+            eta: eta(stepTime(now, depositStart, bridgeSeconds)),
+            live: op.stage !== 'second_leg_unknown',
+            href: bridgeHref
           }
-        : { fill: 0, eta: active.estimatedTime ? t('progress.minutes', { minutes: formatMinutes(active.estimatedTime) }) : undefined }
+        : { fill: 0, eta: active.estimatedTime ? t('progress.minutes', { minutes: formatMinutes(active.estimatedTime) }) : undefined, href: bridgeHref }
   const firstBar: FlowBar = token
     ? saleDone
-      ? { fill: 1, done: true }
-      : { fill: 0.6, live: !terminal && op.stage !== 'first_leg_unknown', eta: eta(stepTime(now, start, PUSD_LEG_SECONDS)) }
+      ? { fill: 1, done: true, href: saleHref }
+      : { fill: 0.6, live: !terminal && op.stage !== 'first_leg_unknown', eta: eta(stepTime(now, start, PUSD_LEG_SECONDS)), href: saleHref }
     : bridgeBar()
   const secondBar = token ? bridgeBar() : undefined
 

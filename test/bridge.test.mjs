@@ -750,3 +750,14 @@ test('a wallet request ends as declined, timed out, cancelled or undelivered, an
   await assert.rejects(signInWallet(offline, binding, tx, 'x'), SignUndelivered)
   assert.equal(offline.calls.length, 2)
 })
+
+test('the payout time comes from THORNode’s confirmation countdown, not the quote', async () => {
+  const { depositReadyAt } = await import('../src/lib/reverse-bridge.ts')
+  const now = 1_000_000
+  // As THORNode answered for a real deposit waiting for 4 BCH confirmations.
+  const waiting = { stages: { inbound_observed: { completed: true }, inbound_confirmation_counted: { remaining_confirmation_seconds: 1614, completed: false }, swap_status: { pending: false } } }
+  assert.equal(depositReadyAt(waiting, now), now + (1614 + 60) * 1000)
+  assert.equal(depositReadyAt({ stages: { inbound_observed: { completed: false } } }, now), undefined)
+  const delayed = { stages: { inbound_observed: { completed: true }, inbound_confirmation_counted: { completed: true }, outbound_delay: { remaining_delay_seconds: 30, completed: false } } }
+  assert.equal(depositReadyAt(delayed, now), now + 90 * 1000)
+})

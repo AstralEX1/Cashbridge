@@ -337,6 +337,8 @@ export interface FlowToken {
 }
 
 export interface FlowBar {
+  // The step's transaction, opened by clicking the bar.
+  href?: string
   // 0..1 of the bar filled; `live` adds the moving shimmer, `done` the check.
   fill: number
   // Time left, or time elapsed once past the estimate.
@@ -382,9 +384,10 @@ export interface BridgeFlowProps {
   animateCollapse?: boolean
 }
 
+// A bar with `href` opens its step's transaction (in an explorer) in a new tab.
 const ProgressBar = ({ label, bar }: { label: string; bar: FlowBar }) => {
   const t = useTranslations('bridge.progress')
-  return (
+  const meter = (
     <div
       className="bridge-flow-bar"
       role="progressbar"
@@ -404,10 +407,23 @@ const ProgressBar = ({ label, bar }: { label: string; bar: FlowBar }) => {
             {bar.eta}
           </span>
         ) : null}
+        {bar.href && <ExternalLink size={14} className="bridge-flow-bar-link" aria-hidden="true" />}
       </span>
     </div>
   )
+  return bar.href ? (
+    <a className="bridge-flow-bar-anchor" href={bar.href} target="_blank" rel="noopener noreferrer" title={t('openStepTx')}>
+      {meter}
+    </a>
+  ) : (
+    meter
+  )
 }
+
+// Where a step's transaction is shown: a THORChain swap (inbound hash) on THORChain's explorer, which
+// follows it through to the payout; anything else on its own chain's explorer.
+export const thorchainTxUrl = (hash: string) => `https://thorchain.net/tx/${normalizeTxid(hash).toUpperCase()}`
+export const chainTxUrl = (chain: Chain, hash: string) => getExplorerTxUrl({ chain, txHash: hash })
 
 const FlowAmount = ({ token }: { token: FlowToken }) => (
   <div className="bridge-flow-token">
@@ -747,19 +763,24 @@ const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => 
         ? t('progress.seconds', { seconds: label.value })
         : t('progress.elapsedTime', { time: label.value })
   }
+  // Each bar opens its step's transaction: the THORChain swap (followed through to the BCH
+  // outbound on THORChain's explorer), then the token swap on the BCH explorer.
+  const bridgeHref = active.hash ? thorchainTxUrl(active.hash) : undefined
+  const swapHref = op.secondLeg?.txid ? chainTxUrl(Chain.BitcoinCash, op.secondLeg.txid) : undefined
   const firstBar: FlowBar = firstDone
-    ? { fill: 1, done: true }
+    ? { fill: 1, done: true, href: bridgeHref }
     : {
         fill: estimate ? Math.min(0.95, Math.max(0.05, (now - start) / (estimate * 1000))) : 0.5,
         eta: eta(stepTime(now, start, estimate)),
-        live: !terminal && op.stage !== 'first_leg_unknown'
+        live: !terminal && op.stage !== 'first_leg_unknown',
+        href: bridgeHref
       }
   const secondBar: FlowBar | undefined = !hasToken
     ? undefined
     : op.stage === 'completed'
-      ? { fill: 1, done: true }
+      ? { fill: 1, done: true, href: swapHref }
       : secondStarted
-        ? { fill: 0.6, live: true, eta: eta(stepTime(now, op.updatedAt, PUSD_LEG_SECONDS)) }
+        ? { fill: 0.6, live: true, eta: eta(stepTime(now, op.updatedAt, PUSD_LEG_SECONDS)), href: swapHref }
         : { fill: 0, eta: t('progress.minutes', { minutes: formatMinutes(PUSD_LEG_SECONDS) }) }
 
   const rateOf = (id: string) => (rates[id] ? Number(rates[id].toSignificant(12)) : undefined)
