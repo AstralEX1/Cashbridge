@@ -17,7 +17,7 @@ import { readableError } from '@/lib/errors'
 import { isHoudiniProvider, resolvePriceImpact } from '@/lib/swap-helpers'
 import { getUSwap } from '@/lib/wallets'
 import { isBridgeRoute } from '@/lib/api'
-import { addressPaysScript } from '@/lib/bch'
+import { addressPaysScript, type BchBinding } from '@/lib/bch'
 import { toBaseUnits } from '@/lib/bridge'
 import { firstLegSeconds } from '@/lib/bridge-summary'
 import { useBchWallet } from '@/components/bch-wallet'
@@ -29,11 +29,15 @@ import { chainLabel } from '@/components/connect-wallet/config'
 
 interface SwapDialogProps {
   provider: ProviderName
+  // Prepared by the main button: the executable route and the BCH destination it pays.
+  quote?: QuoteResponseRoute
+  binding?: BchBinding
+  walletName?: string
   isOpen: boolean
   onOpenChange: (isOpen: boolean) => void
 }
 
-export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) => {
+export const SwapDialog = ({ provider, quote: prepared, binding: destination, walletName, isOpen, onOpenChange }: SwapDialogProps) => {
   const t = useTranslations('swap')
   const tConfirm = useTranslations('bridge.confirm')
   const tBridge = useTranslations('bridge')
@@ -44,7 +48,9 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
   const { valueFrom, setAmountFrom } = useSwap()
   const { refetch: refetchBalance } = useBalance()
   const [submitting, setSubmitting] = useState(false)
-  const { binding, walletName: bchWalletName } = useBchWallet()
+  const wallet = useBchWallet()
+  const binding = destination ?? wallet.binding
+  const bchWalletName = destination ? walletName : wallet.walletName
   const setReplacementOrder = useSetReplacementOrder()
   const isLimitSwap = useIsLimitSwap()
   const limitSwapBuyAmount = useLimitSwapBuyAmount()
@@ -57,7 +63,7 @@ export const SwapDialog = ({ provider, isOpen, onOpenChange }: SwapDialogProps) 
     }
   }, [setReplacementOrder])
 
-  const [quote, setQuote] = useState<QuoteResponseRoute | undefined>(undefined)
+  const [quote, setQuote] = useState<QuoteResponseRoute | undefined>(prepared)
   const [highPriceImpactAccepted, setHighPriceImpactAccepted] = useState(false)
   const [ltcWarningAccepted, setLtcWarningAccepted] = useState(false)
 

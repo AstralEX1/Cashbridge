@@ -2035,11 +2035,3 @@ button.bridge-flow-primary:disabled {
 .bridge-auto-history > span:first-child { flex-direction: column; gap: 4px; }
 .bridge-auto-history small { color: #a6b9c0; }
 .bridge-auto-history svg { flex: none; }
-.bridge-auto-dialog .bridge-flow-main { width: 100%; margin: 0; }
-.bridge-auto-dialog .bridge-complete-brand { display: none; }
-.bridge-auto-dialog .bridge-flow-card { box-shadow: none; }
-.bridge-auto-dialog .bridge-complete-close { display: none; }
-.bridge-auto-stages { display: grid; gap: 8px; }
-.bridge-auto-stages > div { padding: 10px 14px; border-radius: 12px; background: #dce6e8; font-size: 13px; }
-.bridge-auto-stages [data-state='complete'] { background: #c7f4e5; }
-.bridge-auto-stages [data-state='active'] { background: #0ac18e; font-weight: 600; }

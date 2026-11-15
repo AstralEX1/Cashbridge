@@ -337,8 +337,8 @@ export const BridgeTracker = () => {
 
 // --- Operation panel ---------------------------------------------------------------------------
 
-const timeOf = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-const usdText = (value?: number) => (value === undefined || !Number.isFinite(value) ? undefined : formatUsd(value))
+export const timeOf = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+export const usdText = (value?: number) => (value === undefined || !Number.isFinite(value) ? undefined : formatUsd(value))
 
 export interface FlowToken {
   amount: string
@@ -473,7 +473,7 @@ const Spinner = () => (
   </svg>
 )
 
-const WaitingButton = ({ children }: { children: ReactNode }) => (
+export const WaitingButton = ({ children }: { children: ReactNode }) => (
   <button type="button" className="bridge-flow-primary" disabled>
     <Spinner />
     {children}
@@ -484,7 +484,7 @@ const COLLAPSE_SEEN_KEY = 'bridge-flow-collapse-seen'
 
 // Whether this operation's bridge-collapse animation still has to play. Remounts (a reload, a hot
 // update, reopening the screen) show the collapsed state at once instead of replaying it.
-const useCollapseOnce = (uid: string | undefined, collapsed: boolean) => {
+export const useCollapseOnce = (uid: string | undefined, collapsed: boolean) => {
   const [seen] = useState(() => {
     try {
       return uid ? (JSON.parse(sessionStorage.getItem(COLLAPSE_SEEN_KEY) ?? '[]') as string[]).includes(uid) : false

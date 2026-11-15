@@ -10,6 +10,7 @@ export interface SavedAutoOrder {
   sourceAttempted?: boolean
   sourceHash?: string
   order?: PublicOrder
+  estimatedSeconds?: number
 }
 interface AutoBridgeStore {
   orders: SavedAutoOrder[]

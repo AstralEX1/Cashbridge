@@ -16,17 +16,19 @@ import { useBalance } from '@/hooks/use-balance'
 import { useIsLimitSwapPaused, useIsMemolessHalted, useMimir } from '@/hooks/use-mimir'
 import { useQuote } from '@/hooks/use-quote'
 import { useSimulation } from '@/hooks/use-simulation'
-import { useAssetFrom, useAssetTo, useSwap } from '@/hooks/use-swap'
+import { useAssetFrom, useAssetTo, useSlippage, useSwap } from '@/hooks/use-swap'
 import { useConnectedAccount, useExternalWalletMode, useSetExternalWalletMode } from '@/hooks/use-wallets'
-import { readableError } from '@/lib/errors'
+import { readableError, resolveQuoteError } from '@/lib/errors'
 import { isDepositOnlyPrivateSell, isMayaProvider, isPrivateSend, isTaprootAddress, waitForAllowance } from '@/lib/swap-helpers'
 import { getUSwap } from '@/lib/wallets'
 import { useIsLimitSwap, useLimitSwapBuyAmount } from '@/store/limit-swap-store'
 import { useIsPrivateSwap, usePrivateSwapAcknowledged } from '@/store/private-swap-store'
 import { useSwapStore } from '@/store/swap-store'
-import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
-import { AutoBridgeDialog } from '@/components/swap/auto-bridge-confirm'
+import { useAutomaticBridge, useBchDestination } from '@/hooks/use-automatic-bridge'
+import { AutoBridgeDialog, prepareAutomatic } from '@/components/swap/auto-bridge-confirm'
 import { addressToLockingBytecode } from '@/lib/bch'
+import { getQuotes } from '@/lib/api'
+import { USwapError } from '@tcswap/helpers'
 
 interface SwapButtonProps {
   onShowBridge: () => void
@@ -45,7 +47,9 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
   const t = useTranslations('swap')
   const tWallet = useTranslations('wallet')
   const tAuto = useTranslations('automatic')
-  const { automatic, recipient } = useAutomaticBridge()
+  const { automatic, recipient, pasted } = useAutomaticBridge()
+  const destination = useBchDestination()
+  const slippage = useSlippage()
   const assetFrom = useAssetFrom()
   const assetTo = useAssetTo()
   const uSwap = getUSwap()
@@ -72,6 +76,7 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
       : t('button.send')
 
   const [isApproving, setIsApproving] = useState(false)
+  const [preparing, setPreparing] = useState(false)
   const activeBridge = useActiveBridge()
   const tokenEstimate = useTokenEstimate()
   const bchWallet = useBchWallet()
@@ -79,9 +84,45 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
 
   const { openDialog } = useDialog()
 
-  const onSwap = (quote: QuoteResponseRoute) => {
-    if (automatic) openDialog(AutoBridgeDialog, { provider: quote.providers[0] })
-    else openDialog(SwapDialog, { provider: quote.providers[0] })
+  // Send prepares the executable route in place ("Preparing swap"), then opens straight on Confirm.
+  const onSwap = async (quote: QuoteResponseRoute) => {
+    if (!assetFrom || !selectedAccount || preparing) return
+    const provider = quote.providers[0]
+    setPreparing(true)
+    try {
+      if (automatic) {
+        const prepared = await prepareAutomatic({
+          source: { chain: assetFrom.chain, asset: assetFrom.identifier, amount: valueFrom.toSignificant(), address: selectedAccount.address },
+          recipient,
+          expectedBuyAmount: quote.expectedBuyAmount,
+          provider,
+          slippage,
+          messages: { invalidAddress: tAuto('invalidRecipient'), serviceUpdate: tAuto('serviceUpdate'), noRoute: tAuto('noRoute') }
+        })
+        openDialog(AutoBridgeDialog, { prepared })
+        return
+      }
+      const binding = destination.binding
+      if (!binding) return
+      const quotes = await getQuotes({
+        buyAsset: assetTo!.identifier,
+        sellAsset: assetFrom.identifier,
+        sellAmount: valueFrom.toSignificant(),
+        sourceAddress: selectedAccount.address,
+        destinationAddress: binding.cashAddress,
+        refundAddress: selectedAccount.address,
+        dry: false,
+        slippage: slippage ?? 99,
+        providers: [provider]
+      })
+      if (!quotes[0]) throw new Error(t('button.noValidQuotes'))
+      openDialog(SwapDialog, { provider, quote: quotes[0], binding, walletName: destination.pasted ? undefined : (bchWallet.walletName ?? undefined) })
+    } catch (error) {
+      console.warn('Preparing the swap failed', error)
+      toast.error(readableError(error instanceof USwapError ? resolveQuoteError(error) : error, t('toast.errorSubmitting')))
+    } finally {
+      setPreparing(false)
+    }
   }
 
   const onInstantSwap = (quote: QuoteResponseRoute) => {
@@ -140,7 +181,11 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
   }
 
   const getState = (): ButtonState => {
-    if (!automatic && !bchWallet.binding) {
+    if (preparing) return { text: t('recipient.preparingSwap'), spinner: true, accent: true }
+    // The BCH side first, then the source wallet. A pasted address stands in for the BCH wallet.
+    const typedInvalid = automatic ? !!pasted && !addressToLockingBytecode(recipient) : destination.invalid
+    if (typedInvalid) return { text: tAuto('invalidRecipient'), spinner: false, accent: false }
+    if (automatic ? !addressToLockingBytecode(recipient) : !destination.binding) {
       const connecting = bchWallet.state === 'connecting' || bchWallet.state === 'reconnecting'
       return {
         text: bchWallet.mismatch ? t('button.connectBoundBch') : t('button.connectBch'),
@@ -149,7 +194,6 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
         onClick: bchWallet.reconnectStalled || bchWallet.mismatch || bchWallet.state === 'connected' ? bchWallet.pairAgain : connecting ? undefined : bchWallet.connect
       }
     }
-    if (automatic && !addressToLockingBytecode(recipient)) return { text: tAuto('enterRecipient'), spinner: false, accent: false }
     if (assetFrom && !selectedAccount && !instantSwapSupported) {
       return { text: t('button.connectWallet', { chain: chainLabel(assetFrom.chain) }), spinner: false, accent: true, onClick: connectSource }
     }
