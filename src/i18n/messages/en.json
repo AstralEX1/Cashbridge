@@ -800,6 +800,8 @@
       "walletConnectCopy": "Copy link",
       "walletConnectCopied": "Copied",
       "walletConnectOpen": "Open wallet",
+      "browserExtension": "Browser extension",
+      "openPaytacaExtension": "Open Paytaca extension",
       "connectNew": "Connect a new wallet",
       "pasteAddress": "Paste wallet address",
       "pastedAddress": "Pasted address",
@@ -957,7 +959,8 @@
       "signCancelled": "Cancelled. Nothing was sent.",
       "signDeclined": "You declined it in {wallet}. Nothing was sent; you can try again.",
       "signTimedOut": "{wallet} did not answer in time, so the request was withdrawn. Nothing was sent; try again.",
-      "signUndelivered": "The request did not reach {wallet}. Open the wallet app, then try again."
+      "signUndelivered": "The request did not reach {wallet}. Open the wallet app, then try again.",
+      "signSessionLost": "The connection to {wallet} has ended, so nothing was sent. Connect the wallet again, then try again."
     }
   },
   "automatic": {

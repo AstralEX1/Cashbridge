@@ -19,6 +19,9 @@ export class SignDeclined extends Error {}
 export class SignTimedOut extends Error {}
 // The request never reached the wallet (no relay took it, even on a second try).
 export class SignUndelivered extends Error {}
+// The connection had already ended when signing began, so nothing was asked: the wallet has to be
+// connected again. A kind of undelivered request, so every caller that handles one handles this too.
+export class SignSessionLost extends SignUndelivered {}
 
 const DECLINED = /reject|declin|denied|cancel|refus/i
 // WizardConnect's own wording when no relay took the request.
@@ -53,6 +56,10 @@ export interface BchSigner {
     },
     options?: { signal?: AbortSignal }
   ): Promise<{ signedTransaction?: string; error?: string }>
+  // Checked right before a request: false when the connection is known to be gone (the wallet
+  // ended the session, it expired), so the user is told to reconnect instead of waiting on a
+  // request no wallet will see. Without it the request is simply sent.
+  isLive?(): boolean | Promise<boolean>
 }
 
 export const signInWallet = async (
@@ -63,6 +70,11 @@ export const signInWallet = async (
   { signal, timeoutMs = SIGN_TIMEOUT_MS }: { signal?: AbortSignal; timeoutMs?: number } = {}
 ) => {
   if (signal?.aborted) throw new SignCancelled('Cancelled')
+  // A check that fails to answer proves nothing, so the request is sent as before.
+  const live = await Promise.resolve()
+    .then(() => signer.isLive?.() ?? true)
+    .catch(() => true)
+  if (!live) throw new SignSessionLost('The wallet is no longer connected')
   const timeout = AbortSignal.timeout(timeoutMs)
   const inputPaths = tx.ownIndexes.map(i => [i, binding.path, binding.addressIndex] as [number, string, number])
   const request = { transaction: { transaction: tx.unsignedHex, sourceOutputs: tx.sourceOutputs, broadcast: false, userPrompt: prompt }, inputPaths }

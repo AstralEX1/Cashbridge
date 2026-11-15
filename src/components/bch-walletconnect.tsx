@@ -6,7 +6,17 @@ import type { SessionTypes } from '@walletconnect/types'
 import { AppConfig, BridgeConfig } from '@/config'
 import { type BchBinding, isValidBinding } from '@/lib/bch'
 import type { BchSigner } from '@/lib/bch-signing'
-import { firstP2pkhAddress, proveWalletConnectKey, sessionAddress, WC_BCH_CHAIN, WC_BCH_EVENTS, WC_BCH_METHODS, walletConnectSigner } from '@/lib/bch-walletconnect'
+import {
+  firstP2pkhAddress,
+  PAYTACA_EXTENSION_ID,
+  paytacaExtensionUrl,
+  proveWalletConnectKey,
+  sessionAddress,
+  WC_BCH_CHAIN,
+  WC_BCH_EVENTS,
+  WC_BCH_METHODS,
+  walletConnectSigner
+} from '@/lib/bch-walletconnect'
 
 // BCH wallets over WalletConnect v2 (Paytaca, Cashonize, Zapit). The SignClient keeps its own
 // session store; this app keeps a marker with the session topic and the binding proven for it, so a
@@ -18,9 +28,35 @@ export const WALLETCONNECT_SESSION_KEY = 'tc-bch-walletconnect'
 // 'verifying': the session is approved and the wallet is asked to sign the key-proof message.
 export type WalletConnectState = 'idle' | 'connecting' | 'verifying' | 'connected'
 
+// How the wallet is reached: any WalletConnect wallet (QR or link), or the Paytaca browser extension,
+// whose own WalletConnect page this app opens with the pairing link and again for every request.
+export type WalletConnectVia = 'walletconnect' | 'paytaca-extension'
+
 interface SavedSession {
   topic: string
   binding: BchBinding
+  via?: WalletConnectVia
+}
+
+const PAYTACA_WINDOW = 'paytaca-extension'
+
+// The extension's icons are web-accessible, so one loads only where it is installed (Chromium).
+export const detectPaytacaExtension = () =>
+  new Promise<boolean>(resolve => {
+    const probe = new Image()
+    probe.onload = () => resolve(true)
+    probe.onerror = () => resolve(false)
+    probe.src = `chrome-extension://${PAYTACA_EXTENSION_ID}/icons/icon-16x16.png`
+  })
+
+// Opens (or reuses) a small window on the extension's WalletConnect page. A popup blocker can refuse
+// it outside a click; the dialog then offers a button that opens it.
+export const openPaytacaExtension = (uri?: string) => {
+  try {
+    return !!window.open(paytacaExtensionUrl(uri), PAYTACA_WINDOW, 'popup,width=400,height=720')
+  } catch {
+    return false
+  }
 }
 
 const readMarker = (): SavedSession | undefined => {
@@ -54,10 +90,16 @@ export function useBchWalletConnect() {
   const [state, setState] = useState<WalletConnectState>('idle')
   const [uri, setUri] = useState<string>()
   const [error, setError] = useState<string | null>(null)
+  const [via, setVia] = useState<WalletConnectVia>('walletconnect')
   // Bumped by every connect or disconnect: a pairing or proof that finishes after it is stale.
   const attempt = useRef(0)
   // An approved session still waiting for its key proof, so closing the dialog can end it too.
   const pending = useRef<string | undefined>(undefined)
+  const viaRef = useRef<WalletConnectVia>('walletconnect')
+  const chooseVia = useCallback((next: WalletConnectVia) => {
+    viaRef.current = next
+    setVia(next)
+  }, [])
 
   const reset = useCallback(() => {
     attempt.current++
@@ -94,7 +136,7 @@ export function useBchWalletConnect() {
       try {
         const proven = await proveWalletConnectKey(instance, live.topic, address, AppConfig.appName)
         if (run !== attempt.current) return
-        writeMarker({ topic: live.topic, binding: proven })
+        writeMarker({ topic: live.topic, binding: proven, via: viaRef.current })
         setBinding(proven)
         setSession(live)
         setState('connected')
@@ -141,6 +183,7 @@ export function useBchWalletConnect() {
     const saved = readMarker()
     if (!saved || !walletConnectEnabled()) return
     const run = ++attempt.current
+    chooseVia(saved.via ?? 'walletconnect')
     setBinding(saved.binding)
     setState('connected')
     getClient()
@@ -155,10 +198,11 @@ export function useBchWalletConnect() {
       .catch(() => {
         if (run === attempt.current) reset()
       })
-  }, [bind, getClient, reset])
+  }, [bind, getClient, reset, chooseVia])
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (how: WalletConnectVia = 'walletconnect') => {
     const run = ++attempt.current
+    chooseVia(how)
     setError(null)
     setState('connecting')
     try {
@@ -168,6 +212,7 @@ export function useBchWalletConnect() {
       })
       if (run !== attempt.current) return
       setUri(pairing)
+      if (how === 'paytaca-extension' && pairing) openPaytacaExtension(pairing)
       const live = await approval()
       if (run !== attempt.current) {
         void instance.disconnect({ topic: live.topic, reason: USER_DISCONNECTED }).catch(() => {})
@@ -187,7 +232,7 @@ export function useBchWalletConnect() {
       // A pairing link is valid for five minutes; WalletConnect's own wording is just "Proposal expired".
       setError(message && /expired/i.test(message) ? 'The WalletConnect link expired. Connect again for a new QR code.' : message || 'Could not connect the wallet')
     }
-  }, [bind, getClient, reset])
+  }, [bind, getClient, reset, chooseVia])
 
   // Also closes a pairing in progress (the QR dialog's close button).
   const disconnect = useCallback(async () => {
@@ -204,13 +249,24 @@ export function useBchWalletConnect() {
   useEffect(() => {
     if (!session || state !== 'connected') return setSigner(null)
     let current = true
+    const topic = session.topic
     void getClient().then(instance => {
-      if (current) setSigner(walletConnectSigner(instance, session.topic))
+      if (!current) return
+      // The pre-sign check: the wallet may have ended or let the session expire while no event
+      // reached this page (it was asleep, the relay was down). Then the connection is dropped, so the
+      // badge offers a new one, instead of sending a request nobody receives.
+      const isLive = () => {
+        const alive = instance.session.getAll().some(s => s.topic === topic && s.expiry * 1000 > Date.now())
+        if (!alive) reset()
+        return alive
+      }
+      const beforeRequest = via === 'paytaca-extension' ? () => void openPaytacaExtension() : undefined
+      setSigner(walletConnectSigner(instance, topic, { isLive, beforeRequest }))
     })
     return () => {
       current = false
     }
-  }, [session, state, getClient])
+  }, [session, state, via, getClient, reset])
 
   const clearError = useCallback(() => setError(null), [])
 
@@ -222,6 +278,10 @@ export function useBchWalletConnect() {
     binding: state === 'connected' ? binding : undefined,
     signer,
     walletName: session?.peer.metadata.name ?? null,
+    via,
+    // Starts the client ahead of a pairing, so the pairing link (and the extension window, which a
+    // browser opens only shortly after a click) follows the click quickly.
+    prepare: getClient,
     connect,
     disconnect
   }

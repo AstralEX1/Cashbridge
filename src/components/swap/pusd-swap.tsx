@@ -76,7 +76,7 @@ const POLL_MS = 8_000
 
 import { withLock } from '@/lib/bridge-first-leg'
 import { ReverseOperationPanel, SignHint, type SignPhase, syncReverse } from '@/components/swap/reverse-bridge'
-import { SignCancelled, SignDeclined, signInWallet, SignTimedOut, SignUndelivered } from '@/lib/bch-signing'
+import { SignCancelled, SignDeclined, signInWallet, SignSessionLost, SignTimedOut, SignUndelivered } from '@/lib/bch-signing'
 
 // The persisted operation as every tab sees it right now (another tab may have moved it on).
 const freshOperation = async (uid: string) => {
@@ -1210,6 +1210,7 @@ const useSecondLeg = (tx: BridgeTx) => {
       if (e instanceof SignCancelled) setNote(t('reverse.signCancelled'))
       else if (e instanceof SignDeclined) setNote(t('reverse.signDeclined', { wallet: walletName }))
       else if (e instanceof SignTimedOut) setNote(t('reverse.signTimedOut', { wallet: walletName }))
+      else if (e instanceof SignSessionLost) setNote(t('reverse.signSessionLost', { wallet: walletName }))
       else if (e instanceof SignUndelivered) setNote(t('reverse.signUndelivered', { wallet: walletName }))
       else setError(e instanceof Error ? e.message : t('second.failed'))
       setReview(undefined)

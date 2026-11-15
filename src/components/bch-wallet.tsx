@@ -1,9 +1,9 @@
 'use client'
 
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useWizardConnect, WizardConnectQRDialog } from '@wizardconnect/react'
 import { AppConfig } from '@/config'
-import { BchWalletChooser, WalletConnectDialog, type BchConnection } from '@/components/bch-wallet-dialogs'
+import { type BchChoice, BchWalletChooser, type BchConnection, WalletConnectDialog } from '@/components/bch-wallet-dialogs'
 import { useBchWalletConnect, walletConnectEnabled } from '@/components/bch-walletconnect'
 import { type BchBinding, BINDING_PATHS, type BindingPath, bindingFromPubkey, isValidBinding, isWatchOnly } from '@/lib/bch'
 import type { BchSigner } from '@/lib/bch-signing'
@@ -258,6 +258,9 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
   }, [wc2Active, wc2.disconnect, disconnectWizard])
 
   const [choosing, setChoosing] = useState(false)
+  useEffect(() => {
+    if (choosing && walletConnectEnabled()) void wc2.prepare().catch(() => {})
+  }, [choosing, wc2.prepare])
   const connect = useCallback(() => {
     if (walletConnectEnabled()) setChoosing(true)
     else connectWizard()
@@ -267,13 +270,13 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
   // connect() while its relay is open, so that pairing waits for the disconnect to land ('idle').
   const [pairPending, setPairPending] = useState(false)
   const choose = useCallback(
-    (kind: BchConnection) => {
+    (kind: BchChoice) => {
       setChoosing(false)
       // A WalletConnect error from an earlier attempt must not stay on screen over another connection.
       wc2.clearError()
-      if (kind === 'walletconnect') {
+      if (kind !== 'wizardconnect') {
         if (wc.state !== 'idle') void disconnectWizard()
-        void wc2.connect()
+        void wc2.connect(kind === 'paytaca-extension' ? 'paytaca-extension' : 'walletconnect')
         return
       }
       if (wc2Active) void wc2.disconnect()
@@ -318,12 +321,28 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
     wc.connect()
   }, [pairPending, wc])
 
+  // WizardConnect's manager signs as is; the pre-sign check only adds that the wallet has not ended
+  // the session. 'reconnecting' still counts as live: a phone wallet in the background answers once
+  // its app is opened, which the undelivered and timeout notes already tell the user.
+  const wizardStateRef = useRef(wc.state)
+  useEffect(() => {
+    wizardStateRef.current = wc.state
+  }, [wc.state])
+  const wizardSigner = useMemo<BchSigner | null>(() => {
+    const manager = wc.manager
+    if (!manager) return null
+    return {
+      signTransaction: (request, options) => manager.signTransaction(request, options),
+      isLive: () => wizardStateRef.current !== 'disconnected' && wizardStateRef.current !== 'idle'
+    }
+  }, [wc.manager])
+
   const value = useMemo<BchWalletContextValue>(
     () => ({
       state,
       walletName: liveWalletName ?? saved?.walletName ?? null,
       connection: wc2Active ? 'walletconnect' : 'wizardconnect',
-      signer: wc2Active ? wc2.signer : wc.manager,
+      signer: wc2Active ? wc2.signer : wizardSigner,
       binding,
       expected,
       remembered: saved?.binding,
@@ -342,7 +361,7 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
       wc2Active,
       wc2.signer,
       wc2.error,
-      wc.manager,
+      wizardSigner,
       wc.error,
       disconnect,
       saved,
@@ -372,7 +391,7 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
         />
       )}
       <BchWalletChooser open={choosing} onOpenChange={setChoosing} onChoose={choose} />
-      <WalletConnectDialog state={wc2.state} uri={wc2.uri} onClose={() => void wc2.disconnect()} />
+      <WalletConnectDialog state={wc2.state} uri={wc2.uri} extension={wc2.via === 'paytaca-extension'} onClose={() => void wc2.disconnect()} />
     </BchWalletContext.Provider>
   )
 }

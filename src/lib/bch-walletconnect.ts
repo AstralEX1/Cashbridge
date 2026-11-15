@@ -119,9 +119,16 @@ const untilAborted = (signal: AbortSignal | undefined) =>
 
 // A BchSigner over a WalletConnect session. WalletConnect has no way to withdraw a request from the
 // wallet, so an abort only stops waiting; the wallet's late answer is then ignored, and since it never
-// broadcasts, nothing is sent.
-export const walletConnectSigner = (client: WalletConnectRequester, topic: string): BchSigner => ({
+// broadcasts, nothing is sent. `isLive` is the pre-sign session check; `beforeRequest` runs just
+// before each request (bringing up the Paytaca extension's window).
+export const walletConnectSigner = (
+  client: WalletConnectRequester,
+  topic: string,
+  { isLive, beforeRequest }: { isLive?: () => boolean; beforeRequest?: () => void } = {}
+): BchSigner => ({
+  isLive,
   async signTransaction(request, options) {
+    beforeRequest?.()
     const params = walletConnectSignParams(
       { unsignedHex: request.transaction.transaction, sourceOutputs: request.transaction.sourceOutputs, ownIndexes: [] },
       request.transaction.userPrompt
@@ -159,3 +166,11 @@ export const proveWalletConnectKey = async (client: WalletConnectRequester, topi
   if (typeof signature !== 'string') throw new Error('The wallet did not sign the connection message')
   return bindingFromWalletConnect(address, recoverMessageKey(message, signature, address))
 }
+
+// Paytaca's browser extension (0.27) injects no provider into pages: it connects only over
+// WalletConnect, from its own WalletConnect page. That page is web-accessible and pairs the `uri` it
+// is opened with, so the extension can be opened straight from the dapp instead of copying a link.
+// It also answers requests only while it is open, so it is brought up again for each request.
+export const PAYTACA_EXTENSION_ID = 'pakphhpnneopheifihmjcjnbdbhaaiaa'
+export const paytacaExtensionUrl = (uri?: string) =>
+  `chrome-extension://${PAYTACA_EXTENSION_ID}/www/index.html#/apps/wallet-connect${uri ? `?uri=${encodeURIComponent(uri)}` : ''}`

@@ -5,13 +5,16 @@ import { Copy, LoaderCircle } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import qrcode from 'qrcode-generator'
 import { Credenza, CredenzaContent, CredenzaDescription, CredenzaHeader, CredenzaTitle } from '@/components/ui/credenza'
-import type { WalletConnectState } from '@/components/bch-walletconnect'
+import { detectPaytacaExtension, openPaytacaExtension, type WalletConnectState } from '@/components/bch-walletconnect'
 
 export type BchConnection = 'wizardconnect' | 'walletconnect'
+// What the chooser offers: the two connections, plus the Paytaca extension, which is WalletConnect
+// opened in the extension directly.
+export type BchChoice = BchConnection | 'paytaca-extension'
 
 // The two ways a BCH wallet connects. Cashonize speaks both; it is listed under WalletConnect,
 // where its own docs point dapps.
-const CHOICES: { kind: BchConnection; wallets: string; protocol: string }[] = [
+const CHOICES: { kind: BchChoice; wallets: string; protocol: string }[] = [
   { kind: 'wizardconnect', wallets: 'Selene', protocol: 'WizardConnect' },
   { kind: 'walletconnect', wallets: 'Paytaca · Cashonize', protocol: 'WalletConnect' }
 ]
@@ -23,9 +26,20 @@ export const BchWalletChooser = ({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onChoose: (kind: BchConnection) => void
+  onChoose: (kind: BchChoice) => void
 }) => {
   const t = useTranslations('bridge.wallet')
+  // Offered only where the extension is installed: one click instead of copying a pairing link.
+  const [extension, setExtension] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    let current = true
+    void detectPaytacaExtension().then(found => current && setExtension(found))
+    return () => {
+      current = false
+    }
+  }, [open])
+  const choices = extension ? [{ kind: 'paytaca-extension' as const, wallets: 'Paytaca', protocol: t('browserExtension') }, ...CHOICES] : CHOICES
   return (
     <Credenza open={open} onOpenChange={onOpenChange}>
       <CredenzaContent className="connect-wallet flex h-auto max-h-5/6 flex-col md:max-w-[460px]">
@@ -37,7 +51,7 @@ export const BchWalletChooser = ({
           <CredenzaDescription className="sr-only">{t('chooseConnection')}</CredenzaDescription>
         </CredenzaHeader>
         <ul className="connect-wallet-list">
-          {CHOICES.map(choice => (
+          {choices.map(choice => (
             <li key={choice.kind}>
               <button type="button" className="connect-wallet-row" onClick={() => onChoose(choice.kind)}>
                 <img src="/networks/bch.svg" width={32} height={32} alt="" className="connect-wallet-icon" />
@@ -64,7 +78,18 @@ const qrPath = (value: string) => {
   return { d, count }
 }
 
-export const WalletConnectDialog = ({ state, uri, onClose }: { state: WalletConnectState; uri?: string; onClose: () => void }) => {
+export const WalletConnectDialog = ({
+  state,
+  uri,
+  extension,
+  onClose
+}: {
+  state: WalletConnectState
+  uri?: string
+  // Paired through the Paytaca extension: the window it opens may have been blocked, so it can be opened from here.
+  extension?: boolean
+  onClose: () => void
+}) => {
   const t = useTranslations('bridge.wallet')
   const qr = useMemo(() => (uri ? qrPath(uri) : undefined), [uri])
   const [copied, setCopied] = useState(false)
@@ -116,6 +141,15 @@ export const WalletConnectDialog = ({ state, uri, onClose }: { state: WalletConn
                 </div>
               </>
             )
+          )}
+          {extension && (
+            <button
+              type="button"
+              className="connect-wallet-row justify-center"
+              onClick={() => openPaytacaExtension(state === 'verifying' ? undefined : uri)}
+            >
+              {t('openPaytacaExtension')}
+            </button>
           )}
         </div>
       </CredenzaContent>

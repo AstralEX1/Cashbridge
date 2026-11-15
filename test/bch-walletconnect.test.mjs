@@ -5,10 +5,11 @@ import { test } from 'node:test'
 import { binToHex, hexToBin, secp256k1 } from '@bitauth/libauth'
 import { bindingFromPubkey } from '../src/lib/bch.ts'
 import { reviewBuild, sourcesOf } from '../src/lib/cauldron.ts'
-import { signInWallet, SignCancelled, SignDeclined } from '../src/lib/bch-signing.ts'
+import { signInWallet, SignCancelled, SignDeclined, SignSessionLost, SignUndelivered } from '../src/lib/bch-signing.ts'
 import {
   firstP2pkhAddress,
   keyProofMessage,
+  paytacaExtensionUrl,
   proveWalletConnectKey,
   recoverMessageKey,
   sessionAddress,
@@ -136,4 +137,33 @@ test('the signed transaction is read as hex or libauth bytes, and anything else 
   assert.equal(signedHexOf({ signedTransaction: '<Uint8Array: 0xabcd>' }), 'abcd')
   assert.equal(signedHexOf({ signedTransaction: 'xyz' }), undefined)
   assert.equal(signedHexOf(null), undefined)
+})
+
+test('a connection already gone is reported before anything reaches a wallet', async () => {
+  const wallet = specWallet()
+  const ended = walletConnectSigner(wallet, 'topic', { isLive: () => false })
+  const lost = await signInWallet(ended, binding, reviewed, 'Swap').catch(e => e)
+  assert.ok(lost instanceof SignSessionLost)
+  // Every caller that handles an undelivered request handles this one too.
+  assert.ok(lost instanceof SignUndelivered)
+  assert.equal(wallet.calls.length, 0)
+
+  // A check that cannot answer proves nothing: the request goes out as before.
+  const unsure = { ...walletConnectSigner(wallet, 'topic'), isLive: () => Promise.reject(new Error('no store')) }
+  assert.match((await signInWallet(unsure, binding, reviewed, 'Swap')).txid, /^[0-9a-f]{64}$/)
+  assert.equal(wallet.calls.length, 1)
+})
+
+test('the Paytaca extension is opened on its WalletConnect page, with the pairing link and before each request', async () => {
+  assert.equal(paytacaExtensionUrl(), 'chrome-extension://pakphhpnneopheifihmjcjnbdbhaaiaa/www/index.html#/apps/wallet-connect')
+  const uri = 'wc:ab12@2?relay-protocol=irn&symKey=00ff'
+  const url = paytacaExtensionUrl(uri)
+  assert.equal(new URLSearchParams(url.split('?')[1]).get('uri'), uri)
+
+  const order = []
+  const wallet = specWallet()
+  const request = wallet.request
+  wallet.request = args => (order.push('request'), request(args))
+  await signInWallet(walletConnectSigner(wallet, 'topic', { isLive: () => true, beforeRequest: () => order.push('open') }), binding, reviewed, 'Swap')
+  assert.deepEqual(order, ['open', 'request'])
 })

@@ -38,7 +38,7 @@ import { bridgeCompletionTransactions } from '@/lib/bridge-completion'
 import { formatStepTime, stepTime } from '@/lib/bridge-tracking'
 import { formatAmount, formatMinutes, formatPercent, formatUsd, PUSD_LEG_SECONDS, valueImpact } from '@/lib/bridge-summary'
 import { type ReviewedSwap } from '@/lib/cauldron'
-import { SignCancelled, SignDeclined, SignTimedOut, SignUndelivered } from '@/lib/bch-signing'
+import { SignCancelled, SignDeclined, SignSessionLost, SignTimedOut, SignUndelivered } from '@/lib/bch-signing'
 import { type CauldronToken, PUSD_TOKEN } from '@/lib/cauldron-tokens'
 import { readableError } from '@/lib/errors'
 import { getTxStatus } from '@/lib/api'
@@ -540,6 +540,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
       if (error instanceof SignCancelled) setNote(tReverse('signCancelled'))
       else if (error instanceof SignDeclined) setNote(tReverse('signDeclined', { wallet: walletName }))
       else if (error instanceof SignTimedOut) setNote(tReverse('signTimedOut', { wallet: walletName }))
+      else if (error instanceof SignSessionLost) setNote(tReverse('signSessionLost', { wallet: walletName }))
       else if (error instanceof SignUndelivered) setNote(tReverse('signUndelivered', { wallet: walletName }))
       else {
         console.warn('Reverse bridge failed to start', error)
@@ -788,6 +789,7 @@ const useDepositStep = (tx: BridgeTx) => {
       if (e instanceof SignCancelled) setNote(t('reverse.signCancelled'))
       else if (e instanceof SignDeclined) setNote(t('reverse.signDeclined', { wallet: walletName }))
       else if (e instanceof SignTimedOut) setNote(t('reverse.signTimedOut', { wallet: walletName }))
+      else if (e instanceof SignSessionLost) setNote(t('reverse.signSessionLost', { wallet: walletName }))
       else if (e instanceof SignUndelivered) setNote(t('reverse.signUndelivered', { wallet: walletName }))
       else setError(readableError(e, t('reverse.prepareFailed')))
       void prepared.refetch()
