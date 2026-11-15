@@ -118,6 +118,13 @@ test('the next server answers when the first is unreachable, and an error reject
   const none = new PoolFeed(['wss://one', 'wss://two'], down.factory)
   await assert.rejects(none.pools(CATEGORY), /refused/)
   assert.equal(none.enabled, true)
+  // The outage is remembered, so the next quote does not wait for the servers again.
+  const tried = down.log.urls.length
+  await assert.rejects(none.pools(CATEGORY), /a moment ago/)
+  assert.equal(down.log.urls.length, tried)
+  const retrying = new PoolFeed(['wss://one'], down.factory, { retryMs: 0 })
+  await assert.rejects(retrying.pools(CATEGORY), /refused/)
+  await assert.rejects(retrying.pools(CATEGORY), /refused/)
   await assert.rejects(new PoolFeed([], down.factory).pools(CATEGORY), /No Rostrum server/)
   await assert.rejects(none.pools('not-a-category'), /Not a token category/)
 })

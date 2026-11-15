@@ -67,7 +67,7 @@ export interface RpcHooks {
 }
 export type RpcFactory = (url: string, hooks: RpcHooks) => RpcLike
 
-const wsFactory: RpcFactory = (url, hooks) => new WsRpc(url, { jsonrpc: true, timeoutMs: 8_000, ...hooks })
+const wsFactory: RpcFactory = (url, hooks) => new WsRpc(url, { jsonrpc: true, timeoutMs: 6_000, ...hooks })
 
 interface Tracked {
   // Keyed by the server's utxo hash; null until the snapshot arrives and again after a disconnect.
@@ -78,6 +78,9 @@ interface Tracked {
 export interface PoolFeedOptions {
   // A socket nobody asked for this long is closed; the next request opens a new one.
   idleMs?: number
+  // After every server failed to answer, the feed is not tried again for this long, so a Rostrum
+  // outage costs the callers one slow attempt and not one per quote.
+  retryMs?: number
 }
 
 export class PoolFeed {
@@ -85,6 +88,7 @@ export class PoolFeed {
   private connecting?: Promise<RpcLike>
   private readonly tracked = new Map<string, Tracked>()
   private idle?: ReturnType<typeof setTimeout>
+  private downUntil = 0
 
   constructor(
     private readonly urls: string[],
@@ -100,6 +104,7 @@ export class PoolFeed {
   async pools(category: string): Promise<PoolRecord[]> {
     if (!isCategory(category)) throw new Error('Not a token category')
     if (!this.enabled) throw new Error('No Rostrum server is configured')
+    if (Date.now() < this.downUntil) throw new Error('No Rostrum server answered a moment ago')
     this.touch()
     const client = await this.connect()
     let state = this.tracked.get(category)
@@ -185,6 +190,7 @@ export class PoolFeed {
         client.close()
       }
     }
+    this.downUntil = Date.now() + (this.options.retryMs ?? 60_000)
     throw lastError instanceof Error ? lastError : new Error('No Rostrum server reachable')
   }
 
