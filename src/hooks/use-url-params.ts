@@ -6,7 +6,7 @@ import { Asset } from '@/components/swap/asset'
 import { BridgeConfig } from '@/config'
 import { useModeAssets } from '@/hooks/use-assets'
 import { useIsPrivateSwap, useSetIsPrivateSwap } from '@/store/private-swap-store'
-import { useSwapStore } from '@/store/swap-store'
+import { FIRST_VISIT_AMOUNT, useSwapStore } from '@/store/swap-store'
 
 const DEFAULT_SELL = 'BTC.BTC'
 // The bridge buys native BCH whatever the URL names (see BridgeConfig).
@@ -78,8 +78,13 @@ export const useUrlParams = () => {
     }
     if (!assets?.length || !hasHydrated) return
 
+    // The address bar's source wins; without one a returning visitor gets the source saved from the last
+    // visit, and a first visit (nothing saved) gets BTC with a sample amount.
     const { sell } = readPair(pathname, searchParams)
-    const sellAsset = resolveAsset(assets, sell, DEFAULT_SELL)
+    const { assetFrom: savedFrom, amountFrom, setAmountFrom } = useSwapStore.getState()
+    const saved = assets.find(a => a.identifier === savedFrom?.identifier)
+    const sellAsset = resolveAsset(assets, sell, saved?.identifier ?? DEFAULT_SELL)
+    if (!saved && sellAsset?.identifier === DEFAULT_SELL && !amountFrom) setAmountFrom(FIRST_VISIT_AMOUNT)
     // A crafted `-buy-` segment cannot pick another destination asset.
     const buyAsset = resolveAsset(assets, DEFAULT_BUY, DEFAULT_BUY)
 

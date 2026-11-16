@@ -6,7 +6,8 @@ import { type CauldronToken, isCauldronToken, PUSD_TOKEN } from '@/lib/cauldron-
 import { isPayoutChain } from '@/lib/payout-chains'
 import { useLimitSwapStore } from '@/store/limit-swap-store'
 
-const INITIAL_AMOUNT_FROM = 1
+// A first visit opens on BTC with this sample amount, so there is a quote to look at; no other visit gets one.
+export const FIRST_VISIT_AMOUNT = '0.00156'
 
 // The THORChain leg always trades native BCH against one other asset: BCH is never on both sides,
 // and nothing else is bought or sold through THORChain on the BCH side.
@@ -68,7 +69,7 @@ export const useSwapStore = create<SwapState>()(
       slippage: INITIAL_SLIPPAGE,
       customInterval: INITIAL_CUSTOM_INTERVAL,
       customQuantity: INITIAL_CUSTOM_QUANTITY,
-      amountFrom: INITIAL_AMOUNT_FROM.toString(),
+      amountFrom: '',
       feeWarning: '500',
       hasHydrated: false,
 

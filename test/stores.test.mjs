@@ -13,7 +13,7 @@ globalThis.localStorage = {
 const { bindingFromPubkey } = await import('../src/lib/bch.ts')
 const { pubkey, otherPubkey } = await import('./fixtures/bridge-fixtures.mjs')
 const { transactionStore, getActiveBridge } = await import('../src/store/transaction-store.ts')
-const { useSwapStore } = await import('../src/store/swap-store.ts')
+const { useSwapStore, FIRST_VISIT_AMOUNT } = await import('../src/store/swap-store.ts')
 
 const binding = bindingFromPubkey(pubkey, 0)
 const other = bindingFromPubkey(otherPubkey, 0)
@@ -66,6 +66,12 @@ test('a crafted saved pair cannot make the buy side anything but BCH.BCH', async
   assert.equal(useSwapStore.getState().assetTo.identifier, 'BCH.BCH')
   useSwapStore.getState().setAssetFrom(asset('BCH.BCH'))
   assert.equal(useSwapStore.getState().assetFrom.identifier, 'ETH.ETH')
+})
+
+test('the form starts with no amount; the sample amount is only for a first visit', () => {
+  assert.equal(useSwapStore.getState().amountFrom, '')
+  assert.equal(FIRST_VISIT_AMOUNT, '0.00156')
+  assert.equal(JSON.parse(storage.get('tc-swap-store')).state.amountFrom, undefined, 'the amount is never saved')
 })
 
 test('a source swap the wallet declines leaves no operation behind; any other wallet error stays "unknown"', async () => {
