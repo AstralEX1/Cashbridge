@@ -1386,9 +1386,7 @@
   font-weight: 500;
   white-space: nowrap;
 }
-.bridge-flow-wallet button,
-.bridge-flow-toast a,
-.bridge-flow-toast button {
+.bridge-flow-wallet button {
   display: grid;
   width: 32px;
   height: 32px;
@@ -1398,9 +1396,7 @@
   color: #5d6e73;
   cursor: pointer;
 }
-.bridge-flow-wallet button:hover,
-.bridge-flow-toast a:hover,
-.bridge-flow-toast button:hover {
+.bridge-flow-wallet button:hover {
   background: #dce6e8;
   color: #0f1820;
 }
@@ -1680,58 +1676,11 @@ button.bridge-flow-primary:disabled {
   bottom: 24px;
   z-index: 2;
   display: flex;
-  width: 340px;
   flex-direction: column;
   gap: 10px;
   margin: 0;
   padding: 0;
   list-style: none;
-}
-.bridge-flow-toast {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px 14px 14px 16px;
-  border-radius: 20px;
-  background: #f8fdff;
-  box-shadow: 0 12px 32px #00000050;
-  color: #0f1820;
-  animation: bridge-flow-toast-in 300ms ease-out;
-}
-@keyframes bridge-flow-toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-}
-.bridge-flow-toast-icon {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  flex: none;
-  place-items: center;
-  border-radius: 999px;
-  background: #e3f7ef;
-  color: #067a5a;
-}
-.bridge-flow-toast > div {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 14px;
-}
-.bridge-flow-toast > div > span {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  color: #5d6e73;
-}
-.bridge-flow-toast > div > span a {
-  width: 24px;
-  height: 24px;
 }
 .bridge-flow :is(button, a):focus-visible {
   outline: 2px solid #0ac18e;
@@ -1818,8 +1767,10 @@ button.bridge-flow-primary:disabled {
   /* In the page flow under the actions, so they never cover the buttons. */
   .bridge-flow-toasts {
     position: static;
-    width: auto;
     margin: 0 12px 24px;
+  }
+  .bridge-flow-toasts .tx-toast {
+    width: 100%;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1828,8 +1779,7 @@ button.bridge-flow-primary:disabled {
   .bridge-flow-fill.is-live::after,
   .bridge-flow-tile,
   .bridge-flow-slide,
-  .bridge-flow-spinner,
-  .bridge-flow-toast {
+  .bridge-flow-spinner {
     animation: none;
   }
   .bridge-flow-fill {

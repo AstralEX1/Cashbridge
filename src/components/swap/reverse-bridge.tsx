@@ -7,7 +7,7 @@ import { Chain, getChainConfig, USwapNumber } from '@tcswap/core'
 import { ProviderName } from '@tcswap/helpers'
 import type { QuoteResponseRoute } from '@tcswap/helpers/api'
 import { ArrowRight, ChevronDown, Clock, Fuel, LoaderCircle, Route, TrendingDown, Wallet } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { AnimatedButton } from '@/components/animated-button'
 import { AssetIcon } from '@/components/asset-icon'
 import { useBchWallet } from '@/components/bch-wallet'
@@ -956,10 +956,11 @@ export const ReverseOperationPanel = ({ uid, onClose }: { uid?: string; onClose:
   }
 
   const toasts: FlowToast[] = [
-    ...(reverse.sale?.txid ? [{ id: `sale:${reverse.sale.txid}`, title: t('reverse.toastSwap', { ticker: token?.ticker ?? '' }), hash: reverse.sale.txid, chain: Chain.BitcoinCash, time: timeOf(start) }] : []),
-    ...(reverse.deposit?.txid ? [{ id: `deposit:${reverse.deposit.txid}`, title: t('reverse.toastDeposit'), hash: reverse.deposit.txid, chain: Chain.BitcoinCash }] : []),
-    ...(reverse.payout ? [{ id: `payout:${reverse.payout.hash}`, title: t('reverse.toastPayout', { ticker: target.ticker }), hash: reverse.payout.hash, chain: target.chain }] : []),
-    ...(reverse.refund ? [{ id: `refund:${reverse.refund.txid}`, title: t('reverse.toastRefund'), hash: reverse.refund.txid, chain: Chain.BitcoinCash }] : [])
+    ...(reverse.sale?.txid ? [{ id: `sale:${reverse.sale.txid}`, title: t('reverse.toastSwap', { ticker: token?.ticker ?? '' }), hash: reverse.sale.txid, chain: Chain.BitcoinCash, time: timeOf(start), icon: sent.icon, pending: !saleDone }] : []),
+    // THORChain waits for BCH confirmations before it swaps, so the deposit turns until the payout (or refund) arrives.
+    ...(reverse.deposit?.txid ? [{ id: `deposit:${reverse.deposit.txid}`, title: t('reverse.toastDeposit'), hash: reverse.deposit.txid, chain: Chain.BitcoinCash, icon: bch.icon, pending: !reverse.payout && !reverse.refund }] : []),
+    ...(reverse.payout ? [{ id: `payout:${reverse.payout.hash}`, title: t('reverse.toastPayout', { ticker: target.ticker }), hash: reverse.payout.hash, chain: target.chain, icon: out.icon }] : []),
+    ...(reverse.refund ? [{ id: `refund:${reverse.refund.txid}`, title: t('reverse.toastRefund'), hash: reverse.refund.txid, chain: Chain.BitcoinCash, icon: bch.icon }] : [])
   ]
     .filter(item => !dismissed.includes(item.id))
     .reverse()

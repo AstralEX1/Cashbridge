@@ -6,15 +6,14 @@ import { useQuery } from '@tanstack/react-query'
 import { Chain, EVMChain, EVMChains, getChainConfig, getExplorerTxUrl } from '@tcswap/core'
 import { getProvider } from '@tcswap/toolboxes/evm'
 import { ArrowRight, Check, ChevronDown, Clock, Coins, ExternalLink, History, LoaderCircle, X } from 'lucide-react'
-import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { AssetIcon } from '@/components/asset-icon'
 import { useDialog } from '@/components/global-dialog'
 import { TransactionHistoryDialog } from '@/components/header/transaction-history-dialog'
-import { chainLabel } from '@/components/connect-wallet/config'
 import { BchMark, TokenMark } from '@/components/swap/bridge-marks'
 import { BridgeCompletion, type BridgeCompletionProps } from '@/components/swap/bridge-completion'
-import { shortBridgeAddress, WalletAddressBadge } from '@/components/swap/bridge-wallet-badge'
+import { type FlowToast, FlowToasts } from '@/components/swap/flow-toasts'
+import { WalletAddressBadge } from '@/components/swap/bridge-wallet-badge'
 import { useBchWallet } from '@/components/bch-wallet'
 import { GenericButton } from '@/components/generic-button'
 import { SwapError } from '@/components/swap/swap-error'
@@ -365,13 +364,7 @@ export interface FlowBar {
   done?: boolean
 }
 
-export interface FlowToast {
-  id: string
-  title: string
-  hash: string
-  chain: Chain
-  time?: string
-}
+export type { FlowToast }
 
 export type FlowStage = 'bridging' | 'ready' | 'swapping' | 'plain' | 'done' | 'ended'
 
@@ -609,30 +602,7 @@ export const BridgeFlow = (props: BridgeFlowProps) => {
         {props.actions && <div className="bridge-flow-actions">{props.actions}</div>}
       </div>
 
-      {props.toasts.length > 0 && (
-        <ol className="bridge-flow-toasts" aria-label={t('transactions')}>
-          {props.toasts.map(item => (
-            <li key={item.id} role="status" className="bridge-flow-toast">
-              <span className="bridge-flow-toast-icon">
-                <Check size={16} strokeWidth={2.6} aria-hidden="true" />
-              </span>
-              <div>
-                <strong>{item.title}</strong>
-                <span>
-                  <span title={item.hash}>{shortBridgeAddress(item.hash)}</span> · {chainLabel(item.chain)}
-                  {item.time ? ` · ${item.time}` : ''}
-                  <a href={getExplorerTxUrl({ chain: item.chain, txHash: item.hash })} target="_blank" rel="noopener noreferrer" aria-label={t('explorer')}>
-                    <ExternalLink size={14} />
-                  </a>
-                </span>
-              </div>
-              <button type="button" aria-label={t('dismiss')} onClick={() => props.onDismissToast(item.id)}>
-                <X size={14} strokeWidth={2.4} />
-              </button>
-            </li>
-          ))}
-        </ol>
-      )}
+      <FlowToasts toasts={props.toasts} onDismiss={props.onDismissToast} />
     </div>
   )
 }
@@ -853,22 +823,22 @@ const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => 
     : undefined
 
   const receivedTxids = [...new Set((op.received ?? []).map(output => output.txid))]
+  const sendConfirmed = (op.firstLeg.sourceConfirmations ?? 0) > 0 || firstDone
   const toasts: FlowToast[] = [
     ...(active.hash
       ? [
           {
             id: `send:${active.hash}`,
-            title:
-              (op.firstLeg.sourceConfirmations ?? 0) > 0 || firstDone
-                ? t('progress.toastSendConfirmed')
-                : t('progress.toastSent'),
+            title: sendConfirmed ? t('progress.toastSendConfirmed') : t('progress.toastSent'),
             hash: active.hash,
             chain: active.assetFrom.chain,
-            time: timeOf(start)
+            time: timeOf(start),
+            icon: sent.icon,
+            pending: !sendConfirmed
           }
         ]
       : []),
-    ...receivedTxids.map(hash => ({ id: `receive:${hash}`, title: t('progress.toastReceived'), hash, chain: Chain.BitcoinCash })),
+    ...receivedTxids.map(hash => ({ id: `receive:${hash}`, title: t('progress.toastReceived'), hash, chain: Chain.BitcoinCash, icon: bch.icon })),
     ...(op.secondLeg?.txid
       ? [
           {
@@ -879,7 +849,9 @@ const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => 
               confirmations: op.secondLeg.confirmations ?? 0
             }),
             hash: op.secondLeg.txid,
-            chain: Chain.BitcoinCash
+            chain: Chain.BitcoinCash,
+            icon: pusdToken?.icon,
+            pending: op.stage !== 'completed'
           }
         ]
       : [])

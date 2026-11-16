@@ -192,9 +192,9 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
   const receiptTxids = [...new Set((order?.bchReceipts ?? []).map(item => item.txid))]
   const toasts: FlowToast[] = [
     ...(sourceHash && source && Object.values(Chain).includes(source.chain as Chain)
-      ? [{ id: `send:${sourceHash}`, title: tb(firstDone ? 'progress.toastSendConfirmed' : 'progress.toastSent'), hash: sourceHash.replace(/-\d+$/, ''), chain: source.chain as Chain, time: timeOf(start) }]
+      ? [{ id: `send:${sourceHash}`, title: tb(firstDone ? 'progress.toastSendConfirmed' : 'progress.toastSent'), hash: sourceHash.replace(/-\d+$/, ''), chain: source.chain as Chain, time: timeOf(start), icon: sent.icon, pending: !firstDone }]
       : []),
-    ...receiptTxids.map(hash => ({ id: `receive:${hash}`, title: tb('progress.toastReceived'), hash, chain: Chain.BitcoinCash })),
+    ...receiptTxids.map(hash => ({ id: `receive:${hash}`, title: tb('progress.toastReceived'), hash, chain: Chain.BitcoinCash, icon: bch.icon })),
     ...(order?.settlement?.seen
       ? [{
           id: `payout:${order.settlement.txid}`,
@@ -202,7 +202,8 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
             ? t('toastRefund', { confirmations: order.settlement.confirmations })
             : tb('progress.toastPusdReceived', { ticker: PUSD_TOKEN.ticker, confirmations: order.settlement.confirmations }),
           hash: order.settlement.txid,
-          chain: Chain.BitcoinCash
+          chain: Chain.BitcoinCash,
+          icon: order.settlement.kind === 'refund' ? bch.icon : final.icon
         }]
       : [])
   ].filter(item => !dismissed.includes(item.id)).reverse()

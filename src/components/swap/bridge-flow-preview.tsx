@@ -4,7 +4,8 @@ import { useState } from 'react'
 import { Chain } from '@tcswap/core'
 import { BchMark, TokenMark } from '@/components/swap/bridge-marks'
 import { PUSD_TOKEN } from '@/lib/cauldron-tokens'
-import { BridgeFlow, CauldronQuoteBlock, type FlowStage, type FlowToast } from '@/components/swap/pusd-swap'
+import type { FlowToast } from '@/components/swap/flow-toasts'
+import { BridgeFlow, CauldronQuoteBlock, type FlowStage } from '@/components/swap/pusd-swap'
 
 // Development only (`?bridgeFlowPreview=<stage>` on the swap page): the progress screen's stages
 // from fixed example figures, to look at them without an operation in flight. The real screen reads
@@ -27,8 +28,11 @@ export const BridgeFlowPreview = ({ stage = 'bridging' }: { stage?: string }) =>
   const pusd = !nativeBch && flow !== 'plain'
   const received = flow !== 'bridging' && flow !== 'plain'
   const toasts: FlowToast[] = [
-    ...(received ? [{ id: 'receive', title: 'BCH received', hash: 'b7d0e2c4f1a9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f541c8', chain: Chain.BitcoinCash }] : []),
-    { id: 'send', title: 'Send Tx submitted', hash: '0x5e1c7d2b9a8f6e4c3b2a1908f7e6d5c4b3a29180f7e6d5c4b3a2918070a9f2', chain: Chain.Base, time: '19:11' }
+    ...(pusd && (flow === 'swapping' || flow === 'done')
+      ? [{ id: 'swap', title: flow === 'done' ? 'PUSD received · in mempool' : 'PUSD swap sent', hash: 'e3a1c9d7b5f2a8e6c4d2b0f8e6a4c2d0b8f6e4d2c0a8b6f4e2d0c8a6b4f2e0d8', chain: Chain.BitcoinCash, icon: <TokenMark token={PUSD_TOKEN} size={30} />, pending: flow === 'swapping' }]
+      : []),
+    ...(received ? [{ id: 'receive', title: 'BCH received', hash: 'b7d0e2c4f1a9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f541c8', chain: Chain.BitcoinCash, icon: <BchMark size={30} /> }] : []),
+    { id: 'send', title: received ? 'Send Tx confirmed' : 'Send Tx submitted', hash: '0x5e1c7d2b9a8f6e4c3b2a1908f7e6d5c4b3a29180f7e6d5c4b3a2918070a9f2', chain: Chain.Base, time: '19:11', icon: ETH_ICON, pending: !received }
   ].filter(t => !dismissed.includes(t.id))
 
   return (
