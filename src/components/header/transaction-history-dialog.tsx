@@ -5,7 +5,7 @@ import { assetFromString, Chain, ChainId, ChainIdToChain, getExplorerTxUrl, USwa
 import { ProviderName } from '@tcswap/helpers'
 import { format, formatDuration, intervalToDuration, isSameDay, isToday, isYesterday } from 'date-fns'
 import { CircleAlert, CircleCheck, ClockFading, SendHorizontal, Undo2, X } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { useTranslations } from 'next-intl'
 import { Credenza, CredenzaContent, CredenzaDescription, CredenzaHeader, CredenzaTitle } from '@/components/ui/credenza'
 import { ScrollArea } from '@/components/ui/scroll-area'

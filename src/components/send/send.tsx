@@ -20,7 +20,7 @@ import {
 import { getAddressValidator } from '@tcswap/toolboxes'
 import { estimateTransactionFee } from '@tcswap/toolboxes/cosmos'
 import { LoaderCircle } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Credenza, CredenzaContent, CredenzaHeader, CredenzaTitle } from '@/components/ui/credenza'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'

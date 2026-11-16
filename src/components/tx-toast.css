@@ -235,6 +235,23 @@
   outline-offset: 2px;
 }
 
+/* Sonner's wrapper around a toast: older toasts sit behind the newest, a little smaller and dimmer. */
+.tx-sonner-toast {
+  width: auto;
+  max-width: calc(100vw - 32px);
+}
+.tx-sonner-toast[data-expanded='false'][data-front='false'][data-visible='true'][data-removed='false'] {
+  --y: translateY(calc(-4px * var(--toasts-before))) scale(calc(1 - var(--toasts-before) * 0.02)) !important;
+  opacity: max(0.55, calc(1 - var(--toasts-before) * 0.15)) !important;
+}
+.tx-sonner-toast[data-visible='false'] {
+  pointer-events: none;
+  opacity: 0 !important;
+}
+.tx-sonner-toast[data-removed='true'] .tx-toast {
+  animation: tx-toast-exit 220ms var(--tx-toast-ease-in-out) forwards;
+}
+
 @keyframes tx-toast-enter {
   from {
     opacity: 0;

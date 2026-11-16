@@ -1,5 +1,5 @@
 import { Chain, EVMChain, EVMChains, WalletOption } from '@tcswap/core'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { readWalletLink, type WalletLink, writeWalletLink } from '@/store/wallets-store-cookie'

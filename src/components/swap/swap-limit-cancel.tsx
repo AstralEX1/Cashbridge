@@ -7,7 +7,7 @@ import { AssetValue, Chain, FeeOption, getChainConfig, USwapNumber } from '@tcsw
 import { ProviderName } from '@tcswap/helpers'
 import { type InboundAddressesItem, USwapApi } from '@tcswap/helpers/api'
 import { AlertTriangle, LoaderCircle } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { Credenza, CredenzaContent, CredenzaHeader, CredenzaTitle } from '@/components/ui/credenza'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select'

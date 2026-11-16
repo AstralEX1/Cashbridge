@@ -19,6 +19,7 @@ const mocked = new Set([
   '@wizardconnect/react',
   '@tanstack/react-query',
   'sonner',
+  '@/lib/toast',
   'next/image',
   'next-intl'
 ])
