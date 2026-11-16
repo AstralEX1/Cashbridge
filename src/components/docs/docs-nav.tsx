@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { DOCS_SECTIONS } from '@/components/docs/docs-pages'
+import { AppConfig } from '@/config'
 
 const SectionList = () => {
   const pathname = usePathname()
@@ -36,6 +37,17 @@ export const DocsNav = () => (
       <summary>Menu</summary>
       <nav aria-label="Documentation">
         <SectionList />
+        {/* Phones hide the header's GitHub link to keep the header on one line. */}
+        <div className="docs-nav-section">
+          <p>Project</p>
+          <ul>
+            <li>
+              <a href={AppConfig.repoUrl} target="_blank" rel="noopener noreferrer">
+                GitHub repository
+              </a>
+            </li>
+          </ul>
+        </div>
       </nav>
     </details>
   </>

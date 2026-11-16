@@ -30,8 +30,18 @@
   color: var(--docs-muted);
   font-weight: 500;
 }
-.docs-launch {
+.docs-repo {
   margin-left: auto;
+  padding: 9px 6px;
+  color: var(--docs-muted);
+  font-size: 14px;
+  font-weight: 600;
+  transition: color 150ms;
+}
+.docs-repo:hover {
+  color: var(--docs-text);
+}
+.docs-launch {
   padding: 9px 18px;
   border-radius: 999px;
   background: var(--docs-green);
@@ -461,6 +471,12 @@
 @media (max-width: 560px) {
   .docs-top {
     padding: 16px;
+  }
+  .docs-repo {
+    display: none;
+  }
+  .docs-launch {
+    margin-left: auto;
   }
   .docs-body {
     padding: 8px 16px 72px;
