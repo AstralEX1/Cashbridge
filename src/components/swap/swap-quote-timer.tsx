@@ -3,7 +3,6 @@ import { useTranslations } from 'next-intl'
 import { RefetchOptions } from '@tanstack/react-query'
 import { QuoteResponseRoute } from '@tcswap/helpers/api'
 import { RotateCw } from 'lucide-react'
-import { Tooltip } from '@/components/tooltip'
 
 const QUOTE_EXPIRATION_MS = 60000
 
@@ -32,21 +31,19 @@ export const SwapQuoteTimer = ({ quote, isLoading, refetch }: SwapQuoteTimerProp
   if (!quote || isLoading || !startedAt) return null
 
   return (
-    <Tooltip content={t('quoteTimer.refresh')}>
-      <button type="button" className="bridge-quote-timer" aria-label={t('quoteTimer.refresh')} onClick={() => refetch()}>
-        <svg viewBox="0 0 28 28" aria-hidden="true">
-          <circle cx="14" cy="14" r="12" className="bridge-quote-timer__track" />
-          <circle
-            key={startedAt}
-            cx="14"
-            cy="14"
-            r="12"
-            className="bridge-quote-timer__ring"
-            style={{ animationDuration: `${QUOTE_EXPIRATION_MS}ms` }}
-          />
-        </svg>
-        <RotateCw size={11} strokeWidth={2.4} aria-hidden="true" />
-      </button>
-    </Tooltip>
+    <button type="button" className="bridge-quote-timer" aria-label={t('quoteTimer.refresh')} onClick={() => refetch()}>
+      <svg viewBox="0 0 28 28" aria-hidden="true">
+        <circle cx="14" cy="14" r="12" className="bridge-quote-timer__track" />
+        <circle
+          key={startedAt}
+          cx="14"
+          cy="14"
+          r="12"
+          className="bridge-quote-timer__ring"
+          style={{ animationDuration: `${QUOTE_EXPIRATION_MS}ms` }}
+        />
+      </svg>
+      <RotateCw size={11} strokeWidth={2.4} aria-hidden="true" />
+    </button>
   )
 }
