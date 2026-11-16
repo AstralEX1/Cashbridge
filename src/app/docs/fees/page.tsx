@@ -63,7 +63,7 @@ export default function Page() {
         Next to the amount you receive, the form shows the price impact of the whole route: what you lose between the value you send and the value you receive, without gas. Hover over it for the breakdown into THORChain fee, Cauldron fee and pool price impact. A small transfer pays mostly fees. A large one pays mostly price impact, because the pools have limited depth.
       </p>
       <p>
-        If the Cauldron pools price PUSD away from its peg of one dollar, the form shows the rate at which one PUSD costs. A smaller amount, or waiting for the pools to recover, gives a better result. Transfers with the Router ask you to tick a box before you accept a price impact above about 2%.
+        If the Cauldron pools price PUSD away from its peg of one dollar, the form shows the rate at which one PUSD costs. A smaller amount, or waiting for the pools to recover, gives a better result. Transfers with the Cashbridge Router ask you to tick a box before you accept a price impact above about 2%.
       </p>
 
       <h2 id="slippage">Price impact and slippage</h2>
@@ -74,7 +74,7 @@ export default function Page() {
       <ul>
         <li>A low value protects you from large moves, and the swap is refunded more often when the market is volatile.</li>
         <li>The setting applies to the THORChain swap. The Cauldron swap is quoted again on the BCH you actually receive and has its own minimum, which is part of the transaction and shown before you sign.</li>
-        <li>With the Router on, the minimum PUSD is fixed when the order is created. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.</li>
+        <li>With the Cashbridge Router on, the minimum PUSD is fixed when the order is created. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.</li>
       </ul>
 
       <h2 id="limits">Limits</h2>
@@ -90,7 +90,7 @@ export default function Page() {
           <strong>Token swap fees.</strong> On BCH, a very small amount cannot cover the miner fee of the Cauldron swap. The page then says the amount is too small and you can keep the BCH.
         </li>
         <li>
-          <strong>Router caps.</strong> The Router service limits how much BCH it holds for open orders, and the size of one order. These are set by the operator and can change. A larger transfer can use manual mode.
+          <strong>Cashbridge Router caps.</strong> The Cashbridge Router service limits how much BCH it holds for open orders, and the size of one order. These are set by the operator and can change. A larger transfer can use manual mode.
         </li>
         <li>
           <strong>Paused assets.</strong> THORChain can pause trading in an asset. It is greyed out in the picker until it resumes.

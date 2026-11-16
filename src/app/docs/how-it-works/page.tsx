@@ -69,7 +69,7 @@ export default function Page() {
         Going the other way, the BCH wallet signs both steps: first the Cauldron swap into BCH (skipped when you start from BCH itself), then the BCH deposit to THORChain, which carries the swap instructions. THORChain pays the result to your wallet on the destination chain. See <Link href="/docs/guides/bridge-from-bch">Bridge back from Bitcoin Cash</Link>.
       </p>
 
-      <h2 id="router">With the Router</h2>
+      <h2 id="router">With the Cashbridge Router</h2>
       <Flow
         label="Route with the Cashbridge Router"
         nodes={[
@@ -80,7 +80,7 @@ export default function Page() {
         ]}
       />
       <p>
-        With the Router on, THORChain pays the BCH to an address the service controls for that one order. The service verifies the deposit, buys PUSD on Cauldron and pays it to your address. You sign once, but there are still several transactions, and the service holds the BCH for a short time. Details in <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link> and <Link href="/docs/security">Security and custody</Link>.
+        With the Cashbridge Router on, THORChain pays the BCH to an address the service controls for that one order. The service verifies the deposit, buys PUSD on Cauldron and pays it to your address. You sign once, but there are still several transactions, and the service holds the BCH for a short time. Details in <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link> and <Link href="/docs/security">Security and custody</Link>.
       </p>
 
       <h2 id="speed">How long it takes</h2>
@@ -88,7 +88,7 @@ export default function Page() {
         The confirmation screen shows an estimate for each step; a first transfer commonly takes a few minutes in total. Most of that is the THORChain swap. Bitcoin Cash steps are quick.
       </p>
       <p>
-        Cash Bridge does not wait for Bitcoin Cash blocks. A Bitcoin Cash transaction that has been accepted into the network&apos;s mempool counts as done, so the Cauldron swap can start as soon as the BCH from THORChain appears. Receipts for Router payouts are marked provisional at that point and become final after six confirmations.
+        Cash Bridge does not wait for Bitcoin Cash blocks. A Bitcoin Cash transaction that has been accepted into the network&apos;s mempool counts as done, so the Cauldron swap can start as soon as the BCH from THORChain appears. Receipts for Cashbridge Router payouts are marked provisional at that point and become final after six confirmations.
       </p>
 
       <h2 id="status">Where status comes from</h2>

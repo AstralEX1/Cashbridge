@@ -193,10 +193,10 @@ export default function Page() {
         </div>
       </details>
 
-      <h2 id="router">The Router</h2>
+      <h2 id="router">The Cashbridge Router</h2>
 
       <details>
-        <summary>The Router switch is greyed out</summary>
+        <summary>The Cashbridge Router switch is greyed out</summary>
         <div>
           <p>
             It works for transfers to PUSD and to plain Bitcoin Cash. Other CashTokens, and every transfer back from Bitcoin Cash, are signed in your own wallets.
@@ -217,7 +217,7 @@ export default function Page() {
         <summary>I received BCH instead of PUSD</summary>
         <div>
           <p>
-            The Router could not buy PUSD at or above the minimum shown on the order before its deadline, so it sent the verified BCH to your fallback address, less the miner fee. The order shows <em>BCH fallback confirmed</em>. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.
+            The Cashbridge Router could not buy PUSD at or above the minimum shown on the order before its deadline, so it sent the verified BCH to your fallback address, less the miner fee. The order shows <em>BCH fallback confirmed</em>. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.
           </p>
         </div>
       </details>

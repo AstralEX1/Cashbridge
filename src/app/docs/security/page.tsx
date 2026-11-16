@@ -12,7 +12,7 @@ export default function Page() {
     <DocsArticle
       href="/docs/security"
       title="Security and custody"
-      lead="Who can touch your funds depends on the mode. In manual mode only you can. With the Router, the service holds the BCH for a short time. Both modes rely on THORChain and Cauldron."
+      lead="Who can touch your funds depends on the mode. In manual mode only you can. With the Cashbridge Router, the service holds the BCH for a short time. Both modes rely on THORChain and Cauldron."
     >
       <h2 id="manual">Manual mode: you stay in control</h2>
       <p>
@@ -24,8 +24,8 @@ export default function Page() {
         <li>The Cauldron swap is built in your browser and signed by your BCH wallet. Cash Bridge reviews every output of it before you sign, and checks the result carries signatures by your key on your own inputs only, before anything is broadcast.</li>
       </ul>
 
-      <h2 id="router">The Router: short custody</h2>
-      <Callout kind="warning" title="With the Router on, the service controls your BCH for a while">
+      <h2 id="router">The Cashbridge Router: short custody</h2>
+      <Callout kind="warning" title="With the Cashbridge Router on, the service controls your BCH for a while">
         From the moment THORChain pays the BCH to the order address until the PUSD payout, or a BCH refund, is sent, the keys for that address are held by Cash Bridge&apos;s own server. If the server or its operator failed in that window, the funds could be delayed or lost.
       </Callout>
       <p>This is what the service does and what it is built to avoid:</p>
@@ -44,10 +44,10 @@ export default function Page() {
       <h2 id="data">What the site stores and sees</h2>
       <ul>
         <li>
-          <strong>In your browser.</strong> Your transfer records, wallet reconnection data and settings such as the Router switch. Cash Bridge has no accounts, and in manual mode the history of your transfers lives only there.
+          <strong>In your browser.</strong> Your transfer records, wallet reconnection data and settings such as the Cashbridge Router switch. Cash Bridge has no accounts, and in manual mode the history of your transfers lives only there.
         </li>
         <li>
-          <strong>On the server.</strong> Quote and status requests pass through Cash Bridge&apos;s server on their way to THORChain, so the server and THORChain can see the amounts and addresses in them. A Router order is also stored by the service, with the addresses you gave it.
+          <strong>On the server.</strong> Quote and status requests pass through Cash Bridge&apos;s server on their way to THORChain, so the server and THORChain can see the amounts and addresses in them. A Cashbridge Router order is also stored by the service, with the addresses you gave it.
         </li>
         <li>
           <strong>Wallet connections.</strong> Pairing with a BCH wallet goes through a relay. WizardConnect and WalletConnect use their own relay servers to pass the messages between the page and your wallet.
@@ -73,7 +73,7 @@ export default function Page() {
         <li>Cash Bridge never asks for a seed phrase, a private key or a password. Nobody working on it will either.</li>
         <li>Read what your wallet shows before you approve. Amounts and addresses should match what you saw on the confirmation screen.</li>
         <li>Blockchain transfers cannot be reversed. A wrong address or a paste into the wrong field means lost funds.</li>
-        <li>Start with a small amount, especially with the Router, until you know the flow.</li>
+        <li>Start with a small amount, especially with the Cashbridge Router, until you know the flow.</li>
       </ul>
       <p>
         Cash Bridge is new software. Treat it that way. For wallet messages and what to do about them, see <Link href="/docs/faq">FAQ and troubleshooting</Link>.

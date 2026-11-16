@@ -12,10 +12,10 @@ export default function Page() {
     <DocsArticle
       href="/docs/guides/cashbridge-router"
       title="Use the Cashbridge Router"
-      lead="The Router turns a two-signature transfer into one. You approve a single transaction in your source wallet. Cash Bridge receives the BCH from THORChain, buys PUSD on Cauldron and sends it to you."
+      lead="The Cashbridge Router turns a two-signature transfer into one. You approve a single transaction in your source wallet. Cash Bridge receives the BCH from THORChain, buys PUSD on Cauldron and sends it to you."
     >
       <Callout kind="warning" title="Temporary custody">
-        With the Router on, the service controls your BCH from the moment THORChain pays it until the PUSD payout, or a BCH refund, is sent. With it off, nobody but you ever holds your funds. If you are unsure, use manual mode, and always start with a small amount.
+        With the Cashbridge Router on, the service controls your BCH from the moment THORChain pays it until the PUSD payout, or a BCH refund, is sent. With it off, nobody but you ever holds your funds. If you are unsure, use manual mode, and always start with a small amount.
       </Callout>
 
       <h2 id="what-it-does">What it does</h2>
@@ -24,15 +24,15 @@ export default function Page() {
         <li>It covers transfers to <strong>PUSD</strong> and to <strong>plain BCH</strong>. For plain BCH nothing changes in how the transfer runs, but you can pay a pasted address instead of connecting a wallet.</li>
         <li>It is not available for other CashTokens or for bridging back from Bitcoin Cash. The switch is greyed out and a tooltip says so; those routes are signed in your own wallets.</li>
       </ul>
-      <Shot name="router-tooltip" alt="The Router switch with its tooltip explaining that you sign once in your source wallet" caption="Hover the switch for a short explanation of both modes." />
+      <Shot name="router-tooltip" alt="The Cashbridge Router switch with its tooltip explaining that you sign once in your source wallet" caption="Hover the switch for a short explanation of both modes." />
 
       <h2 id="steps">Step by step</h2>
       <Steps>
-        <Step title="Turn the Router on">
+        <Step title="Turn the Cashbridge Router on">
           <p>
             Switch on <strong>Cashbridge Router</strong>. Choose what to send and keep <strong>PUSD</strong> (or <strong>BCH</strong>) as what you receive.
           </p>
-          <Shot name="router-on" alt="The form with the Router switch on and a Connect BCH wallet button with a dropdown arrow" caption="With the Router on, the BCH wallet button gains a menu for pasting an address." />
+          <Shot name="router-on" alt="The form with the Cashbridge Router switch on and a Connect BCH wallet button with a dropdown arrow" caption="With the Cashbridge Router on, the BCH wallet button gains a menu for pasting an address." />
         </Step>
 
         <Step title="Say where the PUSD goes">
@@ -127,7 +127,7 @@ export default function Page() {
 
       <h2 id="limits">What to keep in mind</h2>
       <ul>
-        <li>One signature is not one transaction. There are still a THORChain transfer, a BCH deposit and a payout. The Router does not make the transfer atomic and does not guarantee a PUSD payout, only the fixed minimum or a BCH refund.</li>
+        <li>One signature is not one transaction. There are still a THORChain transfer, a BCH deposit and a payout. The Cashbridge Router does not make the transfer atomic and does not guarantee a PUSD payout, only the fixed minimum or a BCH refund.</li>
         <li>The service limits how much BCH it holds for open orders. If an order is refused, use manual mode.</li>
         <li>
           Delays are possible. A node outage or a recovery pass can postpone a payout or a refund. The order page says when the service is catching up; do not send again.
