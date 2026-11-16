@@ -75,6 +75,8 @@ export const signInWallet = async (
     .then(() => signer.isLive?.() ?? true)
     .catch(() => true)
   if (!live) throw new SignSessionLost('The wallet is no longer connected')
+  // Cancelled while the session was being checked: the wallet must not get the request.
+  if (signal?.aborted) throw new SignCancelled('Cancelled')
   const timeout = AbortSignal.timeout(timeoutMs)
   const inputPaths = tx.ownIndexes.map(i => [i, binding.path, binding.addressIndex] as [number, string, number])
   const request = { transaction: { transaction: tx.unsignedHex, sourceOutputs: tx.sourceOutputs, broadcast: false, userPrompt: prompt }, inputPaths }
