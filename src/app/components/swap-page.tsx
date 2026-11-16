@@ -1,4 +1,5 @@
 import Image from 'next/image'
+import Link from 'next/link'
 import { Suspense } from 'react'
 import { BlazeBanner } from '@/components/blaze-banner'
 import { GlobalDialog } from '@/components/global-dialog'
@@ -12,6 +13,12 @@ export function SwapPage() {
       <header className="mx-auto mb-8 flex w-full max-w-[514px] items-center gap-2.5">
         <Image src={AppConfig.logo} alt="" width={32} height={32} priority />
         <span className="text-lg font-semibold tracking-tight">{AppConfig.appName}</span>
+        <Link
+          href="/docs"
+          className="ml-auto rounded-md px-2 py-1 text-sm font-medium opacity-70 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          Docs
+        </Link>
       </header>
       <p className="sr-only">
         Bridge supported source assets to Bitcoin Cash and CashTokens through THORChain and Cauldron. Manual execution uses your own wallets.
