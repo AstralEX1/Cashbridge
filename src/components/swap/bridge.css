@@ -2138,3 +2138,53 @@ button.bridge-flow-primary:disabled {
     animation: none;
   }
 }
+
+/* While a quote loads: the previous amount, dimmed, with a light sweeping across it; skeleton bars where
+   there is nothing to show yet. */
+.bridge-amount-sheen,
+.bridge-skeleton {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: middle;
+}
+.bridge-amount-sheen {
+  max-width: 100%;
+  color: #0f182073;
+}
+.bridge-skeleton {
+  border-radius: 8px;
+  background: #0f18200f;
+}
+.bridge-skeleton--amount {
+  width: 148px;
+  height: 30px;
+}
+.bridge-skeleton--meta {
+  width: 64px;
+  height: 12px;
+  border-radius: 4px;
+}
+.bridge-amount-sheen::after,
+.bridge-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, #f8fdffd9 50%, transparent 80%);
+  transform: translateX(-100%);
+  animation: bridge-sheen 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  pointer-events: none;
+}
+@keyframes bridge-sheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bridge-amount-sheen::after,
+  .bridge-skeleton::after {
+    display: none;
+    animation: none;
+  }
+}

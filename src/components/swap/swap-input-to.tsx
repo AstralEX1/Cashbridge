@@ -7,6 +7,7 @@ import { BridgeWalletBadge } from '@/components/swap/bridge-wallet-badge'
 import { BridgePriceImpact } from '@/components/swap/price-impact'
 import { useTokenEstimate } from '@/components/swap/pusd-swap'
 import { SwapQuoteTimer } from '@/components/swap/swap-quote-timer'
+import { MetaSkeleton, QuotePlaceholder, useLastValue } from '@/components/swap/quote-placeholder'
 import { useQuote } from '@/hooks/use-quote'
 import { useSwapRates } from '@/hooks/use-rates'
 import { useAssetTo } from '@/hooks/use-swap'
@@ -38,6 +39,7 @@ export const SwapInputTo = ({ selecting, onSelectOpenChange }: BridgeInputProps)
         : formatBaseUnits(estimate.output, token.decimals)
       : new USwapNumber(quote.expectedBuyAmount).toSignificant()
   const busy = isLoading || (!!token && estimate.isLoading)
+  const previous = useLastValue(busy ? undefined : output)
 
   // USD of what arrives: BCH at its pool price; a token at the live Cauldron price (BCH price × pool
   // rate). PUSD falls back to its $1 peg, marked "≈", when BCH has no price.
@@ -83,12 +85,10 @@ export const SwapInputTo = ({ selecting, onSelectOpenChange }: BridgeInputProps)
           </div>
           <DestinationAddressInput />
           <output className="bridge-amount" aria-label={t('receiveAmount')} aria-live="polite" aria-busy={busy}>
-            {busy ? <span className="bridge-muted animate-pulse">···</span> : (output ?? '')}
+            {busy ? <QuotePlaceholder previous={previous} /> : (output ?? '')}
           </output>
           <div className="bridge-input-meta">
-            <span>
-              {usd ?? t('receiveAmount')}
-            </span>
+            <span>{busy ? <MetaSkeleton /> : (usd ?? t('receiveAmount'))}</span>
             <div className="flex items-center gap-2">
               <BridgePriceImpact percent={busy || output === undefined ? undefined : summary?.impactPercent} />
               <SwapQuoteTimer quote={quote} isLoading={isLoading} refetch={refetch} />

@@ -14,6 +14,7 @@ import { BridgeInputSwitcher } from '@/components/swap/bridge-input-switcher'
 import { BridgeWalletBadge } from '@/components/swap/bridge-wallet-badge'
 import { BridgePriceImpact } from '@/components/swap/price-impact'
 import { SwapQuoteTimer } from '@/components/swap/swap-quote-timer'
+import { MetaSkeleton, QuotePlaceholder, useLastValue } from '@/components/swap/quote-placeholder'
 import { Tooltip } from '@/components/tooltip'
 import { BridgeConfig } from '@/config'
 import { useQuote } from '@/hooks/use-quote'
@@ -169,6 +170,7 @@ export const ReverseInputTo = ({ selecting, onSelectOpenChange }: BridgeInputPro
     requestAnimationFrame(() => trigger.current?.focus())
   }
   const output = quote ? new USwapNumber(quote.expectedBuyAmount).toSignificant() : undefined
+  const previous = useLastValue(isLoading ? undefined : output)
   const rate = asset ? rates[asset.identifier] : undefined
   const receivedUsd = quote && rate ? Number(quote.expectedBuyAmount) * Number(rate.toSignificant(12)) : undefined
   const usd = receivedUsd !== undefined && !isLoading ? formatUsd(receivedUsd) : undefined
@@ -186,10 +188,10 @@ export const ReverseInputTo = ({ selecting, onSelectOpenChange }: BridgeInputPro
             <BridgeWalletBadge kind="other" />
           </div>
           <output className="bridge-amount" aria-label={t('receiveAmount')} aria-live="polite" aria-busy={isLoading}>
-            {isLoading ? <span className="bridge-muted animate-pulse">···</span> : (output ?? '')}
+            {isLoading ? <QuotePlaceholder previous={previous} /> : (output ?? '')}
           </output>
           <div className="bridge-input-meta">
-            <span>{usd ?? (error && !isLoading ? t('noRoute') : t('receiveAmount'))}</span>
+            <span>{isLoading ? <MetaSkeleton /> : (usd ?? (error ? t('noRoute') : t('receiveAmount')))}</span>
             <div className="flex items-center gap-2">
               <BridgePriceImpact percent={isLoading || (token && sale.isLoading) ? undefined : impactPercent} />
               <SwapQuoteTimer quote={quote} isLoading={isLoading} refetch={refetch} />
