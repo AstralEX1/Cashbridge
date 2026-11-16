@@ -1,6 +1,6 @@
 'use client'
 
-import { useDeferredValue, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Chain } from '@tcswap/core'
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react'
@@ -15,6 +15,9 @@ import { isAssetHalted } from '@/lib/swap-helpers'
 import { type CauldronToken, fetchCauldronTokens, PUSD_TOKEN, sameToken, searchCauldronTokens } from '@/lib/cauldron-tokens'
 import { isBridgeSellAsset, isReverseTargetAsset, useSwapStore } from '@/store/swap-store'
 import { TokenMark } from '@/components/swap/bridge-marks'
+
+// Token pills come in one after another; past the first dozen they all arrive together.
+const rowIn = (index: number) => ({ '--bridge-row-index': Math.min(index, 12) }) as CSSProperties
 
 export interface BridgeInputProps {
   selecting: boolean
@@ -149,20 +152,21 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
         ))}
       </div>
       <p className="bridge-picker-label">{t('tokens')}</p>
-      <div className="bridge-options bridge-token-options" role="group" aria-label={t('tokens')}>
+      <div key={open ? activeChain : 'closed'} className="bridge-options bridge-token-options" role="group" aria-label={t('tokens')}>
         {bch ? (
           <>
             {showBch && (
-              <button type="button" className="bridge-pill" aria-pressed={bchToken === null} onClick={() => pickBch(null)}>
+              <button type="button" className="bridge-pill" style={rowIn(0)} aria-pressed={bchToken === null} onClick={() => pickBch(null)}>
                 <img src="/networks/bch.svg" width={20} height={20} alt="" />
                 BCH
               </button>
             )}
-            {bchOptions.map(token => (
+            {bchOptions.map((token, i) => (
               <button
                 type="button"
                 key={token.category}
                 className="bridge-pill"
+                style={rowIn(i + 1)}
                 aria-pressed={sameToken(bchToken, token)}
                 title={`${token.name ?? token.ticker} · ${token.category}`}
                 onClick={() => pickBch(token)}
@@ -173,13 +177,14 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
             ))}
           </>
         ) : (
-          tokens.map(asset => {
+          tokens.map((asset, i) => {
             const halted = isAssetHalted(asset, mimir, mayaMimir)
             return (
               <button
                 type="button"
                 key={asset.identifier}
                 className="bridge-pill"
+                style={rowIn(i)}
                 aria-pressed={selected?.identifier === asset.identifier}
                 disabled={halted}
                 title={halted ? t('halted') : asset.identifier}

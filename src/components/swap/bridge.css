@@ -2116,3 +2116,25 @@ button.bridge-flow-primary:disabled {
     stroke-dashoffset: 0;
   }
 }
+
+/* Token pills in the picker arrive one after another, 25 ms apart. */
+.bridge-token-options > .bridge-pill {
+  animation: bridge-row-in 240ms cubic-bezier(0, 0, 0.2, 1) both;
+  animation-delay: calc(var(--bridge-row-index, 0) * 25ms);
+}
+@keyframes bridge-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bridge-token-options > .bridge-pill {
+    animation: none;
+  }
+}
