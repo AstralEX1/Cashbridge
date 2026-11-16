@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { RefetchOptions } from '@tanstack/react-query'
 import { QuoteResponseRoute } from '@tcswap/helpers/api'
+import { RotateCw } from 'lucide-react'
 import { Tooltip } from '@/components/tooltip'
 
 const QUOTE_EXPIRATION_MS = 60000
@@ -12,96 +13,40 @@ interface SwapQuoteTimerProps {
   isLoading: boolean
 }
 
+// A ring around the refresh icon fills up until the quote is refreshed. The ring is a CSS animation that
+// restarts with each new quote, so the countdown costs no re-renders.
 export const SwapQuoteTimer = ({ quote, isLoading, refetch }: SwapQuoteTimerProps) => {
   const t = useTranslations('swap')
-  const [timeRemaining, setTimeRemaining] = useState(QUOTE_EXPIRATION_MS)
-  const [progress, setProgress] = useState(100)
-  const [expiresAt, setExpiresAt] = useState<number | null>(null)
-  const intervalRef = useRef<NodeJS.Timeout | null>(null)
-  const autoRefetchTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const [startedAt, setStartedAt] = useState<number | null>(null)
 
   useEffect(() => {
-    if (quote && !isLoading) {
-      setExpiresAt(Date.now() + QUOTE_EXPIRATION_MS)
-    } else {
-      setExpiresAt(null)
-    }
+    setStartedAt(quote && !isLoading ? Date.now() : null)
   }, [quote, isLoading])
 
   useEffect(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current)
-      intervalRef.current = null
-    }
-    if (autoRefetchTimerRef.current) {
-      clearTimeout(autoRefetchTimerRef.current)
-      autoRefetchTimerRef.current = null
-    }
+    if (!startedAt) return
+    const timer = setTimeout(() => refetch(), QUOTE_EXPIRATION_MS)
+    return () => clearTimeout(timer)
+  }, [startedAt, refetch])
 
-    if (!expiresAt) {
-      setTimeRemaining(QUOTE_EXPIRATION_MS)
-      setProgress(100)
-      return
-    }
-
-    const updateTimer = () => {
-      const now = Date.now()
-      const remaining = Math.max(0, expiresAt - now)
-      const progressPercent = (remaining / QUOTE_EXPIRATION_MS) * 100
-
-      setTimeRemaining(remaining)
-      setProgress(progressPercent)
-    }
-
-    updateTimer()
-    intervalRef.current = setInterval(updateTimer, 1000)
-
-    const timeUntilExpiration = expiresAt - Date.now()
-    if (timeUntilExpiration > 0) {
-      autoRefetchTimerRef.current = setTimeout(() => {
-        refetch()
-      }, timeUntilExpiration)
-    }
-
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-      }
-      if (autoRefetchTimerRef.current) {
-        clearTimeout(autoRefetchTimerRef.current)
-      }
-    }
-  }, [expiresAt, refetch])
-
-  if (!quote || isLoading) {
-    return null
-  }
-
-  const seconds = Math.ceil(timeRemaining / 1000)
-  const strokeDasharray = 2 * Math.PI * 12
-  const strokeDashoffset = strokeDasharray - (strokeDasharray * progress) / 100
+  if (!quote || isLoading || !startedAt) return null
 
   return (
     <Tooltip content={t('quoteTimer.refresh')}>
-      <div className="relative cursor-pointer" onClick={() => refetch()}>
-        <svg width="24" height="24" viewBox="0 0 28 28" className="-rotate-90">
-          <circle cx="14" cy="14" r="12" fill="none" strokeWidth="2" className="stroke-sub-container-modal" />
+      <button type="button" className="bridge-quote-timer" aria-label={t('quoteTimer.refresh')} onClick={() => refetch()}>
+        <svg viewBox="0 0 28 28" aria-hidden="true">
+          <circle cx="14" cy="14" r="12" className="bridge-quote-timer__track" />
           <circle
+            key={startedAt}
             cx="14"
             cy="14"
             r="12"
-            fill="none"
-            strokeWidth="2"
-            strokeDasharray={strokeDasharray}
-            strokeDashoffset={strokeDashoffset}
-            strokeLinecap="round"
-            className="stroke-txt-med-contrast transition-[stroke-dashoffset] duration-100"
+            className="bridge-quote-timer__ring"
+            style={{ animationDuration: `${QUOTE_EXPIRATION_MS}ms` }}
           />
         </svg>
-        <span className="text-txt-label-small absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform text-[10px] font-semibold">
-          {seconds}
-        </span>
-      </div>
+        <RotateCw size={11} strokeWidth={2.4} aria-hidden="true" />
+      </button>
     </Tooltip>
   )
 }
