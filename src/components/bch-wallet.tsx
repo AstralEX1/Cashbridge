@@ -388,7 +388,7 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
           uri={wc.uri}
           qrUri={wc.qrUri}
           title="Connect your BCH wallet"
-          subtitle="Scan with a WizardConnect wallet. It receives the BCH and signs the PUSD swap."
+          subtitle="Scan with a WizardConnect wallet. It receives the BCH and signs your swaps."
         />
       )}
       <BchWalletChooser open={choosing} onOpenChange={setChoosing} onChoose={choose} />
