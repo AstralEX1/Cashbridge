@@ -76,7 +76,7 @@ export default function Page() {
         <strong>Manual</strong> is the default. You sign each step in your own wallets: first the transfer from the source chain, then, for a token such as PUSD, the Cauldron swap in your BCH wallet. Nothing is ever in anyone else&apos;s hands.
       </p>
       <p>
-        <strong>Cashbridge Router</strong> is a switch above the form. Turn it on and you sign once in your source wallet. Cash Bridge receives the BCH from THORChain, buys PUSD on Cauldron and sends it to your address. It works for transfers to PUSD and to plain BCH.
+        <strong>Cashbridge Router</strong> is the second option of the selector above the form. Choose it and you sign once in your source wallet. Cash Bridge receives the BCH from THORChain, buys PUSD on Cauldron and sends it to your address. It works for transfers to PUSD and to plain BCH.
       </p>
 
       <h2 id="where-to-start">Where to start</h2>

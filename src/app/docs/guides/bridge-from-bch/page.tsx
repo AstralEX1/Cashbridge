@@ -15,7 +15,7 @@ export default function Page() {
       lead="Sell BCH or a CashToken such as PUSD and receive an asset on another chain, for example USDC on Ethereum. Your BCH wallet signs every step on the Bitcoin Cash side."
     >
       <Callout kind="note">
-        The Cashbridge Router does not cover this direction. The switch is greyed out and both steps are signed in your own wallets.
+        The Cashbridge Router does not cover this direction. The Cashbridge Router option is greyed out and both steps are signed in your own wallets.
       </Callout>
 
       <Steps>

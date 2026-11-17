@@ -196,7 +196,7 @@ export default function Page() {
       <h2 id="router">The Cashbridge Router</h2>
 
       <details>
-        <summary>The Cashbridge Router switch is greyed out</summary>
+        <summary>The Cashbridge Router option is greyed out</summary>
         <div>
           <p>
             It works for transfers to PUSD and to plain Bitcoin Cash. Other CashTokens, and every transfer back from Bitcoin Cash, are signed in your own wallets.

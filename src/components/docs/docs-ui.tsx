@@ -18,8 +18,7 @@ const SHOTS = {
   'receipt-pusd': [1320, 1270],
   'reverse-progress': [1320, 720],
   'reverse-receipt': [1320, 1270],
-  'router-on': [1140, 1130],
-  'router-tooltip': [1140, 1130],
+  'router-selector': [1140, 298],
   settings: [730, 500],
   toasts: [760, 640]
 } as const

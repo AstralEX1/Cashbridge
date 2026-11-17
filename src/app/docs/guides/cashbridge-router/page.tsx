@@ -20,19 +20,18 @@ export default function Page() {
 
       <h2 id="what-it-does">What it does</h2>
       <ul>
-        <li>The switch sits above the form. It is off by default, and your choice is remembered in the browser.</li>
+        <li>The selector above the form has two options, <strong>Manual</strong> and <strong>Cashbridge Router</strong>. Manual is the default, and your choice is remembered in the browser.</li>
         <li>It covers transfers to <strong>PUSD</strong> and to <strong>plain BCH</strong>. For plain BCH nothing changes in how the transfer runs, but you can pay a pasted address instead of connecting a wallet.</li>
-        <li>It is not available for other CashTokens or for bridging back from Bitcoin Cash. The switch is greyed out and a tooltip says so; those routes are signed in your own wallets.</li>
+        <li>It is not available for other CashTokens or for bridging back from Bitcoin Cash. The Cashbridge Router option is greyed out and a tooltip says so; those routes are signed in your own wallets.</li>
       </ul>
-      <Shot name="router-tooltip" alt="The Cashbridge Router switch with its tooltip explaining that you sign once in your source wallet" caption="Hover the switch for a short explanation of both modes." />
 
       <h2 id="steps">Step by step</h2>
       <Steps>
-        <Step title="Turn the Cashbridge Router on">
+        <Step title="Choose the Cashbridge Router">
           <p>
-            Switch on <strong>Cashbridge Router</strong>. Choose what to send and keep <strong>PUSD</strong> (or <strong>BCH</strong>) as what you receive.
+            Pick <strong>Cashbridge Router</strong> in the selector. A line under it says that the bridge settles through the Router and that you do not need to sign a second transaction. Choose what to send and keep <strong>PUSD</strong> (or <strong>BCH</strong>) as what you receive.
           </p>
-          <Shot name="router-on" alt="The form with the Cashbridge Router switch on and a Connect BCH wallet button with a dropdown arrow" caption="With the Cashbridge Router on, the BCH wallet button gains a menu for pasting an address." />
+          <Shot name="router-selector" alt="The Manual and Cashbridge Router selector with Cashbridge Router chosen and the hint that the bridge settles through the Router with no second transaction to sign" caption="With the Cashbridge Router chosen, a line under the selector says no second transaction is needed." />
         </Step>
 
         <Step title="Say where the PUSD goes">

@@ -44,7 +44,7 @@ export default function Page() {
       <h2 id="data">What the site stores and sees</h2>
       <ul>
         <li>
-          <strong>In your browser.</strong> Your transfer records, wallet reconnection data and settings such as the Cashbridge Router switch. Cash Bridge has no accounts, and in manual mode the history of your transfers lives only there.
+          <strong>In your browser.</strong> Your transfer records, wallet reconnection data and settings such as your Manual or Cashbridge Router choice. Cash Bridge has no accounts, and in manual mode the history of your transfers lives only there.
         </li>
         <li>
           <strong>On the server.</strong> Quote and status requests pass through Cash Bridge&apos;s server on their way to THORChain, so the server and THORChain can see the amounts and addresses in them. A Cashbridge Router order is also stored by the service, with the addresses you gave it.
