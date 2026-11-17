@@ -139,7 +139,7 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
         onOpenChange(open)
       }}
     >
-      <CredenzaContent className="connect-wallet flex h-auto max-h-5/6 flex-col md:max-w-[460px]">
+      <CredenzaContent className="connect-wallet flex h-auto max-h-5/6 flex-col md:max-w-[460px]" aria-describedby={undefined}>
         <CredenzaHeader>
           <CredenzaTitle className="connect-wallet-title">
             {selectedWallet && (
