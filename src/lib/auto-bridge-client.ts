@@ -41,6 +41,15 @@ export async function orderRequest(reference: SavedAutoOrder, method: 'GET' | 'P
   return order
 }
 
+const creating = new Set<string>()
+// The poller restores every saved order that has no server record yet, so while the create is in
+// flight it leaves that order alone; otherwise both would POST it (same id, so harmless, but twice).
+export async function createAutomaticOrder(reference: SavedAutoOrder): Promise<PublicOrder> {
+  creating.add(reference.id)
+  try { return await orderRequest(reference, 'POST', { id: reference.id, ...reference.intent }) }
+  finally { creating.delete(reference.id) }
+}
+
 export async function restoreAutomaticOrder(reference: SavedAutoOrder): Promise<PublicOrder> {
   let order: PublicOrder
   try { order = await orderRequest(reference, 'GET') }
@@ -58,6 +67,7 @@ export async function pollAutomaticOrders(nextPoll: OrderPollSchedule, stopped: 
   let failed = false
   for (const reference of autoBridgeStore.getState().orders) {
     if (stopped()) break
+    if (creating.has(reference.id)) continue
     const deferred = nextPoll.get(reference.id)
     if (deferred && deferred.at > Date.now() && deferred.attempted === !!reference.sourceAttempted) {
       failed ||= deferred.failed

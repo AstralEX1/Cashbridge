@@ -23,7 +23,7 @@ import { addressToLockingBytecode } from '@/lib/bch'
 import { toBaseUnits } from '@/lib/bridge'
 import { firstLegSeconds } from '@/lib/bridge-summary'
 import { getQuotes, isBridgeRoute } from '@/lib/api'
-import { assertAutomaticSaved, orderRequest, startAutomaticSource } from '@/lib/auto-bridge-client'
+import { assertAutomaticSaved, createAutomaticOrder, orderRequest, startAutomaticSource } from '@/lib/auto-bridge-client'
 import { getUSwap } from '@/lib/wallets'
 import { resolvePriceImpact } from '@/lib/swap-helpers'
 import { autoBridgeStore, type SavedAutoOrder } from '@/store/auto-bridge-store'
@@ -64,7 +64,7 @@ export const prepareAutomatic = async ({
   const ref: SavedAutoOrder = reusable ?? { id: crypto.randomUUID(), capability: (crypto.randomUUID() + crypto.randomUUID()).replaceAll('-', ''), createdAt: Date.now(), intent }
   autoBridgeStore.getState().save(ref)
   assertAutomaticSaved(ref)
-  const order = ref.order ?? (await orderRequest(ref, 'POST', { id: ref.id, ...ref.intent }))
+  const order = ref.order ?? (await createAutomaticOrder(ref))
   if (order.apiVersion !== 2 || order.recoveryRequired) throw new Error(messages.serviceUpdate)
   autoBridgeStore.getState().patch(ref.id, { order })
   const quotes = await getQuotes({

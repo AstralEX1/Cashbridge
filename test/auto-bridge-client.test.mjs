@@ -13,7 +13,7 @@ globalThis.localStorage = {
   removeItem: key => data.delete(key)
 }
 const { autoBridgeStore } = await import('../src/store/auto-bridge-store.ts')
-const { startAutomaticSource, restoreAutomaticOrder, pollAutomaticOrders } = await import('../src/lib/auto-bridge-client.ts')
+const { startAutomaticSource, restoreAutomaticOrder, pollAutomaticOrders, createAutomaticOrder } = await import('../src/lib/auto-bridge-client.ts')
 const { automaticCompletion, automaticTransactions } = await import('../src/lib/auto-bridge-summary.ts')
 const { automaticEligible } = await import('../src/lib/auto-bridge-contract.ts')
 
@@ -40,6 +40,26 @@ test('terminal automatic orders refresh late custody and payout warnings on a bo
   assert.equal(autoBridgeStore.getState().orders[0].order.error, response.error)
   await pollAutomaticOrders(schedule, () => true)
   assert.equal(calls, 2)
+})
+
+test('the poller leaves an order alone while its create request is in flight', async t => {
+  t.after(() => { autoBridgeStore.setState({ orders: [] }); data.clear() })
+  const address = bindingFromPubkey(pubkey, 0).cashAddress
+  const reference = { id: randomUUID(), capability: randomBytes(32).toString('hex'), intent: { recipientAddress: address, refundAddress: address, expectedBchSats: '1000', source: {} } }
+  autoBridgeStore.setState({ orders: [reference] })
+  const methods = []
+  let release
+  const gate = new Promise(resolve => { release = resolve })
+  t.mock.method(globalThis, 'fetch', async (_url, init) => {
+    methods.push(init.method)
+    await gate
+    return Response.json({ id: reference.id, depositAddress: address, minPusd: '100', state: 'awaiting_deposit', expectedBchSats: '1000', recipientAddress: address, refundAddress: address, apiVersion: 2 })
+  })
+  const creating = createAutomaticOrder(reference)
+  await pollAutomaticOrders(new Map(), () => false)
+  assert.deepEqual(methods, ['POST'], 'the poll must not GET or POST the order being created')
+  release()
+  await creating
 })
 
 test('source authorization is recorded before opening the wallet and a lost callback cannot trigger resubmission', async () => {
