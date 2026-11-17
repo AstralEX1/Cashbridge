@@ -1141,6 +1141,7 @@ const useSecondLeg = (tx: BridgeTx) => {
     setError(undefined)
     setNote(undefined)
     let signed = false
+    let retry = false
     try {
       const done = await withLock(`bch-bridge-sign-${tx.uid}`, async () => {
         const current = await freshOperation(tx.uid)
@@ -1186,12 +1187,15 @@ const useSecondLeg = (tx: BridgeTx) => {
       else if (e instanceof SignUndelivered) setNote(t('reverse.signUndelivered', { wallet: walletName }))
       else setError(e instanceof Error ? e.message : t('second.failed'))
       setReview(undefined)
-      void prepare()
+      retry = true
     } finally {
       signing.current = false
       abort.current = undefined
       setBusy(undefined)
       setPhase('idle')
+      // After the lock is released: prepare() does nothing while a signature is in flight, which
+      // used to leave the button without a review (disabled) after a decline, timeout or cancel.
+      if (retry) void prepare()
     }
   }
 
