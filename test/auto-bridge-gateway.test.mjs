@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { BchGateway } from '../src/server/auto-bridge/gateway.ts'
 import { loadConfig } from '../src/server/auto-bridge/config.ts'
 import { BroadcastRejected, BroadcastUnknown } from '../src/lib/cauldron.ts'
+import { txidOf } from '../src/lib/bch.ts'
 
 test('an accepted RPC broadcast does not call or wait for the backup broadcaster', async t => {
   const previous = ['BCHN_RPC_CONFIG_FILE', 'BCHN_RPC_COOKIE_FILE', 'BCHN_RPC_URL'].map(name => [name, process.env[name]])
@@ -221,6 +222,96 @@ test('concurrent RPC reads reserve separate request slots', async () => {
     assert.ok(starts[2] - starts[1] >= 30)
   } finally {
     globalThis.fetch = originalFetch
+    if (previous === undefined) delete process.env.BCHN_RPC_CONFIG_FILE
+    else process.env.BCHN_RPC_CONFIG_FILE = previous
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+// Runs `body` against a gateway whose private config lists `hosts`; `answer(host, payload)` plays each node.
+async function withNodes(hosts, answer, body) {
+  const directory = mkdtempSync(join(tmpdir(), 'cashbridge-rpc-nodes-'))
+  const file = join(directory, 'rpc.json'),
+    previous = process.env.BCHN_RPC_CONFIG_FILE,
+    originalFetch = globalThis.fetch,
+    calls = []
+  writeFileSync(file, JSON.stringify({ rpcs: hosts.map(host => ({ url: `https://${host}`, headers: {} })) }), { mode: 0o600 })
+  process.env.BCHN_RPC_CONFIG_FILE = file
+  globalThis.fetch = async (url, options) => {
+    const host = new URL(url).host,
+      payload = JSON.parse(options.body)
+    calls.push(`${host} ${payload.method}`)
+    return answer(host, payload)
+  }
+  try {
+    await body(new BchGateway(), calls)
+  } finally {
+    globalThis.fetch = originalFetch
+    if (previous === undefined) delete process.env.BCHN_RPC_CONFIG_FILE
+    else process.env.BCHN_RPC_CONFIG_FILE = previous
+    rmSync(directory, { recursive: true, force: true })
+  }
+}
+const synced = { chain: 'main', initialblockdownload: false, blocks: 100, headers: 100 }
+
+test('a node answering 200 with an empty or lagging result is skipped and then asked last', async () => {
+  const empty = { result: null, error: null }
+  await withNodes(['first.example', 'second.example'], host => Response.json(host === 'first.example' ? empty : { result: synced }), async (gateway, calls) => {
+    await gateway.assertReady()
+    await gateway.assertReady()
+    assert.deepEqual(calls, ['first.example getblockchaininfo', 'second.example getblockchaininfo', 'second.example getblockchaininfo'])
+  })
+  await withNodes(['first.example', 'second.example'], host => Response.json({ result: host === 'first.example' ? { ...synced, blocks: 90 } : synced }), async gateway => {
+    await gateway.assertReady()
+  })
+  await withNodes(['first.example', 'second.example'], () => Response.json(empty), async gateway => {
+    await assert.rejects(gateway.assertReady())
+  })
+})
+
+test('transaction answers are checked against the requested txid on every node', async () => {
+  const id = txidOf('00')
+  await withNodes(['first.example', 'second.example'], host => Response.json({ result: host === 'first.example' ? '01' : '00' }), async gateway => {
+    assert.equal(await gateway.raw(id), '00')
+  })
+  await withNodes(['first.example', 'second.example'], host => Response.json({ result: { hex: host === 'first.example' ? '01' : '00', confirmations: 7 } }), async gateway => {
+    assert.deepEqual(await gateway.observe(id), { seen: true, confirmations: 7 })
+  })
+  await withNodes(['first.example', 'second.example'], () => Response.json({ result: '01' }), async gateway => {
+    await assert.rejects(gateway.raw(id), /hash mismatch/)
+  })
+})
+
+test('a spent output is only reported when a second node agrees', async () => {
+  const unspent = { value: 0.001, confirmations: 3, scriptPubKey: { hex: '51' } }
+  const spentOn = (other) => host => (host === 'first.example' ? Response.json({ result: null }) : other())
+  const coin = gateway => gateway.coin('ab'.repeat(32), 0)
+  await withNodes(['first.example', 'second.example'], spentOn(() => Response.json({ result: null })), async gateway => {
+    assert.equal(await coin(gateway), undefined)
+  })
+  await withNodes(['first.example', 'second.example'], spentOn(() => Response.json({ result: unspent })), async gateway => {
+    await assert.rejects(coin(gateway), /disagree/)
+  })
+  await withNodes(['first.example', 'second.example'], spentOn(() => { throw new Error('down') }), async gateway => {
+    await assert.rejects(coin(gateway), /could not be confirmed/)
+  })
+  await withNodes(['only.example'], () => Response.json({ result: null }), async gateway => {
+    assert.equal(await coin(gateway), undefined)
+  })
+})
+
+test('up to eight RPC endpoints are accepted', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cashbridge-rpc-many-')),
+    file = join(directory, 'rpc.json'),
+    previous = process.env.BCHN_RPC_CONFIG_FILE
+  process.env.BCHN_RPC_CONFIG_FILE = file
+  try {
+    const rpcs = count => Array.from({ length: count }, (_, i) => ({ url: `https://node${i}.example`, headers: {} }))
+    writeFileSync(file, JSON.stringify({ rpcs: rpcs(8) }), { mode: 0o600 })
+    new BchGateway()
+    writeFileSync(file, JSON.stringify({ rpcs: rpcs(9) }), { mode: 0o600 })
+    assert.throws(() => new BchGateway(), /configuration/)
+  } finally {
     if (previous === undefined) delete process.env.BCHN_RPC_CONFIG_FILE
     else process.env.BCHN_RPC_CONFIG_FILE = previous
     rmSync(directory, { recursive: true, force: true })

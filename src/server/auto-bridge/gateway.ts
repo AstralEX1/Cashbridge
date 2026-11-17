@@ -14,8 +14,17 @@ class NodeError extends Error {
   }
 }
 
+type RpcNode = { url: URL; headers: Record<string, string>; minIntervalMs: number; nextRequestAt: number; queue: Promise<void>; downUntil: number }
+// Throws when a 200 answer is empty or wrong, so the call goes on to the next node instead of returning it.
+type Check<T> = (value: T) => void
+const present: Check<unknown> = value => {
+  if (value === null || value === undefined) throw new Error('Invalid BCH node response')
+}
+// A node that failed (not one that answered with an RPC error) is asked last for this long.
+const COOLDOWN_MS = 60_000
+
 export class BchGateway implements Gateway {
-  private readonly nodes: { url: URL; headers: Record<string, string>; minIntervalMs: number; nextRequestAt: number; queue: Promise<void> }[]
+  private readonly nodes: RpcNode[]
   private readonly fulcrum: string
   private readonly thornode: URL
   constructor() {
@@ -24,7 +33,7 @@ export class BchGateway implements Gateway {
       const entries = process.env.BCHN_RPC_CONFIG_FILE
         ? (config?.rpcs ?? [config])
         : [{ url: process.env.BCHN_RPC_URL ?? 'http://127.0.0.1:8332', headers: {} }]
-      if (!Array.isArray(entries) || entries.length < 1 || entries.length > 4) throw new Error()
+      if (!Array.isArray(entries) || entries.length < 1 || entries.length > 8) throw new Error()
       this.nodes = entries.map(entry => {
         if (
           !entry ||
@@ -40,7 +49,7 @@ export class BchGateway implements Gateway {
         if (!Number.isSafeInteger(minIntervalMs) || minIntervalMs < 0 || minIntervalMs > 60000) throw new Error()
         if (url.username || url.password || !['http:', 'https:'].includes(url.protocol)) throw new Error()
         if (url.protocol === 'http:' && !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) throw new Error()
-        return { url, headers: Object.fromEntries(new Headers(entry.headers).entries()), minIntervalMs, nextRequestAt: 0, queue: Promise.resolve() }
+        return { url, headers: Object.fromEntries(new Headers(entry.headers).entries()), minIntervalMs, nextRequestAt: 0, queue: Promise.resolve(), downUntil: 0 }
       })
     } catch {
       throw new Error('Invalid BCH RPC configuration or credential file')
@@ -49,7 +58,7 @@ export class BchGateway implements Gateway {
     this.thornode = new URL(process.env.THORNODE_URL ?? 'https://gateway.liquify.com/chain/thorchain_api/')
   }
 
-  private async rpcAt<T>(node: (typeof this.nodes)[number], method: string, params: unknown[]): Promise<T> {
+  private async rpcAt<T>(node: RpcNode, method: string, params: unknown[]): Promise<T> {
     const cookie =
       !process.env.BCHN_RPC_CONFIG_FILE && process.env.BCHN_RPC_COOKIE_FILE ? readCredential(process.env.BCHN_RPC_COOKIE_FILE, true) : undefined
     // API quotes and the worker share one provider queue, including after event-loop delays.
@@ -86,16 +95,47 @@ export class BchGateway implements Gateway {
     return body.result as T
   }
 
-  private async rpc<T>(method: string, params: unknown[] = []): Promise<T> {
+  private ordered() {
+    const now = Date.now()
+    return [...this.nodes].sort((a, b) => Number(a.downUntil > now) - Number(b.downUntil > now))
+  }
+
+  private async rpcFrom<T>(method: string, params: unknown[], check: Check<T> = present): Promise<{ node: RpcNode; value: T }> {
     let lastError: unknown
-    for (const node of this.nodes) {
+    for (const node of this.ordered()) {
       try {
-        return await this.rpcAt<T>(node, method, params)
+        const value = await this.rpcAt<T>(node, method, params)
+        check(value)
+        node.downUntil = 0
+        return { node, value }
       } catch (error) {
         lastError = error
+        if (!(error instanceof NodeError)) node.downUntil = Date.now() + COOLDOWN_MS
       }
     }
     throw lastError
+  }
+
+  private async rpc<T>(method: string, params: unknown[] = [], check?: Check<T>): Promise<T> {
+    return (await this.rpcFrom<T>(method, params, check)).value
+  }
+
+  // gettxout says null for a spent output, which a faulty node can also say about an unspent one:
+  // with several nodes configured, a second one has to agree before the output counts as spent.
+  private async confirmSpent(answered: RpcNode, id: string, vout: number) {
+    if (this.nodes.length < 2) return
+    for (const node of this.ordered()) {
+      if (node === answered) continue
+      let other: unknown
+      try {
+        other = await this.rpcAt(node, 'gettxout', [id, vout, true])
+      } catch {
+        continue
+      }
+      if (other === null) return
+      throw new Error('BCH nodes disagree about an output')
+    }
+    throw new Error('BCH node answer could not be confirmed')
   }
 
   private async electrum<T>(method: string, params: unknown[]): Promise<T> {
@@ -116,36 +156,42 @@ export class BchGateway implements Gateway {
   }
   async raw(id: string) {
     try {
-      const hex = await this.rpc<string>('getrawtransaction', [id, false])
-      if (txidOf(hex) !== id) throw new Error('BCH transaction hash mismatch')
-      return hex
+      return await this.rpc<string>('getrawtransaction', [id, false], hex => {
+        if (typeof hex !== 'string' || txidOf(hex) !== id) throw new Error('BCH transaction hash mismatch')
+      })
     } catch (error) {
       if (error instanceof NodeError && error.code === -5) return undefined
       throw error
     }
   }
   tip() {
-    return this.rpc<number>('getblockcount')
+    return this.rpc<number>('getblockcount', [], height => {
+      if (!Number.isSafeInteger(height) || height <= 0) throw new Error('Invalid BCH node response')
+    })
   }
   async assertReady() {
-    const state = await this.rpc<{ chain: string; initialblockdownload: boolean; blocks: number; headers: number }>('getblockchaininfo')
-    if (
-      state.chain !== 'main' ||
-      state.initialblockdownload !== false ||
-      !Number.isSafeInteger(state.blocks) ||
-      !Number.isSafeInteger(state.headers) ||
-      state.blocks < state.headers - 1
-    )
-      throw new Error('BCH mainnet RPC is not synchronized')
+    await this.rpc<{ chain: string; initialblockdownload: boolean; blocks: number; headers: number }>('getblockchaininfo', [], state => {
+      if (
+        state?.chain !== 'main' ||
+        state.initialblockdownload !== false ||
+        !Number.isSafeInteger(state.blocks) ||
+        !Number.isSafeInteger(state.headers) ||
+        state.blocks < state.headers - 1
+      )
+        throw new Error('BCH mainnet RPC is not synchronized')
+    })
   }
   async coin(id: string, vout: number) {
-    const coin = await this.rpc<{
+    const { node, value: coin } = await this.rpcFrom<{
       value: number
       confirmations: number
       scriptPubKey: { hex: string }
       tokenData?: { category: string; amount: string; nft?: { capability: 'none' | 'mutable' | 'minting'; commitment: string } }
-    } | null>('gettxout', [id, vout, true])
-    if (!coin) return undefined
+    } | null>('gettxout', [id, vout, true], () => {})
+    if (!coin) {
+      await this.confirmSpent(node, id, vout)
+      return undefined
+    }
     if (coin.tokenData?.nft && !['none', 'mutable', 'minting'].includes(coin.tokenData.nft.capability)) throw new Error('Invalid token metadata')
     const output: Output = {
       valueSatoshis: toBaseUnits(coin.value.toFixed(8), 8),
@@ -169,8 +215,9 @@ export class BchGateway implements Gateway {
   }
   async observe(id: string) {
     try {
-      const tx = await this.rpc<{ hex: string; confirmations?: number }>('getrawtransaction', [id, true])
-      if (txidOf(tx.hex) !== id) throw new Error('BCH transaction hash mismatch')
+      const tx = await this.rpc<{ hex: string; confirmations?: number }>('getrawtransaction', [id, true], tx => {
+        if (typeof tx?.hex !== 'string' || txidOf(tx.hex) !== id) throw new Error('BCH transaction hash mismatch')
+      })
       if ((tx.confirmations ?? 0) > 0) return { seen: true, confirmations: tx.confirmations! }
       await this.rpc('getmempoolentry', [id])
       return { seen: true, confirmations: 0 }
