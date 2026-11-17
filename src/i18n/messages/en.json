@@ -979,7 +979,7 @@
     "automaticHint": "The service handles the BCH-to-PUSD step. Your source wallet authorizes the first transfer.",
     "unsupported": "Automatic is available for forward transfers to PUSD. This route uses manual execution.",
     "recipient": "PUSD receiving address",
-    "pasteRecipient": "Paste a CashTokens-compatible Bitcoin Cash address. No BCH signature is required from the recipient.",
+    "pasteRecipient": "Paste a Bitcoin Cash address. PUSD is a CashToken, so the wallet must support CashTokens. No BCH signature is required from the recipient.",
     "recipientBch": "BCH receiving address",
     "pasteRecipientBch": "Paste a Bitcoin Cash address. Receiving needs no wallet connection or signature.",
     "useWallet": "Use the connected wallet",
