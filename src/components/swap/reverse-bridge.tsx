@@ -21,6 +21,7 @@ import { BchMark, CauldronMark, HoverCard, ThorchainMark, TokenMark } from '@/co
 import { shortBridgeAddress } from '@/components/swap/bridge-wallet-badge'
 import { BridgeFlow, chainTxUrl, type FlowBar, type FlowStage, type FlowToast, type FlowToken, thorchainTxUrl } from '@/components/swap/pusd-swap'
 import { useBchSideBalance } from '@/components/swap/reverse-inputs'
+import { SwapAddressWarning } from '@/components/swap/swap-address-warning'
 import { SwapError } from '@/components/swap/swap-error'
 import { Credenza, CredenzaContent, CredenzaDescription, CredenzaHeader, CredenzaTitle } from '@/components/ui/credenza'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -396,6 +397,10 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
   const [open, setOpen] = useState(false)
   const [phase, setPhase] = useState<SignPhase>('idle')
   const [note, setNote] = useState<string>()
+  const [acceptedImpact, setAcceptedImpact] = useState(false)
+  useEffect(() => {
+    if (!isOpen) setAcceptedImpact(false)
+  }, [isOpen])
   const submitting = phase !== 'idle'
   // One request at a time, whatever the button sees: state updates land a render late.
   const inFlight = useRef(false)
@@ -459,9 +464,11 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
   const cauldronFeeUsd = token && sale.quote && bchUsd ? (Number(sale.quote.tradeFeeSats) / 1e8) * bchUsd : undefined
   const thorFeeUsd = fees ? toNumber(fees.included) : undefined
   const ticker = token?.ticker ?? 'BCH'
+  // The same 2% line as the forward Confirm, on the full-route loss shown beside the received amount.
+  const needsImpact = impactPercent !== undefined && impactPercent < -2
 
   const onConfirm = async () => {
-    if (inFlight.current || !binding || !wallet.signer || !destination || !units) return
+    if (inFlight.current || !binding || !wallet.signer || !destination || !units || (needsImpact && !acceptedImpact)) return
     inFlight.current = true
     const controller = new AbortController()
     abort.current = controller
@@ -697,7 +704,8 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
           </div>
         </ScrollArea>
         <div className="space-y-3 p-4 pt-2 md:px-7 md:pb-7">
-          <GenericButton colorType="3" size="large" className="w-full" onClick={onConfirm} disabled={submitting || !wallet.signer || wallet.state !== 'connected'}>
+          {needsImpact && <SwapAddressWarning checked={acceptedImpact} onCheckedChange={setAcceptedImpact} text={tBridge('automatic.highImpact')} />}
+          <GenericButton colorType="3" size="large" className="w-full" onClick={onConfirm} disabled={submitting || !wallet.signer || wallet.state !== 'connected' || (needsImpact && !acceptedImpact)}>
             {submitting && <LoaderCircle size={20} className="animate-spin" />}
             <span>
               {phase === 'signing'
