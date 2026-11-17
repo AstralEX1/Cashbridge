@@ -157,12 +157,11 @@ test('bounded request bodies accept exact UTF-8 limits and report interrupted re
 })
 
 test('Solana and Blockchair reject oversized streams and preserve valid POST bodies', async () => {
-  const originalFetch = globalThis.fetch, previousKey = process.env.BLOCKCHAIR_API_KEY
-  process.env.BLOCKCHAIR_API_KEY = KEY
+  const originalFetch = globalThis.fetch
   const solana = await import('../src/app/api/solana/route.ts')
   const blockchair = await import('../src/app/api/blockchair/[...path]/route.ts')
   const sent = []
-  globalThis.fetch = async (_url, options) => { sent.push(options); return Response.json({ ok: true }) }
+  globalThis.fetch = async (url, options) => { sent.push(options); return String(url).startsWith('https://mempool.space/') ? new Response('ab'.repeat(32)) : Response.json({ ok: true }) }
   try {
     for (const [handler, limit, path] of [[solana.POST, 100000, undefined], [blockchair.POST, 2 * 1024 * 1024, ['bitcoin', 'push', 'transaction']]]) {
       let reads = 0, cancelled = false
@@ -182,14 +181,12 @@ test('Solana and Blockchair reject oversized streams and preserve valid POST bod
       assert.equal(cancelled, true)
       const payload = JSON.stringify(path ? { data: '00' } : { jsonrpc: '2.0', id: 1, method: 'getBlockHeight' })
       assert.equal((await handler(new NextRequest('http://localhost/api/proxy', { ...init, body: payload }), context)).status, 200)
-      assert.equal(sent.at(-1).body, payload)
+      assert.equal(sent.at(-1).body, path ? '00' : payload, 'the explorer gets the raw transaction hex, Solana the JSON-RPC body')
       assert.equal(sent.at(-1).method, 'POST')
     }
     assert.equal(sent.length, 2)
   } finally {
     globalThis.fetch = originalFetch
-    if (previousKey === undefined) delete process.env.BLOCKCHAIR_API_KEY
-    else process.env.BLOCKCHAIR_API_KEY = previousKey
   }
 })
 

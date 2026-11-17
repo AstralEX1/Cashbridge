@@ -10,7 +10,7 @@
     "test:i18n": "node test/i18n-protocol.test.mjs",
     "i18n:translate": "node tools/i18n-translate.mjs",
     "i18n:check": "node tools/i18n-translate.mjs --check",
-    "test:bridge": "node --no-warnings --import ./test/register-ts-alias.mjs --test test/bridge.test.mjs test/bridge-summary.test.mjs test/stores.test.mjs test/proxy.test.mjs test/limit-orders.test.mjs test/address-code.test.mjs test/source-transaction.test.mjs test/payout-check.test.mjs test/dependencies.test.mjs test/reverse-recovery.test.mjs test/network.test.mjs test/cauldron-rostrum.test.mjs test/bch-walletconnect.test.mjs test/amount-presets.test.mjs test/tx-toast.test.mjs test/quote-placeholder.test.mjs",
+    "test:bridge": "node --no-warnings --import ./test/register-ts-alias.mjs --test test/bridge.test.mjs test/bridge-summary.test.mjs test/stores.test.mjs test/proxy.test.mjs test/limit-orders.test.mjs test/address-code.test.mjs test/source-transaction.test.mjs test/payout-check.test.mjs test/dependencies.test.mjs test/reverse-recovery.test.mjs test/network.test.mjs test/cauldron-rostrum.test.mjs test/bch-walletconnect.test.mjs test/amount-presets.test.mjs test/tx-toast.test.mjs test/quote-placeholder.test.mjs test/utxo-api.test.mjs",
     "bridge:worker": "node --disable-warning=ExperimentalWarning --import ./tools/register-typescript.mjs ./tools/auto-bridge.mjs worker",
     "test:auto-bridge": "node --no-warnings --import ./test/register-ts-alias.mjs --test test/auto-bridge.test.mjs test/auto-bridge-api.test.mjs test/auto-bridge-client.test.mjs test/auto-bridge-gateway.test.mjs test/auto-bridge-recovery.test.mjs test/auto-bridge-transport.test.mjs"
   },
