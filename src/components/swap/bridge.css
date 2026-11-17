@@ -144,9 +144,14 @@
   background: #0f1820;
   color: #f8fdff;
 }
-.bridge-pill:disabled {
+.bridge-pill:disabled,
+.bridge-pill[aria-disabled='true'] {
   opacity: 0.42;
   cursor: not-allowed;
+}
+/* A chain THORChain has halted can still be opened to look at, so it is only dimmed. */
+.bridge-pill[data-halted='true'] {
+  opacity: 0.6;
 }
 .bridge-pill img {
   flex-shrink: 0;

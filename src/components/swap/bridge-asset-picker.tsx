@@ -1,6 +1,6 @@
 'use client'
 
-import { useDeferredValue, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Chain } from '@tcswap/core'
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react'
@@ -8,6 +8,7 @@ import { useTranslations } from 'next-intl'
 import { AssetIcon } from '@/components/asset-icon'
 import { chainLabel } from '@/components/connect-wallet/config'
 import { Asset } from '@/components/swap/asset'
+import { Tooltip } from '@/components/tooltip'
 import { useModeAssets } from '@/hooks/use-assets'
 import { useMimir } from '@/hooks/use-mimir'
 import { useAssetFrom, useSetAssetFrom } from '@/hooks/use-swap'
@@ -15,6 +16,30 @@ import { isAssetHalted } from '@/lib/swap-helpers'
 import { type CauldronToken, fetchCauldronTokens, PUSD_TOKEN, sameToken, searchCauldronTokens } from '@/lib/cauldron-tokens'
 import { isBridgeSellAsset, isReverseTargetAsset, useSwapStore } from '@/store/swap-store'
 import { TokenMark } from '@/components/swap/bridge-marks'
+
+// THORChain's own per-chain table (scanning, trading, LP and signing), where a halted chain shows up.
+const THORCHAIN_STATUS_URL = 'https://thorchain.net/network'
+
+// A halted chain can't be traded, so its pills say whose switch it is and where to watch it come back.
+// The wrapped element stays hoverable and focusable (a disabled button would swallow both).
+const HaltedTip = ({ halted, children }: { halted: boolean; children: ReactElement }) => {
+  const t = useTranslations('bridge.form')
+  if (!halted) return children
+  return (
+    <Tooltip
+      content={
+        <>
+          {t('haltedNetwork')}{' '}
+          <a href={THORCHAIN_STATUS_URL} target="_blank" rel="noopener noreferrer" className="underline">
+            {t('haltedStatus')}
+          </a>
+        </>
+      }
+    >
+      {children}
+    </Tooltip>
+  )
+}
 
 // Token pills come in one after another; past the first dozen they all arrive together.
 const rowIn = (index: number) => ({ '--bridge-row-index': Math.min(index, 12) }) as CSSProperties
@@ -80,6 +105,10 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
   const assets = useMemo(() => modeAssets?.filter(reverse ? isReverseTargetAsset : isBridgeSellAsset) ?? [], [modeAssets, reverse])
   const chains = useMemo(() => [...new Set(assets.map(a => a.chain))].sort((a, b) => chainLabel(a).localeCompare(chainLabel(b))), [assets])
   const activeChain = bch ? Chain.BitcoinCash : (chain && chains.includes(chain) ? chain : selected && chains.includes(selected.chain) ? selected.chain : chains[0])
+  const haltedChains = useMemo(
+    () => new Set(chains.filter(item => assets.filter(a => a.chain === item).every(a => isAssetHalted(a, mimir, mayaMimir)))),
+    [chains, assets, mimir, mayaMimir]
+  )
   const query = search.trim().toLowerCase()
   const tokens = assets.filter(
     a => a.chain === activeChain && [a.ticker, a.name, a.identifier, chainLabel(a.chain)].some(value => value?.toLowerCase().includes(query))
@@ -145,10 +174,18 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
       <p className="bridge-picker-label">{t('chains')}</p>
       <div className="bridge-options" role="group" aria-label={t('chains')}>
         {(bch ? [Chain.BitcoinCash] : chains).map(item => (
-          <button type="button" key={item} className="bridge-pill" aria-pressed={item === activeChain} onClick={() => setChain(item)}>
-            <img src={`/networks/${item.toLowerCase()}.svg`} width={20} height={20} alt="" />
-            {chainLabel(item)}
-          </button>
+          <HaltedTip key={item} halted={!bch && haltedChains.has(item)}>
+            <button
+              type="button"
+              className="bridge-pill"
+              data-halted={!bch && haltedChains.has(item) ? 'true' : undefined}
+              aria-pressed={item === activeChain}
+              onClick={() => setChain(item)}
+            >
+              <img src={`/networks/${item.toLowerCase()}.svg`} width={20} height={20} alt="" />
+              {chainLabel(item)}
+            </button>
+          </HaltedTip>
         ))}
       </div>
       <p className="bridge-picker-label">{t('tokens')}</p>
@@ -180,22 +217,24 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
           tokens.map((asset, i) => {
             const halted = isAssetHalted(asset, mimir, mayaMimir)
             return (
-              <button
-                type="button"
-                key={asset.identifier}
-                className="bridge-pill"
-                style={rowIn(i)}
-                aria-pressed={selected?.identifier === asset.identifier}
-                disabled={halted}
-                title={halted ? t('halted') : asset.identifier}
-                onClick={() => {
-                  setAssetFrom(asset)
-                  onClose()
-                }}
-              >
-                <AssetIcon asset={asset} className="size-5 [&_img]:size-5" showNetworkIcons={false} />
-                {asset.ticker}
-              </button>
+              <HaltedTip key={asset.identifier} halted={halted}>
+                <button
+                  type="button"
+                  className="bridge-pill"
+                  style={rowIn(i)}
+                  aria-pressed={selected?.identifier === asset.identifier}
+                  aria-disabled={halted || undefined}
+                  title={halted ? undefined : asset.identifier}
+                  onClick={() => {
+                    if (halted) return
+                    setAssetFrom(asset)
+                    onClose()
+                  }}
+                >
+                  <AssetIcon asset={asset} className="size-5 [&_img]:size-5" showNetworkIcons={false} />
+                  {asset.ticker}
+                </button>
+              </HaltedTip>
             )
           })
         )}
