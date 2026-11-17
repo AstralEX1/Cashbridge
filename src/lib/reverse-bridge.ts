@@ -73,7 +73,8 @@ export const broadcastSale = async (uid: string, signedHex: string, txid: string
     update(uid, op => op.reverse?.sale?.txid === txid ? { stage: 'bch_ready', error: undefined } : {})
   } catch (error) {
     if (error instanceof BroadcastRejected && await rejectedFundingIntact(uid, signedHex, txid).catch(() => false))
-      return update(uid, op => op.reverse?.sale?.txid === txid ? { stage: 'failed', error: `The swap was rejected: ${error.message}. Nothing was sent.` } : {})
+      // The sale is dropped with it: a ticked step and a "sent" toast would contradict "Nothing was sent".
+      return update(uid, op => op.reverse?.sale?.txid === txid ? { stage: 'failed', error: `The swap was rejected: ${error.message}. Nothing was sent.`, reverse: { ...op.reverse, sale: undefined } } : {})
     update(uid, op => op.reverse?.sale?.txid === txid ? { stage: 'first_leg_unknown', error: error instanceof Error ? error.message : 'Broadcast outcome unknown' } : {})
   }
 }

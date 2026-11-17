@@ -110,6 +110,7 @@ test('a definitely absent reverse deposit can be rebuilt only while every wallet
   save()
   await broadcastSale(uid, signedHex, txid, transactionStore.getState().updateBridge)
   assert.equal(current().stage, 'failed')
+  assert.equal(current().reverse.sale, undefined, 'a sale that never reached the network must not show as sent')
   assert.ok(decodeTx(signedHex).inputs.length > funding.length, 'pool inputs need not remain available after a pool rejection')
 })
 
