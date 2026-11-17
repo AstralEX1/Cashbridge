@@ -281,7 +281,7 @@ const nonEvmPayout = async (chain: string, out: OutTx, expect: { destination: st
   const slug = BLOCKCHAIR_CHAINS[chain as UTXOChain]
   if (slug) {
     const res = await fetch(`${blockchairProxyUrl()}/${slug}/dashboards/transaction/${encodeURIComponent(hash.toLowerCase())}`, { signal: AbortSignal.timeout(15_000) })
-    if (!res.ok) throw new Error(`Blockchair answered ${res.status}`)
+    if (!res.ok) throw new Error(`UTXO lookup answered ${res.status}`)
     return utxoPayout(await res.json(), hash.toLowerCase(), expect)
   }
   if (chain === Chain.Ripple) {

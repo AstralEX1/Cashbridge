@@ -31,7 +31,7 @@ const textOf = (hex: string) => {
 
 const isOutMemo = (text: string | undefined, depositTxid: string) => text?.trim().toUpperCase() === `OUT:${normalizeTxid(depositTxid)}`.toUpperCase()
 
-// --- UTXO chains (Blockchair's transaction dashboard) ----------------------------------------------
+// --- UTXO chains (the transaction dashboard of /api/blockchair, Blockchair-shaped) ----------------------------------------------
 
 interface BlockchairOutput {
   recipient?: string

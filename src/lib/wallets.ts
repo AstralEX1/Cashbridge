@@ -49,9 +49,9 @@ function createUSwap(config: Parameters<typeof USwap>[0] = {}) {
 
 let instance: ReturnType<typeof createUSwap> | undefined = undefined
 
-// The Blockchair API key stays on the server, so the UTXO toolbox talks to our
-// own proxy (src/app/api/blockchair) instead of api.blockchair.com. The SDK's
-// request client builds a `new URL(...)`, so this has to be absolute.
+// The UTXO toolbox talks Blockchair's URL dialect, which our own route (src/app/api/blockchair) answers from
+// keyless public explorers, so there is no Blockchair account or key. The SDK's request client builds a
+// `new URL(...)`, so this has to be absolute.
 export function blockchairProxyUrl() {
   const origin = typeof window === 'undefined' ? AppConfig.baseUrl : window.location.origin
   return `${origin}/api/blockchair`
@@ -59,7 +59,7 @@ export function blockchairProxyUrl() {
 
 // Solana has no free endpoint a browser can use: api.mainnet-beta.solana.com 403s anything sending
 // an `Origin` header, and publicnode blocks the token-account call half of a balance needs. So the
-// toolbox talks to our own proxy (src/app/api/solana) instead, the same arrangement Blockchair has.
+// toolbox talks to our own proxy (src/app/api/solana) instead, the same arrangement the UTXO route has.
 function solanaProxyUrl() {
   const origin = typeof window === 'undefined' ? AppConfig.baseUrl : window.location.origin
   return `${origin}/api/solana`

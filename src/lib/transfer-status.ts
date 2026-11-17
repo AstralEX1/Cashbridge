@@ -43,7 +43,7 @@ async function evmStatus(chain: EVMChain, hash: string): Promise<TransferStatus>
 
 async function utxoStatus(slug: string, hash: string): Promise<TransferStatus> {
   const res = await fetch(`${blockchairProxyUrl()}/${slug}/dashboards/transaction/${encodeURIComponent(hash)}`, { signal: AbortSignal.timeout(15_000) })
-  if (!res.ok) throw new Error(`Blockchair answered ${res.status}`)
+  if (!res.ok) throw new Error(`UTXO lookup answered ${res.status}`)
   const { data } = await res.json()
   // Unknown hashes come back as an empty `data`; a mempool transaction has block_id -1.
   const blockId = data?.[hash]?.transaction?.block_id
