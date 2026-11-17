@@ -157,7 +157,9 @@ export const useBalance = (): UseBalance => {
     },
     enabled: !!(selected && assetFrom),
     retry: 1,
-    refetchOnMount: false
+    refetchOnMount: false,
+    // Sends do not invalidate this query (the router send never did), so a spent balance would stay on MAX until a reload.
+    refetchInterval: 30_000
   })
 
   return {
