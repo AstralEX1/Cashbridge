@@ -58,7 +58,7 @@ export default function Page() {
         <summary>An asset is greyed out, or the page says trading is halted</summary>
         <div>
           <p>
-            THORChain has paused trading in that asset. Your funds are not affected. Pick another asset or try again later.
+            THORChain has paused trading in that asset or on its whole network. Hover over it to see why. Your funds are not affected. Pick another asset or try again later, and follow the status on THORChain&apos;s <a href="https://thorchain.net/network" target="_blank" rel="noopener noreferrer">network page</a>.
           </p>
         </div>
       </details>
