@@ -88,6 +88,7 @@ export class OrderStore {
     this.db.exec('BEGIN IMMEDIATE')
     this.writing = true
     this.dirty = false
+    let advanced = false
     try {
       this.assertWritable()
       const result = fn()
@@ -95,13 +96,19 @@ export class OrderStore {
         const current = this.db.prepare('SELECT value FROM metadata WHERE name=?').get('recovery_sequence') as { value: string }
         const next = (BigInt(current.value) + 1n).toString()
         // Before SQLite commit: a crash can require review, but cannot silently allow a stale restore.
+        advanced = true
         this.writeGuard(next)
         this.db.prepare('UPDATE metadata SET value=? WHERE name=?').run(next, 'recovery_sequence')
       }
       this.db.exec('COMMIT')
       return result
     } catch (error) {
-      this.db.exec('ROLLBACK')
+      try { this.db.exec('ROLLBACK') } catch { /* SQLite already ended the transaction */ }
+      // A failed write (disk full, I/O error) must not leave the guard ahead of the database, which would
+      // read as a stale restore and stop signing for good. Bring it back to what the database holds.
+      if (advanced) {
+        try { this.writeGuard((this.db.prepare('SELECT value FROM metadata WHERE name=?').get('recovery_sequence') as { value: string }).value) } catch { /* stays ahead: the recovery stop */ }
+      }
       throw error
     } finally { this.writing = false }
   }
@@ -226,7 +233,8 @@ export class OrderStore {
         .prepare('UPDATE orders SET state=?, version=?, payload=? WHERE id=? AND version=?')
         .run(order.state, order.version, JSON.stringify(order), id, version).changes === 1
     )
-    this.dirty ||= changed
+    // Polling bookkeeping alone does not need the stale-restore guard; it would open the crash window every pass.
+    this.dirty ||= changed && Object.keys(allowed).some(name => name !== 'lastCheckedAt')
     return changed
     })
   }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { mkdtempSync, copyFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, copyFileSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { NextRequest } from 'next/server'
@@ -174,4 +174,52 @@ test('status polling does not exhaust the public write bucket', async () => {
     for (let i = 0; i < 11; i++) assert.equal((await forwardOrder(req(undefined, cap, 'GET', ip), id)).status, 503)
     assert.equal((await forwardOrder(req({}, cap, 'POST', ip), id)).status, 503)
   } finally { if (old === undefined) delete process.env.AUTO_BRIDGE_SOCKET; else process.env.AUTO_BRIDGE_SOCKET = old }
+})
+
+test('a failed commit does not leave the guard ahead of the database', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cashbridge-guard-error-'))
+  const path = join(directory, 'orders.sqlite')
+  const env = setup(path)
+  const guard = () => readFileSync(`${path}.guard`, 'utf8').trim()
+  try {
+    const before = guard()
+    const exec = env.store.db.exec.bind(env.store.db)
+    let failing = true
+    env.store.db.exec = sql => {
+      if (failing && sql === 'COMMIT') {
+        failing = false
+        throw new Error('disk full')
+      }
+      return exec(sql)
+    }
+    assert.throws(() => env.store.update(env.id, env.order.version, { state: 'streaming' }), /disk full/)
+    assert.equal(env.store.recoveryRequired, false)
+    assert.equal(guard(), before)
+    assert.equal(env.store.get(env.id).state, 'awaiting_deposit')
+    assert.equal(env.store.update(env.id, env.order.version, { state: 'streaming' }), true)
+    assert.equal(env.store.recoveryRequired, false)
+    assert.equal(guard(), String(Number(before) + 1))
+  } finally {
+    env.store.close()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('polling bookkeeping leaves the guard alone while a state change advances it', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cashbridge-guard-poll-'))
+  const path = join(directory, 'orders.sqlite')
+  const env = setup(path)
+  const guard = () => readFileSync(`${path}.guard`, 'utf8').trim()
+  try {
+    const before = guard()
+    assert.equal(env.store.nextWork(500).length, 1)
+    assert.equal(env.store.get(env.id).lastCheckedAt, 500)
+    assert.equal(guard(), before)
+    env.store.update(env.id, env.store.get(env.id).version, { state: 'streaming' })
+    assert.equal(guard(), String(Number(before) + 1))
+    assert.equal(env.store.recoveryRequired, false)
+  } finally {
+    env.store.close()
+    rmSync(directory, { recursive: true, force: true })
+  }
 })
