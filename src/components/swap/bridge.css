@@ -2090,20 +2090,16 @@ button.bridge-flow-primary:disabled {
 }
 
 /* Automatic execution shares the form and receipt, with its own order lifecycle. */
-/* Cashbridge Router: an iOS-style switch, grey track with a white knob, green when on. */
-.bridge-router { display: inline-flex; align-items: center; gap: 10px; color: #dce6e8; font-size: 14px; font-weight: 600; }
-.bridge-router label { cursor: pointer; }
-.bridge-router[data-disabled] { opacity: .5; }
-.bridge-router[data-disabled] label { cursor: default; }
-.bridge-switch { position: relative; flex: none; width: 52px; height: 30px; padding: 0; border-radius: 999px; background: #dfe5e4; box-shadow: inset 0 0 0 1px #cfd8d6; cursor: pointer; transition: background-color .2s; }
-.bridge-switch > span { position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 999px; background: #fff; box-shadow: 0 2px 6px #0f182033; transition: transform .2s; }
-.bridge-switch[aria-checked='true'] { background: #0ac18e; box-shadow: none; }
-.bridge-switch[aria-checked='true'] > span { transform: translateX(22px); }
-.bridge-switch:disabled { cursor: default; }
-.bridge-router:not([data-hydrated]) .bridge-switch { visibility: hidden; }
-.bridge-router:not([data-animate]) .bridge-switch, .bridge-router:not([data-animate]) .bridge-switch > span { transition: none; }
-.bridge-switch:focus-visible, .bridge-auto-history:focus-visible { outline: 2px solid #0ac18e; outline-offset: 3px; }
-@media (prefers-reduced-motion: reduce) { .bridge-switch, .bridge-switch > span { transition: none; } }
+/* Cashbridge Router: a two-option selector, Manual | Cashbridge Router; the chosen option is the green pill. */
+.bridge-router { display: inline-flex; padding: 3px; border-radius: 999px; background: #ffffff0d; box-shadow: inset 0 0 0 1px #ffffff1a; }
+.bridge-router button { padding: 7px 14px; border-radius: 999px; color: #dce6e8; font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.bridge-router button[aria-pressed='true'] { background: #0ac18e; color: #0f1820; }
+.bridge-router button:disabled { cursor: default; pointer-events: none; }
+.bridge-router[data-disabled] button:disabled { opacity: .5; }
+.bridge-router:not([data-hydrated]) { visibility: hidden; }
+.bridge-router button:focus-visible, .bridge-auto-history:focus-visible { outline: 2px solid #0ac18e; outline-offset: 3px; }
+.bridge-router-hint { margin: -2px 4px 12px; color: #c4d2d6; font-size: 13px; line-height: 1.4; }
+@media (max-width: 400px) { .bridge-router button { padding: 7px 10px; } }
 /* BCH receiving address menu (router and plain BCH): the wallet pill opens connect / paste options. */
 .bridge-wallet-menu { cursor: pointer; }
 .bridge-wallet-menu[data-state='open'] { background: #eaf0ef; }

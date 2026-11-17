@@ -983,7 +983,7 @@
     "manual": "Manual",
     "automatic": "Automatic",
     "router": "Cashbridge Router",
-    "routerTip": "On: you sign once, in your source wallet. Cash Bridge receives the BCH from THORChain, buys PUSD on Cauldron and sends it to your address, so your BCH wallet never has to sign. For plain BCH nothing changes. If the PUSD minimum can't be met, the BCH is returned to you, less the miner fee. Off: you sign each step in your own wallets.",
+    "routerHint": "The bridge will settle seamlessly via Cashbridge Router. No need to sign a second transaction.",
     "routerUnavailable": "Cashbridge Router works for transfers to PUSD or plain BCH. This route is signed in your own wallets.",
     "automaticHint": "The service handles the BCH-to-PUSD step. Your source wallet authorizes the first transfer.",
     "unsupported": "Automatic is available for forward transfers to PUSD. This route uses manual execution.",

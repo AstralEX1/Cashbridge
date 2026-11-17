@@ -18,7 +18,7 @@ import { SwapInputFrom } from '@/components/swap/swap-input-from'
 import { SwapInputTo } from '@/components/swap/swap-input-to'
 import { SwapSettings } from '@/components/swap/swap-settings'
 import { RefreshButton } from '@/components/swap/refresh-button'
-import { RouterToggle } from '@/components/swap/automatic-bridge-controls'
+import { RouterHint, RouterSelector } from '@/components/swap/automatic-bridge-controls'
 import { AutomaticOrders } from '@/components/swap/auto-bridge-progress'
 import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
 import { isAssetInMode, useAssets } from '@/hooks/use-assets'
@@ -117,13 +117,14 @@ export const Swap = () => {
         <h1>{tBridge(reverse ? 'headingReverse' : 'heading')}</h1>
       </div>
       <div className="bridge-tools mb-3 flex items-center justify-between gap-3">
-        <RouterToggle />
+        <RouterSelector />
         <div className="flex items-center gap-2">
           <TransactionHistoryButton />
           <RefreshButton />
           <SwapSettings />
         </div>
       </div>
+      <RouterHint />
 
       {/* Forward: THORChain swap to native BCH, then a separately signed Cauldron swap to the token.
             Reverse: a Cauldron sale of the token for BCH, then a BCH deposit to THORChain. No limit,

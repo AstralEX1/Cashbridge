@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useId } from 'react'
 import { useTranslations } from 'next-intl'
 import { create } from 'zustand'
 import { Check, ChevronDown, ClipboardPaste, LoaderCircle, LogOut, Wallet, X } from 'lucide-react'
@@ -13,44 +13,46 @@ import { useAutomaticBridge, useAutomaticHydrated } from '@/hooks/use-automatic-
 import { automaticPreference } from '@/store/auto-bridge-store'
 import { bchAddressProblem } from '@/lib/bch'
 
-// Cashbridge Router: on, the service executes the BCH-to-PUSD step (and plain BCH runs as before);
-// off, every step is signed in the user's own wallets. The switch keeps its position on plain BCH.
-export const RouterToggle = () => {
+const ROUTER_HINT_ID = 'bridge-router-hint'
+
+// Cashbridge Router selector: Router, the service executes the BCH-to-PUSD step (and plain BCH runs as
+// before); Manual, every step is signed in the user's own wallets. The choice keeps its position on plain BCH.
+export const RouterSelector = () => {
   const t = useTranslations('automatic')
-  const id = useId()
-  const { routerAvailable, routerOn } = useAutomaticBridge()
+  const { routerAvailable, routerOn, automatic } = useAutomaticBridge()
   const setMode = automaticPreference(state => state.setMode)
-  // The saved mode is only known after hydration: until then the switch is hidden, and it moves
-  // without animation on that first render, so a page load never shows it sliding from off to on.
+  // The saved mode is only known after hydration: until then the selector is hidden, so a page load never shows Manual flip to Router.
   const hydrated = useAutomaticHydrated()
-  const [animate, setAnimate] = useState(false)
-  useEffect(() => {
-    if (!hydrated) return
-    const timer = setTimeout(() => setAnimate(true), 50)
-    return () => clearTimeout(timer)
-  }, [hydrated])
-  return (
-    <Tooltip content={t(routerAvailable ? 'routerTip' : 'routerUnavailable')}>
-      <div className="bridge-router" data-disabled={!routerAvailable || undefined} data-hydrated={hydrated || undefined} data-animate={animate || undefined}>
-        <label htmlFor={id}>{t('router')}</label>
-        <button
-          id={id}
-          type="button"
-          role="switch"
-          className="bridge-switch"
-          aria-checked={routerOn}
-          aria-describedby={`${id}-tip`}
-          disabled={!routerAvailable}
-          onClick={() => setMode(routerOn ? 'manual' : 'automatic')}
-        >
-          <span aria-hidden="true" />
-        </button>
-        <span id={`${id}-tip`} className="sr-only">
-          {t(routerAvailable ? 'routerTip' : 'routerUnavailable')}
-        </span>
-      </div>
-    </Tooltip>
+  const selector = (
+    <div
+      className="bridge-router"
+      role="group"
+      aria-label={t('router')}
+      aria-describedby={automatic ? ROUTER_HINT_ID : undefined}
+      data-disabled={!routerAvailable || undefined}
+      data-hydrated={hydrated || undefined}
+    >
+      <button type="button" aria-pressed={!routerOn} onClick={() => setMode('manual')}>
+        {t('manual')}
+      </button>
+      <button type="button" aria-pressed={routerOn} disabled={!routerAvailable} onClick={() => setMode('automatic')}>
+        {t('router')}
+      </button>
+    </div>
   )
+  return routerAvailable ? selector : <Tooltip content={t('routerUnavailable')}>{selector}</Tooltip>
+}
+
+// What the Router does for the user, shown under the selector while it converts to PUSD
+// (plain BCH has no second transaction to talk about).
+export const RouterHint = () => {
+  const t = useTranslations('automatic')
+  const { automatic } = useAutomaticBridge()
+  return automatic ? (
+    <p id={ROUTER_HINT_ID} className="bridge-router-hint">
+      {t('routerHint')}
+    </p>
+  ) : null
 }
 
 // Whether the paste field under the BCH badge is open. An invalid typed address keeps it open.
