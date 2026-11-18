@@ -116,9 +116,10 @@ export const Swap = () => {
       <div className="bridge-heading">
         <h1>{tBridge(reverse ? 'headingReverse' : 'heading')}</h1>
       </div>
-      <div className="bridge-tools mb-3 flex items-center justify-between gap-3">
+      {/* Wraps on narrow phones, where the selector and three round buttons don't fit one row. */}
+      <div className="bridge-tools mb-3 flex flex-wrap items-center justify-between gap-3">
         <RouterSelector />
-        <div className="flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2">
           <TransactionHistoryButton />
           <RefreshButton />
           <SwapSettings />
