@@ -21,6 +21,7 @@ import { BchMark, CauldronMark, HoverCard, ThorchainMark, TokenMark } from '@/co
 import { shortBridgeAddress } from '@/components/swap/bridge-wallet-badge'
 import { BridgeFlow, chainTxUrl, type FlowBar, type FlowStage, type FlowToast, type FlowToken, thorchainTxUrl } from '@/components/swap/pusd-swap'
 import { useBchSideBalance } from '@/components/swap/reverse-inputs'
+import { usePayoutAddress, usePayoutDestination } from '@/components/swap/payout-destination'
 import { SwapAddressWarning } from '@/components/swap/swap-address-warning'
 import { SwapError } from '@/components/swap/swap-error'
 import { Credenza, CredenzaContent, CredenzaDescription, CredenzaHeader, CredenzaTitle } from '@/components/ui/credenza'
@@ -31,7 +32,7 @@ import { useQuote } from '@/hooks/use-quote'
 import { useRates } from '@/hooks/use-rates'
 import { useAssetFrom } from '@/hooks/use-swap'
 import { useTokenSale } from '@/hooks/use-token-sale'
-import { useConnectedAccount, useSetExternalWalletMode } from '@/hooks/use-wallets'
+import { useSetExternalWalletMode } from '@/hooks/use-wallets'
 import { checkUnspent, findThorchainOutbound, getTransactionState, historyIncludes } from '@/lib/bch'
 import { formatBaseUnits, toBaseUnits } from '@/lib/bridge'
 import { withLock } from '@/lib/bridge-first-leg'
@@ -221,7 +222,7 @@ export const ReverseSwapButton = ({ onShowBridge }: { onShowBridge: () => void }
   const t = useTranslations('swap')
   const tReverse = useTranslations('bridge.reverse')
   const asset = useAssetFrom()
-  const account = useConnectedAccount(asset?.chain)
+  const payout = usePayoutDestination()
   const setExternalWalletMode = useSetExternalWalletMode()
   const token = useSwapStore(state => state.bchToken)
   const amount = useSwapStore(state => state.amountFrom)
@@ -240,6 +241,13 @@ export const ReverseSwapButton = ({ onShowBridge }: { onShowBridge: () => void }
   })()
 
   const getState = (): ButtonState => {
+    // A pasted payout address stands in for the payout wallet, once it has passed its checks. Like the
+    // forward form's pasted address, a refused one is reported before anything else.
+    if (asset && payout.problem) {
+      const text = payout.problem === 'invalid' ? t('recipient.invalidAddress', { chain: chainLabel(asset.chain) }) : tReverse(payout.problem === 'unverified' ? 'payoutUnverified' : 'payoutUnsupported')
+      return { text, spinner: false, accent: false, onClick: payout.problem === 'unverified' ? payout.retry : undefined }
+    }
+    if (payout.checking) return { text: tReverse('checkingAddress'), spinner: true, accent: false }
     if (!bchWallet.binding) {
       const connecting = bchWallet.state === 'connecting' || bchWallet.state === 'reconnecting'
       return {
@@ -250,7 +258,7 @@ export const ReverseSwapButton = ({ onShowBridge }: { onShowBridge: () => void }
       }
     }
     if (!asset) return { text: '', spinner: true, accent: false }
-    if (!account) {
+    if (!payout.address) {
       return {
         text: t('button.connectWallet', { chain: chainLabel(asset.chain) }),
         spinner: false,
@@ -385,7 +393,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
   const tBridge = useTranslations('bridge')
   const tSwap = useTranslations('swap')
   const asset = useAssetFrom()
-  const account = useConnectedAccount(asset?.chain)
+  const destination = usePayoutAddress()
   const token = useSwapStore(state => state.bchToken)
   const amount = useSwapStore(state => state.amountFrom)
   const setAmountFrom = useSwapStore(state => state.setAmountFrom)
@@ -411,7 +419,6 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
   // Closing the dialog withdraws a request still waiting in the wallet.
   useEffect(() => () => abort.current?.abort(), [])
   const walletName = wallet.walletName ?? tBridge('wallet.yourWallet')
-  const destination = account?.address
   const binding = wallet.binding
   const units = useMemo(() => {
     try {
@@ -582,9 +589,9 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
                 <span className="bridge-confirm-arrow" aria-hidden="true">
                   <ArrowRight size={18} />
                 </span>
-                <span className="bridge-confirm-wallet" title={account?.address}>
+                <span className="bridge-confirm-wallet" title={destination}>
                   <img src={`/networks/${asset.chain.toLowerCase()}.svg`} width={22} height={22} alt="" />
-                  {account ? shortBridgeAddress(account.address) : chain}
+                  {destination ? shortBridgeAddress(destination) : chain}
                 </span>
               </div>
               <div className="bridge-confirm-amounts">

@@ -12,6 +12,7 @@ import { AmountPresets, useRevealOnHover } from '@/components/swap/amount-preset
 import { BridgeAssetButton, BridgeAssetPicker, type BridgeInputProps } from '@/components/swap/bridge-asset-picker'
 import { BridgeInputSwitcher } from '@/components/swap/bridge-input-switcher'
 import { BridgeWalletBadge } from '@/components/swap/bridge-wallet-badge'
+import { PayoutAddressInput, PayoutDestinationMenu, usePayoutDestination } from '@/components/swap/payout-destination'
 import { BridgePriceImpact } from '@/components/swap/price-impact'
 import { MetaSkeleton, QuotePlaceholder, useLastValue } from '@/components/swap/quote-placeholder'
 import { Tooltip } from '@/components/tooltip'
@@ -30,7 +31,8 @@ import { getInboundAddresses } from '@/lib/api'
 import { useSwapStore } from '@/store/swap-store'
 
 // The reverse direction's form: the BCH side on top (BCH or a Cauldron token, sent from the bound
-// BCH wallet) and the other chain's asset below (paid out by THORChain to the wallet connected on that chain).
+// BCH wallet) and the other chain's asset below (paid out by THORChain to the wallet connected on that
+// chain, or to an address pasted for it).
 
 // What the bound address holds of the BCH-side asset: token-free BCH, or the token's fungible
 // amount (outputs carrying an NFT are left alone). Only the bound address is seen, not the whole
@@ -162,6 +164,7 @@ export const ReverseInputTo = ({ selecting, onSelectOpenChange }: BridgeInputPro
   const amount = useSwapStore(state => state.amountFrom)
   const sale = useTokenSale(token, amount)
   const { quote, isLoading, error } = useQuote()
+  const payout = usePayoutDestination()
   const { rates } = useRates([BridgeConfig.buyAsset, ...(asset ? [asset.identifier] : [])], quote?.providers[0])
   const trigger = useRef<HTMLButtonElement>(null)
   const close = () => {
@@ -184,8 +187,9 @@ export const ReverseInputTo = ({ selecting, onSelectOpenChange }: BridgeInputPro
         <section className="bridge-input" aria-label={t('to')}>
           <div className="bridge-input-heading">
             <BridgeAssetButton ref={trigger} asset={asset} aria-label={t('to')} aria-expanded={selecting} onClick={() => onSelectOpenChange(true)} />
-            <BridgeWalletBadge kind="other" />
+            <PayoutDestinationMenu payout={payout} />
           </div>
+          <PayoutAddressInput payout={payout} />
           <output className="bridge-amount" aria-label={t('receiveAmount')} aria-live="polite" aria-busy={isLoading}>
             {isLoading ? <QuotePlaceholder previous={previous} /> : (output ?? '')}
           </output>
