@@ -29,7 +29,7 @@
     tx-toast-headshake 360ms var(--tx-toast-ease-out) 80ms both;
 }
 .tx-toast.is-leaving {
-  animation: tx-toast-exit 220ms var(--tx-toast-ease-in-out) forwards;
+  animation: tx-toast-exit 220ms var(--tx-toast-ease-out) forwards;
 }
 
 /* Status glyph without a token: a 40 px circle. */
@@ -237,21 +237,43 @@
   outline-offset: 2px;
 }
 
-/* Sonner's wrapper around a toast: older toasts sit behind the newest, a little smaller and dimmer. */
-.tx-sonner-toast {
+/* Sonner's wrapper around a toast. Collapsed, the older toasts sit behind the newest one, a little higher, smaller and dimmer, and
+   show only their edge. With the pointer over the stack they open upwards, one above the other, the newest at the bottom. Sonner
+   moves them by changing `--y` and `opacity`; the transitions below only set how fast. */
+.tx-sonner-toast[data-sonner-toast]:not([data-swiping='true']) {
   width: auto;
   max-width: calc(100vw - 32px);
+  transition:
+    transform 280ms cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 200ms cubic-bezier(0, 0, 0.2, 1);
 }
+/* Three levels show behind the newest; deeper ones lie exactly under the third. */
 .tx-sonner-toast[data-expanded='false'][data-front='false'][data-visible='true'][data-removed='false'] {
-  --y: translateY(calc(-4px * var(--toasts-before))) scale(calc(1 - var(--toasts-before) * 0.02)) !important;
-  opacity: max(0.55, calc(1 - var(--toasts-before) * 0.15)) !important;
+  --depth: min(var(--toasts-before), 3);
+  --y: translateY(calc(-4px * var(--depth))) scale(calc(1 - var(--depth) * 0.02)) !important;
+  opacity: max(0.55, calc(1 - var(--depth) * 0.15)) !important;
+}
+/* A closed older toast is as tall as the newest and shows no content, so it cannot stick out below it. */
+.tx-sonner-toast[data-expanded='false'][data-front='false'] .tx-toast {
+  max-height: var(--front-toast-height);
+}
+.tx-sonner-toast .tx-toast > * {
+  transition: opacity 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+.tx-sonner-toast[data-expanded='false'][data-front='false'] .tx-toast > * {
+  opacity: 0;
 }
 .tx-sonner-toast[data-visible='false'] {
   pointer-events: none;
   opacity: 0 !important;
 }
-.tx-sonner-toast[data-removed='true'] .tx-toast {
-  animation: tx-toast-exit 220ms var(--tx-toast-ease-in-out) forwards;
+/* Sonner eases a closed back toast away over 500 ms. */
+@media (prefers-reduced-motion: no-preference) {
+  .tx-sonner-toast[data-removed='true'][data-front='false'][data-swipe-out='false'][data-expanded='false'] {
+    transition:
+      transform 220ms cubic-bezier(0, 0, 0.2, 1),
+      opacity 160ms cubic-bezier(0, 0, 0.2, 1) !important;
+  }
 }
 
 @keyframes tx-toast-enter {
@@ -328,6 +350,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .tx-sonner-toast[data-sonner-toast],
+  .tx-sonner-toast .tx-toast > * {
+    transition: none !important;
+  }
   .tx-toast,
   .tx-toast.is-error,
   .tx-toast.is-leaving,

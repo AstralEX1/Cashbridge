@@ -8,7 +8,7 @@ import { Toaster as Sonner, ToasterProps } from 'sonner'
 const Toaster = ({ ...props }: ToasterProps) => (
   <Sonner
     position="bottom-right"
-    visibleToasts={4}
+    visibleToasts={5}
     gap={10}
     expand={false}
     offset={{ right: 24, bottom: 24 }}
