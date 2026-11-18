@@ -51,6 +51,14 @@ export const checkInbound = (inbounds: InboundAddress[], quotedVault: string, de
 
 // --- Memo ----------------------------------------------------------------------------------------
 
+// THORNode's own asset short codes (common/asset.go, Asset.ShortCode). The aggregator writes them in
+// memos even where its token list leaves `shortCode` empty: SOL.SOL is quoted as `=:o:...`.
+const THORNODE_SHORT_CODES: Record<string, string> = {
+  'THOR.RUNE': 'R', 'BTC.BTC': 'B', 'ETH.ETH': 'E', 'GAIA.ATOM': 'G', 'DOGE.DOGE': 'D', 'LTC.LTC': 'L', 'BCH.BCH': 'C',
+  'AVAX.AVAX': 'A', 'BSC.BNB': 'S', 'BASE.ETH': 'F', 'TRON.TRX': 'TR', 'XRP.XRP': 'X', 'SOL.SOL': 'O', 'TAO.TAO': 'TA',
+  'ZEC.ZEC': 'Z', 'XMR.XMR': 'M', 'POL.POL': 'P', 'SUI.SUI': 'U', 'DOT.DOT': 'DO', 'ADA.ADA': 'AD'
+}
+
 // The quoted memo must swap to the asked asset and pay the asked address: `=:ASSET:DEST[:LIMIT...]`
 // (also `s`/`swap`). THORChain accepts the asset in its short form (BASE.USDC for
 // BASE.USDC-0X8335...), or the protocol's short code (`b` for BTC.BTC), which the aggregator uses to
@@ -62,7 +70,8 @@ export const checkDepositMemo = (memo: string, { buyAsset, destination, shortCod
   const want = buyAsset.toUpperCase()
   const got = asset.toUpperCase()
   const [chainSymbol] = want.split('-')
-  if (got !== want && got !== chainSymbol && !(shortCode && got === shortCode.toUpperCase())) throw new DepositError('The memo swaps to a different asset')
+  const codes = [THORNODE_SHORT_CODES[want], shortCode?.toUpperCase()]
+  if (got !== want && got !== chainSymbol && !codes.includes(got)) throw new DepositError('The memo swaps to a different asset')
   if (!sameAddress(dest, destination)) throw new DepositError('The memo pays a different address')
 }
 

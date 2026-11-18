@@ -154,5 +154,9 @@ test('a deposit to RUNE needs no THOR inbound; memos may name the asset by its s
   assert.throws(() => checkDepositMemo('=:e:bc1qdest', { buyAsset: 'BTC.BTC', destination: 'bc1qdest', shortCode: 'b' }), /different asset/)
   const sol = 'So1Destination111111111111111111111111111111'
   checkDepositMemo(`=:SOL.SOL:${sol}`, { buyAsset: 'SOL.SOL', destination: sol })
+  // The aggregator's real BCH -> SOL memo: THORNode's code `o`, while its token list gives SOL no shortCode.
+  checkDepositMemo(`=:o:${sol}:55280894`, { buyAsset: 'SOL.SOL', destination: sol })
+  checkDepositMemo('=:z:t1dest', { buyAsset: 'ZEC.ZEC', destination: 't1dest' })
+  assert.throws(() => checkDepositMemo(`=:o:${sol}`, { buyAsset: 'BTC.BTC', destination: sol, shortCode: 'b' }), /different asset/)
   assert.throws(() => checkDepositMemo(`=:SOL.SOL:${sol.toLowerCase()}`, { buyAsset: 'SOL.SOL', destination: sol }), /different address/)
 })
