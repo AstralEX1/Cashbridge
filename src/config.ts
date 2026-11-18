@@ -51,8 +51,9 @@ export const BridgeConfig = {
   // chose to swap as soon as the verified outbound is in the mempool; BCH has no
   // replace-by-fee, and Cauldron accepts unconfirmed inputs.
   minConfirmations: 0,
-  // Second-leg price tolerance applied to the fresh Cauldron quote, in basis points.
-  pusdSlippageBps: 100,
+  // Second-leg price tolerance applied to the fresh Cauldron quote, in basis points (owner: 2% default, 2026-11-18).
+  // The router fixes it into an order's minimum when the order is created; existing orders keep theirs.
+  pusdSlippageBps: 200,
   cauldronBroadcastUrl: process.env.NEXT_PUBLIC_CAULDRON_BROADCAST_URL || 'https://broadcast.cauldron.quest/broadcast',
   // Cauldron's public pool indexer: the PUSD pools the second leg trades against. Each pool a trade
   // picks is checked unspent on a Fulcrum server first, since the list can lag the chain.

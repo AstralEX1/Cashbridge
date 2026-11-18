@@ -45,7 +45,7 @@ test('order API fixes the minimum before signing, authenticates status and rejec
     const created = await createOrder(request(intent), service)
     assert.equal(created.status, 201)
     const first = await created.json()
-    assert.equal(first.minPusd, '990')
+    assert.equal(first.minPusd, '980')
     assert.equal((await createOrder(request(intent), service)).status, 200)
     assert.equal(quotes, 1)
     assert.equal((await createOrder(request({ ...intent, refundAddress: 'invalid' }), service)).status, 400)
@@ -89,7 +89,7 @@ test('public Next routes reach the private worker socket and cannot mutate order
     )
     assert.equal(created.status, 201)
     const result = await created.json()
-    assert.equal(result.minPusd, '990')
+    assert.equal(result.minPusd, '980')
     assert.equal(JSON.stringify(result).includes(capability), false)
     assert.equal(Object.hasOwn(result, 'binding'), false)
     const restored = await publicStatus(new NextRequest(`https://bridge.example/api/auto-bridge/orders/${id}`, { headers }), {

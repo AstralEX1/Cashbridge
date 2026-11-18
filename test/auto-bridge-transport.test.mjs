@@ -67,7 +67,7 @@ test('Vercel proxy reaches the authenticated worker through verified HTTPS and p
       child.on('error', reject)
       child.on('close', code => code === 0 ? resolve(JSON.parse(output)) : reject(new Error('Synthetic HTTPS proxy child failed')))
     })
-    assert.deepEqual(result, { create: 201, get: 200, denied: 401, min: '990', noStore: 'no-store', private: false })
+    assert.deepEqual(result, { create: 201, get: 200, denied: 401, min: '980', noStore: 'no-store', private: false })
     assert.ok(seen.slice(0, 2).every(row => row.authorized && row.ip === '192.0.2.10' && !row.leaked))
     assert.ok(seen.every(row => !row.path.includes(capability)))
   } finally {
