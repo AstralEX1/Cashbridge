@@ -14,7 +14,7 @@ export default function Page() {
       title="Introduction"
       lead="Cash Bridge moves value between Bitcoin Cash and the rest of crypto. Send an asset from Bitcoin, Ethereum, Base, Solana or another chain and receive BCH or a CashToken such as PUSD. Or go the other way."
     >
-      <Shot name="form-forward" alt="The Cash Bridge form: 25 USDC on Ethereum to about 24.55 PUSD on Bitcoin Cash" caption="The bridge form. Pick what to send, what to receive and an amount; the estimate updates as you type." />
+      <Shot name="form-forward" alt="The Cash Bridge form: 25 USDC on Ethereum to about 24.63 PUSD on Bitcoin Cash" caption="The bridge form. Pick what to send, what to receive and an amount; the estimate updates as you type." />
 
       <h2 id="what-you-can-do">What you can do</h2>
       <ul>

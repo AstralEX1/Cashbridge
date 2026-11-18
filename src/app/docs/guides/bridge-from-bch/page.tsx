@@ -23,7 +23,7 @@ export default function Page() {
           <p>
             Press the arrows between the two fields. The heading changes to <strong>Bridge from Bitcoin Cash</strong>. The top field now holds the token you sell and the bottom one the asset you receive.
           </p>
-          <Shot name="form-reverse" alt="The reversed form: sell 20 PUSD on Bitcoin Cash, receive about 19.70 USDC on Ethereum" caption="20 PUSD is estimated at about 19.70 USDC on Ethereum." />
+          <Shot name="form-reverse" alt="The reversed form: sell 20 PUSD on Bitcoin Cash, receive about 19.51 USDC on Ethereum" caption="20 PUSD is estimated at about 19.51 USDC on Ethereum." />
         </Step>
 
         <Step title="Pick the assets and an amount">

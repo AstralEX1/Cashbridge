@@ -43,7 +43,7 @@ export default function Page() {
           <p>
             Type the amount to send. Below it you see the estimated amount you will receive and, next to it, the price impact. The square button with a ring at the top right, next to the sliders, counts down to the next refresh of the quote and your wallet balances; press it to refresh them now. Hover over the amount to get 25%, 50%, 75% and MAX shortcuts once your wallet&apos;s balance is known.
           </p>
-          <Shot name="form-forward" alt="The form with 25 USDC on Ethereum and an estimate of 24.55 PUSD" caption="25 USDC is estimated at about 24.55 PUSD. The estimate is not a promise; the minimum you accept is shown before you sign." />
+          <Shot name="form-forward" alt="The form with 25 USDC on Ethereum and an estimate of 24.63 PUSD" caption="25 USDC is estimated at about 24.63 PUSD. The estimate is not a promise; the minimum you accept is shown before you sign." />
           <p>
             To change how far the price may move against you before the swap is refunded, open the sliders button at the top right. The default is 1%. See <Link href="/docs/fees#slippage">Price impact and slippage</Link>.
           </p>
