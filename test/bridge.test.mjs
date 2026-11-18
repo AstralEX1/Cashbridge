@@ -2,8 +2,8 @@
 // Run: npm run test:bridge
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { binToHex, decodeTransaction, encodeTransaction, hash160, hexToBin } from '@bitauth/libauth'
-import { addressPaysScript, bindingFromAddress, bindingFromPubkey, checkOutbound, decodeTx, isValidBinding, opReturnText, txidOf } from '../src/lib/bch.ts'
+import { binToHex, decodeTransaction, encodeCashAddress, encodeTransaction, hash160, hexToBin } from '@bitauth/libauth'
+import { addressPaysScript, bchAddressProblem, bindingFromAddress, bindingFromPubkey, checkOutbound, decodeTx, isValidBinding, opReturnText, txidOf } from '../src/lib/bch.ts'
 import { bestTrade, CauldronError, checkPoolCovenants, checkSigned, fitSale, poolLockingBytecode, reviewBuild, sourcesOf, tradeTransaction } from '../src/lib/cauldron.ts'
 import { formatBaseUnits, inboundMatchesBinding, interpretMidgard, interpretTxStatus, minOutputFor, secondLegSellAmount, toBaseUnits } from '../src/lib/bridge.ts'
 import { assertBridgeQuoteRequest, getQuotes, isBridgeRoute } from '../src/lib/api.ts'
@@ -128,6 +128,50 @@ test('plain and token-aware addresses of the binding pay the same script', () =>
   assert.ok(addressPaysScript(binding.cashAddress.toUpperCase(), binding.lockingBytecode))
   assert.ok(!addressPaysScript(otherBinding.cashAddress, binding.lockingBytecode))
   assert.ok(!addressPaysScript('bchtest:' + binding.cashAddress.split(':')[1], binding.lockingBytecode))
+})
+
+test('a pasted BCH destination must be CashAddr, and token-aware when it receives a token', () => {
+  const [prefix, plain] = binding.cashAddress.split(':')
+  const token = binding.tokenAddress.split(':')[1]
+  const scriptHash = hash160(ownScript)
+  const p2sh = encodeCashAddress({ prefix, type: 'p2sh', payload: scriptHash }).address
+  const p2shToken = encodeCashAddress({ prefix, type: 'p2shWithTokens', payload: scriptHash }).address
+  assert.ok(p2sh.includes(':p') && p2shToken.includes(':r'))
+  assert.equal(bchAddressProblem(binding.cashAddress, false), undefined)
+  assert.equal(bchAddressProblem(`  ${plain}\n`, false), undefined, 'bare and padded')
+  assert.equal(bchAddressProblem(binding.cashAddress.toUpperCase(), false), undefined)
+  assert.equal(bchAddressProblem(binding.tokenAddress, false), undefined, 'a token-aware address also receives plain BCH')
+  assert.equal(bchAddressProblem(p2sh, false), undefined)
+  // PUSD goes only to a token-aware address.
+  assert.equal(bchAddressProblem(binding.tokenAddress, true), undefined)
+  assert.equal(bchAddressProblem(token, true), undefined)
+  assert.equal(bchAddressProblem(p2shToken, true), undefined)
+  assert.equal(bchAddressProblem(binding.cashAddress, true), 'notTokenAware')
+  assert.equal(bchAddressProblem(plain, true), 'notTokenAware')
+  assert.equal(bchAddressProblem(p2sh, true), 'notTokenAware')
+  // Other chains, other networks and typos are refused on both routes.
+  const foreign = [
+    '',
+    'bitcoincash:',
+    '0x71C7656EC7ab88b098defB751B7401B5f6d8976F', // EVM
+    '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM', // Solana
+    'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq', // Bitcoin bech32
+    '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa', // legacy: Bitcoin and BCH look alike
+    '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy',
+    'ltc1qw508d6qejxtdg4y5r3zarvary0c5xw7kgmn4n9',
+    'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh', // XRP
+    'thor1x8q5mmwz3lhc9d2fpzcsw5rjv8uyw3nmpq2zqp',
+    `bchtest:${plain}`,
+    `ethereum:${plain}`,
+    `${prefix}:${plain.slice(0, -1)}`, // truncated
+    `${prefix}:${plain.slice(0, -1)}${plain.endsWith('q') ? 'p' : 'q'}`, // checksum typo
+    `${prefix}:${plain.slice(0, 10)}${plain.slice(10).toUpperCase()}`, // mixed case
+    `${prefix}:${plain} extra`
+  ]
+  for (const address of foreign) {
+    assert.equal(bchAddressProblem(address, false), 'invalid', `plain: ${address}`)
+    assert.equal(bchAddressProblem(address, true), 'invalid', `token: ${address}`)
+  }
 })
 
 test('a restored binding is accepted only if it still derives from its key', () => {

@@ -3,6 +3,7 @@ import {
   binToHex,
   binsAreEqual,
   cashAddressToLockingBytecode,
+  decodeCashAddress,
   decodeTransaction,
   encodeCashAddress,
   hash160,
@@ -75,6 +76,20 @@ export const addressToLockingBytecode = (address: string): string | undefined =>
   const legacy = base58AddressToLockingBytecode(trimmed)
   if (typeof legacy !== 'string' && legacy.version === 0) return binToHex(legacy.bytecode)
   return undefined
+}
+
+export type BchAddressProblem = 'invalid' | 'notTokenAware'
+
+// Why a pasted receiving address cannot be paid, or undefined when it can. Stricter than
+// `addressToLockingBytecode`: only CashAddr passes (legacy 1… addresses read the same as Bitcoin's), in
+// one case, with the mainnet prefix or none. A token (PUSD) must go to a token-aware address (z…), so
+// it is never sent to a wallet that may not be able to hold CashTokens.
+export const bchAddressProblem = (address: string, tokens: boolean): BchAddressProblem | undefined => {
+  const text = address.trim()
+  if (text !== text.toLowerCase() && text !== text.toUpperCase()) return 'invalid'
+  const decoded = decodeCashAddress(text.includes(':') ? text.toLowerCase() : `${BCH_PREFIX}:${text.toLowerCase()}`)
+  if (typeof decoded === 'string' || decoded.prefix !== BCH_PREFIX || !addressToLockingBytecode(text)) return 'invalid'
+  return tokens && !decoded.type.endsWith('WithTokens') ? 'notTokenAware' : undefined
 }
 
 // A pasted address the user receives plain BCH at, with no wallet connected: nothing will be signed
