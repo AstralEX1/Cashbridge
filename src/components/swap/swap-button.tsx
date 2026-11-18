@@ -49,7 +49,7 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
   const t = useTranslations('swap')
   const tWallet = useTranslations('wallet')
   const tAuto = useTranslations('automatic')
-  const { automatic, recipient, pasted } = useAutomaticBridge()
+  const { automatic, recipient, pastedProblem } = useAutomaticBridge()
   const destination = useBchDestination()
   const slippage = useSlippage()
   const assetFrom = useAssetFrom()
@@ -189,8 +189,7 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
   const getState = (): ButtonState => {
     if (preparing) return { text: t('recipient.preparingSwap'), spinner: true, accent: true }
     // The BCH side first, then the source wallet. A pasted address stands in for the BCH wallet.
-    const typedInvalid = automatic ? !!pasted && !addressToLockingBytecode(recipient) : destination.invalid
-    if (typedInvalid) return { text: tAuto('invalidRecipient'), spinner: false, accent: false }
+    if (pastedProblem || destination.invalid) return { text: tAuto(automatic ? 'invalidTokenRecipient' : 'invalidRecipient'), spinner: false, accent: false }
     if (automatic ? !addressToLockingBytecode(recipient) : !destination.binding) {
       const connecting = bchWallet.state === 'connecting' || bchWallet.state === 'reconnecting'
       return {

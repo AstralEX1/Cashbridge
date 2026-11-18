@@ -20,7 +20,7 @@ import { PUSD_TOKEN } from '@/lib/cauldron-tokens'
 import { useAssetFrom, useSwap } from '@/hooks/use-swap'
 import { useSwapRates } from '@/hooks/use-rates'
 import { AppConfig, BridgeConfig } from '@/config'
-import { addressToLockingBytecode } from '@/lib/bch'
+import { bchAddressProblem } from '@/lib/bch'
 import { toBaseUnits } from '@/lib/bridge'
 import { firstLegSeconds } from '@/lib/bridge-summary'
 import { getQuotes, isBridgeRoute } from '@/lib/api'
@@ -57,7 +57,7 @@ export const prepareAutomatic = async ({
   slippage?: number
   messages: { invalidAddress: string; serviceUpdate: string; noRoute: string }
 }): Promise<PreparedAutomatic> => {
-  if (!addressToLockingBytecode(recipient)) throw new Error(messages.invalidAddress)
+  if (bchAddressProblem(recipient, true)) throw new Error(messages.invalidAddress)
   const intent: OrderIntent = { recipientAddress: recipient, refundAddress: recipient, source, expectedBchSats: toBaseUnits(expectedBuyAmount, 8).toString() }
   const reusable = autoBridgeStore
     .getState()

@@ -11,7 +11,7 @@ import { useBchWallet } from '@/components/bch-wallet'
 import { shortBridgeAddress } from '@/components/swap/bridge-wallet-badge'
 import { useAutomaticBridge, useAutomaticHydrated } from '@/hooks/use-automatic-bridge'
 import { automaticPreference } from '@/store/auto-bridge-store'
-import { addressToLockingBytecode } from '@/lib/bch'
+import { bchAddressProblem } from '@/lib/bch'
 
 // Cashbridge Router: on, the service executes the BCH-to-PUSD step (and plain BCH runs as before);
 // off, every step is signed in the user's own wallets. The switch keeps its position on plain BCH.
@@ -61,10 +61,10 @@ const usePasteField = create<{ open: boolean; setOpen: (open: boolean) => void }
 export const BchDestinationMenu = () => {
   const t = useTranslations('bridge.wallet')
   const wallet = useBchWallet()
-  const { pasted } = useAutomaticBridge()
+  const { automatic, pasted, pastedProblem } = useAutomaticBridge()
   const setRecipient = automaticPreference(state => state.setRecipient)
   const setOpen = usePasteField(state => state.setOpen)
-  const pastedValid = !!pasted && !!addressToLockingBytecode(pasted)
+  const pastedValid = !!pasted && !pastedProblem
   const walletAddress = wallet.binding?.cashAddress
   const connecting = (wallet.state === 'connecting' || wallet.state === 'reconnecting') && !wallet.reconnectStalled
 
@@ -78,13 +78,14 @@ export const BchDestinationMenu = () => {
     if (walletAddress || wallet.reconnectStalled || wallet.mismatch || wallet.state === 'connected') wallet.pairAgain()
     else wallet.connect()
   }
-  // Takes a BCH address straight from the clipboard when there is one; otherwise opens the field.
+  // Takes an address straight from the clipboard when it holds one word; a wrong one stays in the field,
+  // marked, so the user sees what was refused. Anything else (a copied sentence) just opens the field.
   const paste = async () => {
     try {
       const text = (await navigator.clipboard.readText()).trim()
-      if (addressToLockingBytecode(text)) {
+      if (/^\S{1,100}$/.test(text)) {
         setRecipient(text)
-        setOpen(false)
+        setOpen(!!bchAddressProblem(text, automatic))
         return
       }
     } catch {
@@ -154,13 +155,13 @@ export const BchDestinationMenu = () => {
 export const DestinationAddressInput = () => {
   const t = useTranslations('automatic')
   const id = useId()
-  const { pasteAllowed, automatic } = useAutomaticBridge()
+  const { pasteAllowed, automatic, pastedProblem } = useAutomaticBridge()
   const value = automaticPreference(state => state.recipient)
   const setRecipient = automaticPreference(state => state.setRecipient)
   const open = usePasteField(state => state.open)
   const setOpen = usePasteField(state => state.setOpen)
   const wallet = useBchWallet()
-  if (!pasteAllowed || (!open && (!value.trim() || !!addressToLockingBytecode(value.trim())))) return null
+  if (!pasteAllowed || (!open && !pastedProblem)) return null
   const close = () => {
     setRecipient('')
     setOpen(false)
@@ -177,13 +178,20 @@ export const DestinationAddressInput = () => {
           autoComplete="off"
           spellCheck={false}
           autoFocus={!value}
-          aria-invalid={!!value.trim() && !addressToLockingBytecode(value.trim())}
+          aria-invalid={!!pastedProblem}
+          aria-describedby={pastedProblem ? `${id}-error` : undefined}
         />
         <button type="button" className="bridge-paste-clear" aria-label={t(wallet.binding ? 'useWallet' : 'clearAddress')} title={t(wallet.binding ? 'useWallet' : 'clearAddress')} onClick={close}>
           <X size={16} aria-hidden="true" />
         </button>
       </div>
-      <p className="bridge-input-meta">{t(automatic ? 'pasteRecipient' : 'pasteRecipientBch')}</p>
+      {pastedProblem ? (
+        <p id={`${id}-error`} className="bridge-paste-error" role="alert">
+          {t(pastedProblem === 'notTokenAware' ? 'addressNotTokenAware' : automatic ? 'addressInvalidToken' : 'addressInvalid')}
+        </p>
+      ) : (
+        <p className="bridge-input-meta">{t(automatic ? 'pasteRecipient' : 'pasteRecipientBch')}</p>
+      )}
     </div>
   )
 }

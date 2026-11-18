@@ -1,7 +1,7 @@
 import { useBchWallet } from '@/components/bch-wallet'
 import { BridgeConfig } from '@/config'
 import { automaticEligible } from '@/lib/auto-bridge-contract'
-import { bindingFromAddress } from '@/lib/bch'
+import { bchAddressProblem, bindingFromAddress } from '@/lib/bch'
 import { automaticPreference } from '@/store/auto-bridge-store'
 import { useSwapStore } from '@/store/swap-store'
 import { useSyncExternalStore } from 'react'
@@ -25,6 +25,8 @@ export const useAutomaticBridge = () => {
   // Both routes can pay a pasted address instead of the connected wallet.
   const pasteAllowed = automatic || plainBch
   const pasted = pasteAllowed ? address.trim() : ''
+  // PUSD is a CashToken: on the router's PUSD route a pasted address has to be token-aware.
+  const pastedProblem = pasted ? bchAddressProblem(pasted, automatic) : undefined
   return {
     eligible,
     automatic,
@@ -33,6 +35,7 @@ export const useAutomaticBridge = () => {
     routerOn: hydrated && routerAvailable && mode === 'automatic',
     pasteAllowed,
     pasted,
+    pastedProblem,
     recipient: pasted || wallet.binding?.tokenAddress || ''
   }
 }
@@ -40,10 +43,10 @@ export const useAutomaticBridge = () => {
 // Where the first leg pays: a pasted plain-BCH address, else the connected BCH wallet.
 export const useBchDestination = () => {
   const wallet = useBchWallet()
-  const { plainBch, pasted } = useAutomaticBridge()
+  const { plainBch, pasted, pastedProblem } = useAutomaticBridge()
   // A typed address never falls back to the wallet: an invalid one leaves no destination at all.
   if (plainBch && pasted) {
-    const binding = bindingFromAddress(pasted)
+    const binding = pastedProblem ? undefined : bindingFromAddress(pasted)
     return { binding, pasted: true, invalid: !binding }
   }
   return { binding: wallet.binding, pasted: false, invalid: false }

@@ -2128,6 +2128,7 @@ button.bridge-flow-primary:disabled {
 .bridge-auto-recipient label { display: block; margin-bottom: 8px; font-size: 12px; font-weight: 600; }
 .bridge-auto-recipient input { width: 100%; color: #0f1820; background: #eaf0ef; }
 .bridge-auto-recipient input[aria-invalid='true'] { outline: 1px solid #bd493e; }
+.bridge-paste-error { margin: 6px 0 0; color: #bd493e; font-size: 12px; font-weight: 600; }
 .bridge-auto-orders { display: grid; gap: 8px; margin-top: 20px; color: #c4d2d6; }
 .bridge-auto-history { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-radius: 16px; text-align: left; background: #1b2c35; color: #eaf0ef; cursor: pointer; }
 .bridge-auto-history > span { display: flex; min-width: 0; gap: 8px; font-size: 13px; overflow-wrap: anywhere; }
