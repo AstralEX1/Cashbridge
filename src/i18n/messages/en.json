@@ -704,6 +704,7 @@
       "elapsed": "Total elapsed time",
       "newTransfer": "New transfer",
       "bridgeAnother": "Bridge another",
+      "inFlight": "Transfers in progress",
       "swapButton": "Swap (2/2)",
       "reconnectBch": "Close this window and reconnect your BCH wallet using the main button.",
       "retry": "Retry quote",

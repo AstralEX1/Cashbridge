@@ -12,7 +12,7 @@ import { TransactionHistoryButton } from '@/components/header/transaction-histor
 import { SwapButton } from '@/components/swap/swap-button'
 import { ReverseSwapButton } from '@/components/swap/reverse-bridge'
 import { BchInputFrom, ReverseInputTo } from '@/components/swap/reverse-inputs'
-import { BchWalletStatus, BridgeOperationPanel } from '@/components/swap/pusd-swap'
+import { BackgroundBridges, BchWalletStatus, BridgeOperationPanel } from '@/components/swap/pusd-swap'
 import { SwapHaltBanner } from '@/components/swap/swap-halt-banner'
 import { SwapInputFrom } from '@/components/swap/swap-input-from'
 import { SwapInputTo } from '@/components/swap/swap-input-to'
@@ -163,6 +163,7 @@ export const Swap = () => {
       {!automatic && <BchWalletStatus />}
 
       <BridgeOperationPanel uid={progressId} onClose={() => setProgressId(undefined)} />
+      <BackgroundBridges onOpen={setProgressId} />
       <AutomaticOrders />
       {flowPreview && <BridgeFlowPreview stage={flowPreview} />}
 

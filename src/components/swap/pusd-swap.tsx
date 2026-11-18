@@ -720,6 +720,32 @@ export const cauldronQuoteView = (
 }
 
 // The progress screen of the operation `uid`, in its own direction.
+// Operations left running with Bridge another, one row each under the form; a row reopens its progress.
+export const BackgroundBridges = ({ onOpen }: { onOpen: (uid: string) => void }) => {
+  const t = useTranslations('bridge')
+  const tAuto = useTranslations('automatic')
+  const waiting = useUnfinishedBridges().filter(tx => isBridgeWaiting(tx.bridge))
+  if (!waiting.length) return null
+  return (
+    <section className="bridge-auto-orders" aria-label={t('progress.inFlight')}>
+      {waiting.map(tx => (
+        <button key={tx.uid} type="button" className="bridge-auto-history" onClick={() => onOpen(tx.uid)}>
+          <span>
+            <strong>
+              {tx.assetFrom.ticker} → {tx.assetTo.ticker}
+            </strong>
+            <small>{t(isReverseOperation(tx.bridge) ? `reverse.history.${tx.bridge.stage}` : `stage.${tx.bridge.stage}`)}</small>
+          </span>
+          <span>
+            {tAuto('viewTransfer')}
+            <ExternalLink size={14} aria-hidden="true" />
+          </span>
+        </button>
+      ))}
+    </section>
+  )
+}
+
 export const BridgeOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => void }) => {
   const tx = useTransaction(uid)
   const reverse = !!tx && tx.kind !== 'send' && !!tx.bridge && isReverseOperation(tx.bridge)
