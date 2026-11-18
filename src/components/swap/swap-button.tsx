@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Chain, EVMChain } from '@tcswap/core'
 import { QuoteResponseRoute } from '@tcswap/helpers/api'
 import { useTranslations } from 'next-intl'
@@ -26,6 +26,8 @@ import { useIsPrivateSwap, usePrivateSwapAcknowledged } from '@/store/private-sw
 import { useSwapStore } from '@/store/swap-store'
 import { useAutomaticBridge, useBchDestination } from '@/hooks/use-automatic-bridge'
 import { AutoBridgeDialog, prepareAutomatic } from '@/components/swap/auto-bridge-confirm'
+import { RouterUnavailable } from '@/components/swap/router-unavailable'
+import { RouterUnavailableError } from '@/lib/auto-bridge-client'
 import { addressToLockingBytecode } from '@/lib/bch'
 import { getQuotes } from '@/lib/api'
 import { USwapError } from '@tcswap/helpers'
@@ -77,6 +79,7 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
 
   const [isApproving, setIsApproving] = useState(false)
   const [preparing, setPreparing] = useState(false)
+  const [routerDown, setRouterDown] = useState(false)
   const activeBridge = useActiveBridge()
   const tokenEstimate = useTokenEstimate()
   const bchWallet = useBchWallet()
@@ -89,6 +92,7 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
     if (!assetFrom || !selectedAccount || preparing) return
     const provider = quote.providers[0]
     setPreparing(true)
+    setRouterDown(false)
     try {
       if (automatic) {
         const prepared = await prepareAutomatic({
@@ -119,6 +123,8 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
       openDialog(SwapDialog, { provider, quote: quotes[0], binding, walletName: destination.pasted ? undefined : (bchWallet.walletName ?? undefined) })
     } catch (error) {
       console.warn('Preparing the swap failed', error)
+      // The form is untouched: the notice offers Try again, which prepares the same transfer once more.
+      if (error instanceof RouterUnavailableError) return setRouterDown(true)
       toast.error(readableError(error instanceof USwapError ? resolveQuoteError(error) : error, t('toast.errorSubmitting')))
     } finally {
       setPreparing(false)
@@ -280,6 +286,10 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
 
   const state = getState()
 
+  // The notice belongs to the transfer that failed: a different amount, asset or mode clears it.
+  const transferKey = `${assetFrom?.identifier}|${valueFrom.toSignificant()}|${automatic}`
+  useEffect(() => setRouterDown(false), [transferKey])
+
   // A private swap leaves the native protocols, so it cannot start until the disclaimer is accepted.
   if (isPrivateSwap && !privateSwapAcknowledged && state.accent) {
     state.accent = false
@@ -287,15 +297,25 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
   }
 
   return (
-    <AnimatedButton
-      aria-label={state.text || t('button.enterAmount')}
-      colorType={state.accent ? 'accent' : 'default'}
-      className="bridge-primary w-full"
-      onClick={state.onClick}
-      disabled={!state.onClick}
-      loading={state.spinner}
-    >
-      {state.text}
-    </AnimatedButton>
+    <>
+      <AnimatedButton
+        aria-label={state.text || t('button.enterAmount')}
+        colorType={state.accent ? 'accent' : 'default'}
+        className="bridge-primary w-full"
+        onClick={state.onClick}
+        disabled={!state.onClick}
+        loading={state.spinner}
+      >
+        {state.text}
+      </AnimatedButton>
+      {routerDown && (
+        <RouterUnavailable
+          onRetry={() => {
+            setRouterDown(false)
+            if (quote) void onSwap(quote)
+          }}
+        />
+      )}
+    </>
   )
 }

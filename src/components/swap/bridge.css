@@ -2253,3 +2253,21 @@ button.bridge-flow-primary:disabled {
     animation: none;
   }
 }
+.bridge-router-down {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+.bridge-router-down button {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.bridge-router-down button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

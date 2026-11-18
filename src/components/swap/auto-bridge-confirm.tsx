@@ -11,6 +11,7 @@ import { Credenza, CredenzaContent } from '@/components/ui/credenza'
 import { GenericButton } from '@/components/generic-button'
 import { BridgeConfirm } from '@/components/swap/swap-confirm'
 import { SwapError } from '@/components/swap/swap-error'
+import { RouterUnavailable } from '@/components/swap/router-unavailable'
 import { SwapAddressWarning } from '@/components/swap/swap-address-warning'
 import { useDialog } from '@/components/global-dialog'
 import { AutomaticOrderDialog } from '@/components/swap/auto-bridge-progress'
@@ -23,7 +24,7 @@ import { addressToLockingBytecode } from '@/lib/bch'
 import { toBaseUnits } from '@/lib/bridge'
 import { firstLegSeconds } from '@/lib/bridge-summary'
 import { getQuotes, isBridgeRoute } from '@/lib/api'
-import { assertAutomaticSaved, createAutomaticOrder, orderRequest, startAutomaticSource } from '@/lib/auto-bridge-client'
+import { assertAutomaticSaved, createAutomaticOrder, orderRequest, RouterUnavailableError, startAutomaticSource } from '@/lib/auto-bridge-client'
 import { getUSwap } from '@/lib/wallets'
 import { resolvePriceImpact } from '@/lib/swap-helpers'
 import { autoBridgeStore, type SavedAutoOrder } from '@/store/auto-bridge-store'
@@ -156,7 +157,7 @@ export const AutoBridgeDialog = ({ prepared, isOpen, onOpenChange }: Props) => {
         <div className="space-y-3 p-4 pt-2 md:px-7 md:pb-7">
           {needsLtc && <SwapAddressWarning checked={acceptedLtc} onCheckedChange={setAcceptedLtc} text={t('ltcWarning')} />}
           {needsImpact && <SwapAddressWarning checked={acceptedImpact} onCheckedChange={setAcceptedImpact} text={t('highImpact')} />}
-          {error && <SwapError error={error} />}
+          {error instanceof RouterUnavailableError ? <RouterUnavailable onRetry={send} disabled={busy} /> : error && <SwapError error={error} />}
           {attempted && !busy && <p role="status" className="text-sm">{t('attempted')}</p>}
           <GenericButton colorType="3" size="large" className="w-full" disabled={busy || attempted || blocked} onClick={send}>
             {busy ? (
