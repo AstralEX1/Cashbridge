@@ -6,7 +6,6 @@ import { BridgeInputSwitcher } from '@/components/swap/bridge-input-switcher'
 import { BridgeWalletBadge } from '@/components/swap/bridge-wallet-badge'
 import { BridgePriceImpact } from '@/components/swap/price-impact'
 import { useTokenEstimate } from '@/components/swap/pusd-swap'
-import { SwapQuoteTimer } from '@/components/swap/swap-quote-timer'
 import { MetaSkeleton, QuotePlaceholder, useLastValue } from '@/components/swap/quote-placeholder'
 import { useQuote } from '@/hooks/use-quote'
 import { useSwapRates } from '@/hooks/use-rates'
@@ -23,7 +22,7 @@ export const SwapInputTo = ({ selecting, onSelectOpenChange }: BridgeInputProps)
   const assetTo = useAssetTo()
   const token = useSwapStore(state => state.bchToken)
   const { pasteAllowed } = useAutomaticBridge()
-  const { quote, isLoading, refetch } = useQuote()
+  const { quote, isLoading } = useQuote()
   const estimate = useTokenEstimate()
   const { rateFrom, rateTo } = useSwapRates()
   const trigger = useRef<HTMLButtonElement>(null)
@@ -89,10 +88,7 @@ export const SwapInputTo = ({ selecting, onSelectOpenChange }: BridgeInputProps)
           </output>
           <div className="bridge-input-meta">
             <span>{busy ? <MetaSkeleton /> : (usd ?? t('receiveAmount'))}</span>
-            <div className="flex items-center gap-2">
-              <BridgePriceImpact percent={busy || output === undefined ? undefined : summary?.impactPercent} />
-              <SwapQuoteTimer quote={quote} isLoading={isLoading} refetch={refetch} />
-            </div>
+            <BridgePriceImpact percent={busy || output === undefined ? undefined : summary?.impactPercent} />
           </div>
         </section>
       </div>

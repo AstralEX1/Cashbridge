@@ -2135,43 +2135,53 @@ button.bridge-flow-primary:disabled {
 .bridge-auto-history small { color: #a6b9c0; }
 .bridge-auto-history svg { flex: none; }
 
-/* Quote refresh: a ring around the refresh icon fills up until the quote is refreshed. */
-.bridge-quote-timer {
+/* Refresh in the tools row, a white square like Settings: a ring around the icon fills up until the
+   quote and balances reload on their own. */
+.bridge-refresh {
   position: relative;
   display: inline-grid;
-  width: 24px;
-  height: 24px;
+  width: 36px;
+  height: 36px;
+  flex: none;
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: #5d6e73;
-  cursor: pointer;
-  transition: color 140ms ease-out;
-}
-.bridge-quote-timer:hover {
+  border-radius: 10px;
+  background: var(--btn-style-1-bg);
   color: #0f1820;
+  cursor: pointer;
 }
-.bridge-quote-timer > svg {
+.bridge-refresh:hover {
+  background: var(--btn-small-hover);
+  color: var(--txt-btn-small-hover);
+}
+.bridge-refresh:focus-visible {
+  outline: 2px solid #0ac18e;
+  outline-offset: 2px;
+}
+.bridge-refresh > svg {
   position: absolute;
-  inset: 0;
+  inset: 6px;
   width: 24px;
   height: 24px;
   transform: rotate(-90deg);
   fill: none;
   stroke-width: 2;
 }
-.bridge-quote-timer > :last-child {
+.bridge-refresh > :last-child {
   transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.bridge-quote-timer:hover > :last-child {
+.bridge-refresh:hover > :last-child {
   transform: rotate(180deg);
 }
-.bridge-quote-timer__track {
-  stroke: #0f182014;
+.bridge-refresh[data-busy] > :last-child {
+  animation: bridge-refresh-spin 700ms linear infinite;
 }
-.bridge-quote-timer__ring {
+.bridge-refresh__track {
+  stroke: currentColor;
+  opacity: 0.12;
+}
+.bridge-refresh__ring {
   stroke: #0ac18e;
   stroke-linecap: round;
   stroke-dasharray: 75.4;
@@ -2185,11 +2195,19 @@ button.bridge-flow-primary:disabled {
     stroke-dashoffset: 0;
   }
 }
+@keyframes bridge-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .bridge-quote-timer__ring {
+  .bridge-refresh__ring {
     animation: none;
     stroke-dashoffset: 0;
+  }
+  .bridge-refresh[data-busy] > :last-child {
+    animation: none;
   }
 }
 

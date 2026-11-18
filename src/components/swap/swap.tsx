@@ -17,6 +17,7 @@ import { SwapHaltBanner } from '@/components/swap/swap-halt-banner'
 import { SwapInputFrom } from '@/components/swap/swap-input-from'
 import { SwapInputTo } from '@/components/swap/swap-input-to'
 import { SwapSettings } from '@/components/swap/swap-settings'
+import { RefreshButton } from '@/components/swap/refresh-button'
 import { RouterToggle } from '@/components/swap/automatic-bridge-controls'
 import { AutomaticOrders } from '@/components/swap/auto-bridge-progress'
 import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
@@ -119,6 +120,7 @@ export const Swap = () => {
         <RouterToggle />
         <div className="flex items-center gap-2">
           <TransactionHistoryButton />
+          <RefreshButton />
           <SwapSettings />
         </div>
       </div>

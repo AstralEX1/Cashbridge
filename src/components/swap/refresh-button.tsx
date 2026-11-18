@@ -1,22 +1,25 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
-import { RefetchOptions } from '@tanstack/react-query'
-import { QuoteResponseRoute } from '@tcswap/helpers/api'
+import { useQueryClient } from '@tanstack/react-query'
 import { RotateCw } from 'lucide-react'
+import { useQuote } from '@/hooks/use-quote'
+import { refreshBridgeQueries } from '@/lib/refresh-queries'
 
 const QUOTE_EXPIRATION_MS = 60000
 
-interface SwapQuoteTimerProps {
-  quote?: QuoteResponseRoute | undefined
-  refetch: (options?: RefetchOptions) => void
-  isLoading: boolean
-}
-
-// A ring around the refresh icon fills up until the quote is refreshed. The ring is a CSS animation that
-// restarts with each new quote, so the countdown costs no re-renders.
-export const SwapQuoteTimer = ({ quote, isLoading, refetch }: SwapQuoteTimerProps) => {
+// Reloads the quote and the wallet balances. A ring around the icon fills up until that happens on its
+// own; the ring is a CSS animation that restarts with each new quote, so the countdown costs no re-renders.
+export const RefreshButton = () => {
   const t = useTranslations('swap')
+  const queryClient = useQueryClient()
+  const { quote, isLoading } = useQuote()
   const [startedAt, setStartedAt] = useState<number | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const refresh = useCallback(() => {
+    setBusy(true)
+    void refreshBridgeQueries(queryClient).finally(() => setBusy(false))
+  }, [queryClient])
 
   useEffect(() => {
     setStartedAt(quote && !isLoading ? Date.now() : null)
@@ -24,26 +27,26 @@ export const SwapQuoteTimer = ({ quote, isLoading, refetch }: SwapQuoteTimerProp
 
   useEffect(() => {
     if (!startedAt) return
-    const timer = setTimeout(() => refetch(), QUOTE_EXPIRATION_MS)
+    const timer = setTimeout(refresh, QUOTE_EXPIRATION_MS)
     return () => clearTimeout(timer)
-  }, [startedAt, refetch])
-
-  if (!quote || isLoading || !startedAt) return null
+  }, [startedAt, refresh])
 
   return (
-    <button type="button" className="bridge-quote-timer" aria-label={t('quoteTimer.refresh')} onClick={() => refetch()}>
+    <button type="button" className="bridge-refresh" aria-label={t('quoteTimer.refresh')} data-busy={busy || undefined} onClick={refresh}>
       <svg viewBox="0 0 28 28" aria-hidden="true">
-        <circle cx="14" cy="14" r="12" className="bridge-quote-timer__track" />
-        <circle
-          key={startedAt}
-          cx="14"
-          cy="14"
-          r="12"
-          className="bridge-quote-timer__ring"
-          style={{ animationDuration: `${QUOTE_EXPIRATION_MS}ms` }}
-        />
+        <circle cx="14" cy="14" r="12" className="bridge-refresh__track" />
+        {startedAt && (
+          <circle
+            key={startedAt}
+            cx="14"
+            cy="14"
+            r="12"
+            className="bridge-refresh__ring"
+            style={{ animationDuration: `${QUOTE_EXPIRATION_MS}ms` }}
+          />
+        )}
       </svg>
-      <RotateCw size={11} strokeWidth={2.4} aria-hidden="true" />
+      <RotateCw size={12} strokeWidth={2.4} aria-hidden="true" />
     </button>
   )
 }

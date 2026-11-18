@@ -13,7 +13,6 @@ import { BridgeAssetButton, BridgeAssetPicker, type BridgeInputProps } from '@/c
 import { BridgeInputSwitcher } from '@/components/swap/bridge-input-switcher'
 import { BridgeWalletBadge } from '@/components/swap/bridge-wallet-badge'
 import { BridgePriceImpact } from '@/components/swap/price-impact'
-import { SwapQuoteTimer } from '@/components/swap/swap-quote-timer'
 import { MetaSkeleton, QuotePlaceholder, useLastValue } from '@/components/swap/quote-placeholder'
 import { Tooltip } from '@/components/tooltip'
 import { BridgeConfig } from '@/config'
@@ -162,7 +161,7 @@ export const ReverseInputTo = ({ selecting, onSelectOpenChange }: BridgeInputPro
   const token = useSwapStore(state => state.bchToken)
   const amount = useSwapStore(state => state.amountFrom)
   const sale = useTokenSale(token, amount)
-  const { quote, isLoading, refetch, error } = useQuote()
+  const { quote, isLoading, error } = useQuote()
   const { rates } = useRates([BridgeConfig.buyAsset, ...(asset ? [asset.identifier] : [])], quote?.providers[0])
   const trigger = useRef<HTMLButtonElement>(null)
   const close = () => {
@@ -192,10 +191,7 @@ export const ReverseInputTo = ({ selecting, onSelectOpenChange }: BridgeInputPro
           </output>
           <div className="bridge-input-meta">
             <span>{isLoading ? <MetaSkeleton /> : (usd ?? (error ? t('noRoute') : t('receiveAmount')))}</span>
-            <div className="flex items-center gap-2">
-              <BridgePriceImpact percent={isLoading || (token && sale.isLoading) ? undefined : impactPercent} />
-              <SwapQuoteTimer quote={quote} isLoading={isLoading} refetch={refetch} />
-            </div>
+            <BridgePriceImpact percent={isLoading || (token && sale.isLoading) ? undefined : impactPercent} />
           </div>
         </section>
       </div>
