@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Chain } from '@tcswap/core'
 import { getAddressValidator } from '@tcswap/toolboxes'
+import { hasAddressShape } from '@/lib/address-shape'
 
 export interface AddressCheck {
   /** A valid address for the chain — an empty field counts, nothing is wrong with it yet. */
@@ -12,9 +13,10 @@ export interface AddressCheck {
 }
 
 /**
- * Validates an address for a chain. The result is tied to the value it was
- * produced for, so a field that has just changed reads as still being checked
- * instead of briefly reading as invalid.
+ * Validates an address for a chain: the SDK's check, and the stricter forms
+ * THORChain pays out to. The result is tied to the value it was produced for,
+ * so a field that has just changed reads as still being checked instead of
+ * briefly reading as invalid.
  */
 export const useValidAddress = (address: string, chain: Chain): AddressCheck => {
   const value = address.trim()
@@ -28,7 +30,7 @@ export const useValidAddress = (address: string, chain: Chain): AddressCheck => 
     const done = (isValid: boolean) => !cancelled && setChecked({ key, isValid })
 
     getAddressValidator()
-      .then(validateAddress => done(validateAddress({ address: value, chain })))
+      .then(validateAddress => done(hasAddressShape(chain, value) && validateAddress({ address: value, chain })))
       .catch(() => done(false))
 
     return () => {
