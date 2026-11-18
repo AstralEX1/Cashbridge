@@ -3,7 +3,7 @@ import { loadConfig, readCredential } from '@/server/auto-bridge/config'
 import { OrderStore } from '@/server/auto-bridge/store'
 
 export async function runWorker() {
-  const [{ WorkerWallet }, { BchGateway }, { processOrder }] = await Promise.all([
+  const [{ WorkerWallet }, { BchGateway }, { processOrder, reasonOf }] = await Promise.all([
     import('@/server/auto-bridge/wallet'),
     import('@/server/auto-bridge/gateway'),
     import('@/server/auto-bridge/worker')
@@ -44,8 +44,9 @@ export async function runWorker() {
         if (stopping) break
         try {
           await processOrder(orders, gateway, wallet, order, config)
-        } catch {
+        } catch (error) {
           console.warn('Order observation unavailable; retrying on the next pass')
+          console.warn(`Order ${order.id.slice(0, 8)} observation failed: ${reasonOf(error)}`)
         }
       }
       if (!stopping) await new Promise<void>(resolve => setTimeout(resolve, config.pollMs))

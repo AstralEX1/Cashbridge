@@ -291,6 +291,18 @@ test('a shallow payout reorg retains exposure and replays only the original tran
   }
 })
 
+test('a failed trade attempt logs its reason with the short order id', async t => {
+  const env = environment(),
+    lines = []
+  t.mock.method(console, 'warn', line => lines.push(line))
+  try {
+    await processOrder(env.store, env.gateway, env.signer, env.order, env.policy, async () => { throw new Error('No liquidity') }, () => 1000)
+    assert.ok(lines.includes(`Order ${env.order.id.slice(0, 8)} trade attempt failed: No liquidity`), JSON.stringify(lines))
+  } finally {
+    env.store.close()
+  }
+})
+
 test('worker refunds BCH after bounded liquidity failure and keeps the original PUSD minimum', async () => {
   const env = environment()
   try {

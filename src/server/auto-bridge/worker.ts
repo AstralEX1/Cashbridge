@@ -84,6 +84,9 @@ async function conflicted(gateway: Gateway, order: Order, attempt: Attempt) {
   return poolSpent && !(await gateway.observe(attempt.txid)).seen
 }
 
+// The recorded reason of a failure, for the log: these are our own fixed messages, never a URL or credential.
+export const reasonOf = (error: unknown) => (error instanceof Error ? error.message : 'unknown error').replace(/\s+/g, ' ').slice(0, 160)
+
 // Definite refusals of a resent attempt, each in its own pass, before it counts as rejected.
 export const FINAL_REFUSALS = 3
 
@@ -351,7 +354,8 @@ export async function processOrder(
       return
     }
     if (store.saveAttempt(order, attempt, clock())) await submit(store, gateway, store.get(order.id)!, attempt, clock)
-  } catch {
+  } catch (error) {
+    console.warn(`Order ${order.id.slice(0, 8)} trade attempt failed: ${reasonOf(error)}`)
     const current = store.get(order.id)!
     if (current.version === order.version)
       store.update(
