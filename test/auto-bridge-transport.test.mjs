@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync, spawn } from 'node:child_process'
 import { createServer } from 'node:https'
-import { request } from 'node:http'
+import { createServer as createHttpServer, request } from 'node:http'
+import { NextRequest } from 'next/server.js'
 import { deriveHdPrivateNodeFromSeed, encodeHdPrivateKey } from '@bitauth/libauth'
 import { WorkerWallet } from '../src/server/auto-bridge/wallet.ts'
 import { OrderStore } from '../src/server/auto-bridge/store.ts'
@@ -74,6 +75,40 @@ test('Vercel proxy reaches the authenticated worker through verified HTTPS and p
     if (worker) await new Promise(resolve => worker.close(resolve))
     store.close()
     if (oldToken === undefined) delete process.env.AUTO_BRIDGE_SERVICE_TOKEN; else process.env.AUTO_BRIDGE_SERVICE_TOKEN = oldToken
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('a worker that accepts the request but never answers ends in a JSON 503 at the proxy deadline', async t => {
+  const directory = mkdtempSync(join(tmpdir(), 'cashbridge-hang-'))
+  const socket = join(directory, 'worker.sock')
+  const hung = createHttpServer(() => {})
+  await new Promise(resolve => hung.listen(socket, resolve))
+  const saved = { socket: process.env.AUTO_BRIDGE_SOCKET, upstream: process.env.AUTO_BRIDGE_UPSTREAM, token: process.env.AUTO_BRIDGE_SERVICE_TOKEN }
+  process.env.AUTO_BRIDGE_SOCKET = socket
+  delete process.env.AUTO_BRIDGE_UPSTREAM
+  delete process.env.AUTO_BRIDGE_SERVICE_TOKEN
+  const deadlines = []
+  // Stand-in for the real 12 s wait: the deadline asked for is recorded, a short one is used.
+  t.mock.method(AbortSignal, 'timeout', ms => {
+    deadlines.push(ms)
+    const abort = new AbortController()
+    setTimeout(() => abort.abort(new DOMException('timed out', 'TimeoutError')), 200)
+    return abort.signal
+  })
+  try {
+    const { forwardOrder } = await import('../src/server/auto-bridge/proxy.ts')
+    const id = randomUUID()
+    const response = await forwardOrder(new NextRequest(`https://bridge.example/api/auto-bridge/orders/${id}`, {
+      headers: { authorization: `Bearer ${randomBytes(32).toString('hex')}` }
+    }), id)
+    assert.equal(response.status, 503)
+    assert.deepEqual(await response.json(), { error: 'Cashbridge Router is unavailable' })
+    assert.deepEqual(deadlines, [12000])
+  } finally {
+    await new Promise(resolve => { hung.closeAllConnections(); hung.close(resolve) })
+    for (const [key, value] of [['AUTO_BRIDGE_SOCKET', saved.socket], ['AUTO_BRIDGE_UPSTREAM', saved.upstream], ['AUTO_BRIDGE_SERVICE_TOKEN', saved.token]])
+      if (value === undefined) delete process.env[key]; else process.env[key] = value
     rmSync(directory, { recursive: true, force: true })
   }
 })

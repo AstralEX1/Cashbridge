@@ -4,6 +4,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { clientIp, rateLimit } from '@/lib/rate-limit'
 import { isSameOrigin } from '@/lib/same-origin'
 
+// Under the browser's 15 s request timeout, so the page gets this answer rather than giving up first.
+const UPSTREAM_DEADLINE_MS = 12000
+
 // The public process has socket access, not access to the signer or its SQLite database.
 export async function forwardOrder(req: NextRequest, id?: string) {
   const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }
@@ -57,7 +60,8 @@ export async function forwardOrder(req: NextRequest, id?: string) {
           }),
           method: req.method,
           headers: upstreamHeaders,
-          timeout: 25000
+          // A hard deadline, not an idle timeout: a worker that trickles or never answers still ends in a JSON 503.
+          signal: AbortSignal.timeout(UPSTREAM_DEADLINE_MS)
         }
       const call = (upstream ? secureRequest : request)(options,
         incoming => {
@@ -72,12 +76,11 @@ export async function forwardOrder(req: NextRequest, id?: string) {
           incoming.on('error', reject)
         }
       )
-      call.on('timeout', () => call.destroy(new Error('Worker response timed out')))
       call.on('error', reject)
       call.end(body)
     })
     return new NextResponse(response.body.toString('utf8'), { status: response.status, headers })
   } catch {
-    return failure(503, 'Automatic bridge worker is unavailable')
+    return failure(503, 'Cashbridge Router is unavailable')
   }
 }

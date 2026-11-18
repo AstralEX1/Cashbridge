@@ -11,6 +11,14 @@ import { isTerminal, type PublicOrder } from '@/lib/auto-bridge-contract'
 export class OrderRequestError extends Error {
   constructor(readonly status: number, message: string) { super(message) }
 }
+// The worker gave no usable answer: unreachable, too slow, a 5xx or a platform error page. The screens
+// show this as "Cashbridge Router is unavailable" with Try again, whatever the server happened to say.
+export class RouterUnavailableError extends Error {
+  constructor() { super('Cashbridge Router is unavailable') }
+}
+// Creating an order is one quote and one database write; a worker that needs longer is not healthy.
+// The Vercel proxy gives up first (12 s), so a stuck worker ends here with a JSON answer, not a spinner.
+const REQUEST_TIMEOUT_MS = 15000
 const attemptKey = (id: string) => `cashbridge-auto-source-${id}`
 const attemptRecorded = (reference: SavedAutoOrder) => reference.sourceAttempted ||
   (typeof window !== 'undefined' && localStorage.getItem(attemptKey(reference.id)) === 'attempted')
@@ -24,14 +32,19 @@ export const assertAutomaticSaved = (reference: SavedAutoOrder, attempted = fals
 }
 export async function orderRequest(reference: SavedAutoOrder, method: 'GET' | 'POST', body?: unknown): Promise<PublicOrder> {
   const path = method === 'POST' && body && typeof body === 'object' && 'id' in body ? '' : `/${reference.id}`
-  const response = await fetch(`/api/auto-bridge/orders${path}`, {
-    method,
-    headers: { Authorization: `Bearer ${reference.capability}`, ...(method === 'POST' && { 'Content-Type': 'application/json' }) },
-    ...(method === 'POST' && { body: JSON.stringify(body) }), cache: 'no-store', signal: AbortSignal.timeout(30000)
-  })
-  const result = await response.json()
-  if (!response.ok) throw new OrderRequestError(response.status, typeof result.error === 'string' ? result.error : 'Automatic bridge request failed')
+  let response: Response
+  try {
+    response = await fetch(`/api/auto-bridge/orders${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${reference.capability}`, ...(method === 'POST' && { 'Content-Type': 'application/json' }) },
+      ...(method === 'POST' && { body: JSON.stringify(body) }), cache: 'no-store', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    })
+  } catch { throw new RouterUnavailableError() }
+  const result = await response.json().catch(() => undefined)
+  if (response.status >= 500) throw new RouterUnavailableError()
+  if (!response.ok) throw new OrderRequestError(response.status, typeof result?.error === 'string' ? result.error : 'Automatic bridge request failed')
   const order = result as PublicOrder
+  if (!order) throw new Error('The automatic order response is invalid')
   if (order.id !== reference.id || !addressToLockingBytecode(order.depositAddress) || !/^[1-9]\d*$/.test(order.minPusd))
     throw new Error('The automatic order response is invalid')
   if (reference.intent && (order.expectedBchSats !== reference.intent.expectedBchSats ||

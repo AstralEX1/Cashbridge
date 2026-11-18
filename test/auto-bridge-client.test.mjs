@@ -13,9 +13,28 @@ globalThis.localStorage = {
   removeItem: key => data.delete(key)
 }
 const { autoBridgeStore } = await import('../src/store/auto-bridge-store.ts')
-const { startAutomaticSource, restoreAutomaticOrder, pollAutomaticOrders, createAutomaticOrder } = await import('../src/lib/auto-bridge-client.ts')
+const { startAutomaticSource, restoreAutomaticOrder, pollAutomaticOrders, createAutomaticOrder, orderRequest, RouterUnavailableError, OrderRequestError } = await import('../src/lib/auto-bridge-client.ts')
 const { automaticCompletion, automaticTransactions } = await import('../src/lib/auto-bridge-summary.ts')
 const { automaticEligible } = await import('../src/lib/auto-bridge-contract.ts')
+
+test('an unreachable, slow or failing worker reads as Cashbridge Router unavailable; a refused request keeps its message', async t => {
+  const reference = { id: randomUUID(), capability: randomBytes(32).toString('hex') }
+  const answers = [
+    () => { throw new TypeError('fetch failed') },
+    () => { throw new DOMException('The operation was aborted due to timeout', 'TimeoutError') },
+    () => Response.json({ error: 'Automatic bridge worker is unavailable' }, { status: 503 }),
+    () => new Response('<html>An error occurred with your deployment</html>', { status: 504 }),
+    () => new Response('not json', { status: 200 })
+  ]
+  let next = 0
+  t.mock.method(globalThis, 'fetch', async () => answers[next++]())
+  for (const answer of answers.slice(0, 4)) {
+    await assert.rejects(orderRequest(reference, 'GET'), error => error instanceof RouterUnavailableError && error.message === 'Cashbridge Router is unavailable')
+  }
+  await assert.rejects(orderRequest(reference, 'GET'), error => !(error instanceof RouterUnavailableError))
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ error: 'Too many order requests' }, { status: 429 }))
+  await assert.rejects(orderRequest(reference, 'GET'), error => error instanceof OrderRequestError && error.status === 429 && error.message === 'Too many order requests')
+})
 
 test('terminal automatic orders refresh late custody and payout warnings on a bounded schedule', async t => {
   t.after(() => { autoBridgeStore.setState({ orders: [] }); data.clear() })
