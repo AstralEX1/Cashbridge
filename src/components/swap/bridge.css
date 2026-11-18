@@ -1981,6 +1981,17 @@ button.bridge-flow-primary:disabled {
 .bridge-complete-icon {
   display: inline-flex;
 }
+/* Extra coins paid out with the amount, e.g. the BCH left over for gas: one small centered line under it. */
+.bridge-complete-extra {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: #0f1820;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
 .bridge-complete-earn {
   display: inline-flex;
   min-height: 38px;

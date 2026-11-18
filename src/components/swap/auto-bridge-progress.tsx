@@ -253,7 +253,7 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
           received: { amount: receipt.amount, ticker: receipt.ticker, icon: receipt.refund ? <BchMark size={48} /> : <TokenMark token={PUSD_TOKEN} size={48} /> },
           transactions: automaticTransactions(order),
           liquidityCategory: BridgeConfig.pusd.category,
-          additionalReceived: receipt.change ? [{ amount: receipt.change, ticker: 'BCH' }] : undefined,
+          additionalReceived: receipt.change ? [{ amount: receipt.change, ticker: 'BCH', icon: <BchMark size={14} /> }] : undefined,
           notice: ['completed', 'refunded'].includes(order.state) ? t('final') : t('confirmations', { count: order.settlement?.confirmations ?? 0 })
         } : undefined}
         toasts={toasts}
