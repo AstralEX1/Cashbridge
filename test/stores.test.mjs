@@ -32,6 +32,25 @@ test('a page closed while the wallet was signing the source swap restores as "un
   assert.equal(getActiveBridge()?.uid, 'u1', 'and it still blocks a new operation')
 })
 
+test('an operation only waiting on the network lets a new one start; one still needing the user blocks', async () => {
+  const reverse = (stage, destinationAsset = 'BCH') => ({ ...op(stage), direction: 'reverse', destinationAsset })
+  const forward = (stage, destinationAsset) => ({ ...op(stage), destinationAsset })
+  const cases = [
+    [reverse('second_leg_pending'), false, 'reverse deposit out, THORChain paying'],
+    [reverse('second_leg_pending', 'PUSD'), false, 'token reverse after its deposit'],
+    [forward('first_leg_pending', 'BCH'), false, 'forward to plain BCH'],
+    [reverse('bch_ready', 'PUSD'), true, 'reverse deposit still to sign'],
+    [reverse('second_leg_unknown'), true, 'reverse deposit to resend'],
+    [forward('first_leg_pending', 'PUSD'), true, 'forward swap (2/2) still to sign'],
+    [forward('first_leg_pending', undefined), true, 'an older record without a destination is a token one']
+  ]
+  for (const [bridge, blocks, label] of cases) {
+    await restore([tx(bridge)])
+    assert.equal(!!getActiveBridge(), blocks, label)
+  }
+  await restore([])
+})
+
 test('a restored operation whose binding no longer derives from its key is failed', async () => {
   const restored = await restore([tx(op('bch_ready', { ...binding, cashAddress: other.cashAddress }))])
   assert.equal(restored.bridge.stage, 'failed')

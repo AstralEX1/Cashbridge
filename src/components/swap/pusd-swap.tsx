@@ -52,9 +52,9 @@ import {
   type BridgeOperation,
   type SwapTransaction,
   transactionStore,
-  useActiveBridge,
   useSetTransactionDetails,
   useTransaction,
+  useUnfinishedBridges,
   isBridgeTerminal,
   isReverseOperation,
   operationToken,
@@ -293,11 +293,10 @@ const syncSecondLeg = async (tx: BridgeTx, update: ReturnType<typeof useUpdateBr
   }
 }
 
-// Mounted once in the layout: follows the active operation and keeps tabs in step.
+// Mounted once in the layout: follows every unfinished operation (one waiting on the network runs on
+// while another starts) and keeps tabs in step.
 export const BridgeTracker = () => {
-  const active = useActiveBridge()
-  const update = useUpdateBridge()
-  const setDetails = useSetTransactionDetails()
+  const operations = useUnfinishedBridges()
 
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
@@ -307,31 +306,36 @@ export const BridgeTracker = () => {
     return () => window.removeEventListener('storage', onStorage)
   }, [])
 
+  return operations.map(tx => <BridgeSync key={tx.uid} tx={tx} />)
+}
+
+const BridgeSync = ({ tx }: { tx: BridgeTx }) => {
+  const update = useUpdateBridge()
+  const setDetails = useSetTransactionDetails()
+
   useQuery({
-    queryKey: ['bridge-sync', active?.uid, active?.bridge.stage],
+    queryKey: ['bridge-sync', tx.uid, tx.bridge.stage],
     queryFn: async () => {
-      if (!active) return null
-      if (isReverseOperation(active.bridge)) {
-        await syncReverse(active, update)
+      if (isReverseOperation(tx.bridge)) {
+        await syncReverse(tx, update)
         return Date.now()
       }
-      switch (active.bridge.stage) {
+      switch (tx.bridge.stage) {
         case 'first_leg_pending':
-          await syncFirstLeg(active, update, setDetails)
+          await syncFirstLeg(tx, update, setDetails)
           break
         case 'bch_unconfirmed':
         case 'bch_ready':
-          await syncReceived(active, update)
+          await syncReceived(tx, update)
           break
         case 'second_leg_signed':
         case 'second_leg_unknown':
         case 'second_leg_pending':
-          await syncSecondLeg(active, update)
+          await syncSecondLeg(tx, update)
           break
       }
       return Date.now()
     },
-    enabled: !!active,
     refetchInterval: POLL_MS,
     // Keeps following while the user is in the wallet app or another tab.
     refetchIntervalInBackground: true,
