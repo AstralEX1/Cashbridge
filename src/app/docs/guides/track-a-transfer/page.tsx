@@ -16,7 +16,7 @@ export default function Page() {
     >
       <h2 id="progress">The progress screen</h2>
       <p>
-        A transfer with two steps has two bars. A bar fills while its step runs and turns green with a check when the step is done. The label shows the time left, and a small arrow on a bar opens that step&apos;s transaction in an explorer. The <strong>History</strong> button at the top lists your recent transfers, and the cross closes the screen without cancelling anything.
+        A transfer with two steps has two bars. A bar fills while its step runs and turns green with a check when the step is done. The label shows the time left, and a small arrow on a bar opens that step&apos;s transaction in an explorer. The <strong>History</strong> button at the top lists your recent transfers, and the cross closes the screen without cancelling anything. Once a transfer needs nothing more from you, <strong>Bridge another</strong> opens a fresh form while it finishes; a row under the form reopens its progress.
       </p>
       <Shot name="progress-swapping" alt="The progress screen during the second step: Bridge done, Swap (2/2) at 40 seconds left" size="lg" caption="The bridge is done and the swap is running." />
 
