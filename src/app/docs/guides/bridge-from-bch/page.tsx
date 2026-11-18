@@ -34,7 +34,7 @@ export default function Page() {
 
         <Step title="Connect both wallets">
           <p>
-            Connect your BCH wallet on the top side and a wallet for the destination chain on the bottom side. The payout goes to that wallet, so make sure it is an account you control. See <Link href="/docs/wallets">Wallets</Link>.
+            Connect your BCH wallet on the top side and a wallet for the destination chain on the bottom side, or open that button&apos;s menu and choose <strong>Paste wallet address</strong> to be paid at an address without connecting its wallet. The payout goes to that wallet or address, so make sure it is an account you control. See <Link href="/docs/wallets">Wallets</Link>.
           </p>
         </Step>
 
