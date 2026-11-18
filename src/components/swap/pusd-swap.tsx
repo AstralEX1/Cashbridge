@@ -56,6 +56,7 @@ import {
   useTransaction,
   useUnfinishedBridges,
   isBridgeTerminal,
+  isBridgeWaiting,
   isReverseOperation,
   operationToken,
   useUpdateBridge
@@ -396,6 +397,8 @@ export interface BridgeFlowProps {
   onDismissToast: (id: string) => void
   onHistory: () => void
   onClose: () => void
+  // Set once nothing more is asked of the user: leaves this operation running and opens a fresh form.
+  onBridgeAnother?: () => void
   // Plays the bridge-collapse animation; off once it has been shown for this operation.
   animateCollapse?: boolean
 }
@@ -603,7 +606,16 @@ export const BridgeFlow = (props: BridgeFlowProps) => {
 
           {props.details}
         </div>
-        {props.actions && <div className="bridge-flow-actions">{props.actions}</div>}
+        {(props.actions || props.onBridgeAnother) && (
+          <div className="bridge-flow-actions">
+            {props.actions}
+            {props.onBridgeAnother && (
+              <GenericButton className="bridge-flow-primary is-active w-full" onClick={props.onBridgeAnother}>
+                {t('bridgeAnother')}
+              </GenericButton>
+            )}
+          </div>
+        )}
       </div>
 
       <FlowToasts toasts={props.toasts} onDismiss={props.onDismissToast} />
@@ -883,6 +895,7 @@ const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => 
     onDismissToast: (id: string) => setDismissed(list => [...list, id]),
     onHistory: () => openDialog(TransactionHistoryDialog, {}),
     onClose,
+    onBridgeAnother: isBridgeWaiting(op) ? onClose : undefined,
     animateCollapse
   }
 

@@ -209,6 +209,9 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
   ].filter(item => !dismissed.includes(item.id)).reverse()
 
   const close = () => onOpenChange(false)
+  const hashMissing = !!reference?.sourceAttempted && !order?.sourceHash && !order?.inboundHash && !receipt
+  // The service does the rest once the source hash is known; nothing more is asked of the user.
+  const handsOff = !!order && !terminal && !draft && !hashMissing && !order.recoveryRequired
   const waiting = order && ['retrying', 'broadcasting', 'awaiting_confirmations'].includes(order.state)
   const details = <>
     {!order && <p role="status" className="bridge-flow-message">{t('restoring')}</p>}
@@ -220,7 +223,7 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
     {order?.recoverySats && order.recoverySats !== '0' && <p role="status" className="bridge-flow-message">{t('recoveryFunds', { amount: formatBaseUnits(order.recoverySats, 8) })}</p>}
     {order?.error && <SwapError error={new Error(order.error)} />}
     {error && <p role="status" className="bridge-flow-message">{error}</p>}
-    {reference?.sourceAttempted && !order?.sourceHash && !order?.inboundHash && !receipt && <div className="bridge-auto-recipient">
+    {hashMissing && <div className="bridge-auto-recipient">
       <label>{t('sourceHint')}<Input value={hint} onChange={event => setHint(event.target.value)} spellCheck={false} autoComplete="off" /></label>
       <GenericButton onClick={saveHint} disabled={busy || !sourceTransactionId(hint)}>{busy && <LoaderCircle size={14} className="animate-spin" />}{t('saveHint')}</GenericButton>
     </div>}
@@ -260,6 +263,7 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
         onDismissToast={toastId => setDismissed(list => [...list, toastId])}
         onHistory={() => openDialog(TransactionHistoryDialog, {})}
         onClose={close}
+        onBridgeAnother={handsOff ? close : undefined}
         animateCollapse={animateCollapse}
       />
     </DialogContent>

@@ -115,7 +115,7 @@ export const BridgeFlowPreview = ({ stage = 'bridging' }: { stage?: string }) =>
                 <circle cx="12" cy="12" r="9" stroke="#3a4f59" />
                 <path d="M12 3a9 9 0 019 9" stroke="#0ac18e" />
               </svg>
-              {flow === 'plain' ? 'Bridging to BCH…' : 'Swap BCH → PUSD (2/2)'}
+              {flow === 'plain' ? `Bridging to ${reverse ? 'ETH' : 'BCH'}…` : 'Swap BCH → PUSD (2/2)'}
             </button>
           ) : undefined
         }
@@ -123,6 +123,7 @@ export const BridgeFlowPreview = ({ stage = 'bridging' }: { stage?: string }) =>
         onDismissToast={id => setDismissed(list => [...list, id])}
         onHistory={() => {}}
         onClose={() => {}}
+        onBridgeAnother={flow === 'plain' ? () => {} : undefined}
       />
     </div>
   )

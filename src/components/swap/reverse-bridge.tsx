@@ -70,6 +70,7 @@ import { useSwapStore } from '@/store/swap-store'
 import {
   type BridgeOperation,
   isBridgeTerminal,
+  isBridgeWaiting,
   operationToken,
   type SwapTransaction,
   transactionStore,
@@ -1011,6 +1012,7 @@ export const ReverseOperationPanel = ({ uid, onClose }: { uid?: string; onClose:
     onDismissToast: (id: string) => setDismissed(list => [...list, id]),
     onHistory: () => openDialog(TransactionHistoryDialog, {}),
     onClose,
+    onBridgeAnother: isBridgeWaiting(op) ? onClose : undefined,
     animateCollapse: true
   }
 
