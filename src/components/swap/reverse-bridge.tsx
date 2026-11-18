@@ -402,6 +402,9 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
     if (!isOpen) setAcceptedImpact(false)
   }, [isOpen])
   const submitting = phase !== 'idle'
+  // A phone wallet drops off the relay while its app is in the background; Send waits on the button
+  // itself (spinner, "Open your BCH wallet app") until the wallet answers again.
+  const walletAway = !wallet.signer || wallet.state !== 'connected'
   // One request at a time, whatever the button sees: state updates land a render late.
   const inFlight = useRef(false)
   const abort = useRef<AbortController | undefined>(undefined)
@@ -705,8 +708,15 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
         </ScrollArea>
         <div className="space-y-3 p-4 pt-2 md:px-7 md:pb-7">
           {needsImpact && <SwapAddressWarning checked={acceptedImpact} onCheckedChange={setAcceptedImpact} text={tBridge('automatic.highImpact')} />}
-          <GenericButton colorType="3" size="large" className="w-full" onClick={onConfirm} disabled={submitting || !wallet.signer || wallet.state !== 'connected' || (needsImpact && !acceptedImpact)}>
-            {submitting && <LoaderCircle size={20} className="animate-spin" />}
+          <GenericButton
+            colorType="3"
+            size="large"
+            className="w-full"
+            onClick={onConfirm}
+            disabled={submitting || walletAway || (needsImpact && !acceptedImpact)}
+            aria-busy={submitting || walletAway}
+          >
+            {(submitting || walletAway) && <LoaderCircle size={20} className="animate-spin" />}
             <span>
               {phase === 'signing'
                 ? tReverse('waitingWallet', { wallet: walletName })
@@ -714,17 +724,14 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
                   ? tReverse('preparing')
                   : phase === 'sending'
                     ? tReverse('sending')
-                    : token
-                      ? tReverse('swapFirst', { amount: formatAmount(sentAmount), ticker })
-                      : t('send', { amount: formatAmount(sentAmount), ticker })}
+                    : walletAway
+                      ? tReverse('walletAway')
+                      : token
+                        ? tReverse('swapFirst', { amount: formatAmount(sentAmount), ticker })
+                        : t('send', { amount: formatAmount(sentAmount), ticker })}
             </span>
           </GenericButton>
-          <SignHint
-            phase={phase}
-            walletName={walletName}
-            note={note ?? (wallet.state !== 'connected' ? tReverse('walletAway') : undefined)}
-            onCancel={() => abort.current?.abort()}
-          />
+          <SignHint phase={phase} walletName={walletName} note={note} onCancel={() => abort.current?.abort()} />
         </div>
       </CredenzaContent>
     </Credenza>

@@ -925,7 +925,7 @@
       "routeSingle": "Bridge BCH → {to} via THORChain, signed in your BCH wallet and paid on {chain}.",
       "gasBch": "Bitcoin Cash network (swap and deposit)",
       "swapFirst": "Swap {amount} {ticker} (1/2)",
-      "walletAway": "Open your BCH wallet app: it signs this transaction.",
+      "walletAway": "Open your BCH wallet app",
       "depositRate": "1 BCH ≈ {amount} {ticker}",
       "deposit": "Deposit to THORChain",
       "expected": "Expected to receive",
