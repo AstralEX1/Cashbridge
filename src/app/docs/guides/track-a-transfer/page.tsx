@@ -23,8 +23,10 @@ export default function Page() {
       <h2 id="notifications">Transaction cards</h2>
       <p>
         Every transaction you sign or that follows from it shows up as a card in the bottom right corner. A ring turns around the token while the network confirms it. When it is through, the card says <em>Transaction complete</em> and links to the explorer.
+        Several cards pile up with the newest in front; point at the pile and it opens upwards as below, move away and it folds back. The cross
+        closes a card. On a phone the cards are listed under the buttons instead.
       </p>
-      <Shot name="toasts" alt="Three transaction cards: PUSD swap sent, BCH received and Send Tx confirmed" size="sm" caption="Cards for the swap, the BCH arrival and the source transfer." />
+      <Shot name="toasts" alt="Three transaction cards: PUSD swap sent, BCH received and Send Tx confirmed" size="sm" caption="The pile opened: cards for the swap, the BCH arrival and the source transfer." />
 
       <h2 id="stages">What the stages mean</h2>
       <table>
