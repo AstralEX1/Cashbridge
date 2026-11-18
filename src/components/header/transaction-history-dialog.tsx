@@ -22,6 +22,8 @@ import { GenericButton } from '@/components/generic-button'
 import { useRates } from '@/hooks/use-rates'
 import { useSyncTransactions } from '@/hooks/use-sync-transactions'
 import { useAccounts, useSelectAccount } from '@/hooks/use-wallets'
+import { bridgeOutcome } from '@/lib/bridge-completion'
+import { bchAsset } from '@/lib/reverse-bridge'
 import { formatExpiration } from '@/lib/swap-helpers'
 import { cn, toCurrencyFixed, truncate } from '@/lib/utils'
 import { hasDepositArrived, isTxPending, Transaction, useTransactions } from '@/store/transaction-store'
@@ -49,7 +51,11 @@ export const TransactionHistoryDialog = ({ isOpen, onOpenChange }: HistoryDialog
   const t = useTranslations('tx')
   const tBridge = useTranslations('bridge')
 
-  const identifiers = useMemo(() => transactions.flatMap(t => [t.assetFrom.identifier, t.assetTo.identifier]), [transactions])
+  // BCH too, for an operation that ended holding BCH instead of its planned asset.
+  const identifiers = useMemo(
+    () => transactions.flatMap(t => [t.assetFrom.identifier, t.assetTo.identifier, ...(t.kind !== 'send' && t.bridge ? [bchAsset().identifier] : [])]),
+    [transactions]
+  )
 
   const { rates } = useRates(identifiers)
 
@@ -131,7 +137,10 @@ export const TransactionHistoryDialog = ({ isOpen, onOpenChange }: HistoryDialog
               const rateFrom = rates[tx.assetFrom.identifier]
               const fiatFrom = rateFrom && rateFrom.mul(amountFrom)
 
-              const rateTo = rates[tx.assetTo.identifier]
+              // A bridge that stopped with BCH kept, or was refunded, shows what the user actually holds.
+              const outcome = tx.kind !== 'send' && tx.bridge ? bridgeOutcome({ ...tx, bridge: tx.bridge }) : undefined
+              const assetTo = outcome ? (outcome.asset === 'bch' ? bchAsset() : tx.assetFrom) : tx.assetTo
+              const rateTo = rates[assetTo.identifier]
 
               const isExpanded = expandTx === tx.uid
 
@@ -142,7 +151,7 @@ export const TransactionHistoryDialog = ({ isOpen, onOpenChange }: HistoryDialog
               // placed. An order still waiting to fill will pay out its limit target instead, so an
               // open limit order shows what it is actually holding out for.
               const limitTarget = tx.limitPrice && isLimitSwapPending ? new USwapNumber(tx.limitPrice).mul(amountFrom) : null
-              const amountTo = limitTarget ?? new USwapNumber(tx.amountTo)
+              const amountTo = outcome ? new USwapNumber(outcome.amount) : (limitTarget ?? new USwapNumber(tx.amountTo))
               const fiatTo = rateTo && rateTo.mul(amountTo)
 
               const isSend = tx.kind === 'send'
@@ -246,7 +255,7 @@ export const TransactionHistoryDialog = ({ isOpen, onOpenChange }: HistoryDialog
                       <div className="flex flex-1 items-center justify-end gap-3">
                         <div className="flex flex-col gap-1 text-right">
                           <span className="text-txt-high-contrast text-sm font-semibold">
-                            <DecimalText className="break-all" amount={amountTo.toSignificant()} symbol={tx.assetTo?.ticker} />
+                            <DecimalText className="break-all" amount={amountTo.toSignificant()} symbol={assetTo?.ticker} />
                           </span>
                           <span className="text-txt-label-small text-xs font-medium">
                             {isSend
@@ -254,7 +263,7 @@ export const TransactionHistoryDialog = ({ isOpen, onOpenChange }: HistoryDialog
                               : fiatTo && toCurrencyFixed(fiatTo.toCurrency('$', { trimTrailingZeros: false }))}
                           </span>
                         </div>
-                        {tx.assetTo && <AssetIcon asset={tx.assetTo} />}
+                        {assetTo && <AssetIcon asset={assetTo} />}
                       </div>
                     </div>
 
