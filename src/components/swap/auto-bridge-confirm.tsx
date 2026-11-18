@@ -159,18 +159,14 @@ export const AutoBridgeDialog = ({ prepared, isOpen, onOpenChange }: Props) => {
           {needsImpact && <SwapAddressWarning checked={acceptedImpact} onCheckedChange={setAcceptedImpact} text={t('highImpact')} />}
           {error instanceof RouterUnavailableError ? <RouterUnavailable onRetry={send} disabled={busy} /> : error && <SwapError error={error} />}
           {attempted && !busy && <p role="status" className="text-sm">{t('attempted')}</p>}
-          <GenericButton colorType="3" size="large" className="w-full" disabled={busy || attempted || blocked} onClick={send}>
-            {busy ? (
-              <LoaderCircle size={20} className="animate-spin" />
-            ) : (
-              <span>{tConfirm('send', { amount: new USwapNumber(route.sellAmount).toSignificant(), ticker: from?.ticker ?? '' })}</span>
-            )}
+          <GenericButton colorType="3" size="large" className="w-full whitespace-normal" disabled={busy || attempted || blocked} onClick={send} aria-busy={busy}>
+            {busy && <LoaderCircle size={20} className="animate-spin" />}
+            <span>
+              {busy
+                ? tConfirm('openWallet', { chain: from ? chainLabel(from.chain) : '' })
+                : tConfirm('send', { amount: new USwapNumber(route.sellAmount).toSignificant(), ticker: from?.ticker ?? '' })}
+            </span>
           </GenericButton>
-          {busy && (
-            <p className="bridge-sign-hint" role="status">
-              {tConfirm('approveInWallet', { chain: from ? chainLabel(from.chain) : '' })}
-            </p>
-          )}
         </div>
       </CredenzaContent>
     </Credenza>

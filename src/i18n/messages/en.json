@@ -913,7 +913,7 @@
       "learnFees": "Learn more about the fees",
       "send": "Send {amount} {ticker}",
       "sendFirst": "Send {amount} {ticker} (1/2)",
-      "approveInWallet": "Open your {chain} wallet and approve the transaction."
+      "openWallet": "Open your {chain} wallet"
     },
     "cancelledInWallet": "Transaction cancelled in wallet",
     "reverse": {

@@ -178,26 +178,21 @@ export const SwapDialog = ({ provider, quote: prepared, binding: destination, wa
               <GenericButton
                 colorType="3"
                 size="large"
-                className="w-full"
+                className="w-full whitespace-normal"
                 onClick={() => onConfirm()}
                 disabled={!quote || submitting || confirmBlocked}
+                aria-busy={submitting}
               >
-                {submitting ? (
-                  <LoaderCircle size={20} className="animate-spin" />
-                ) : (
-                  <span>
-                    {tConfirm(bchToken ? 'sendFirst' : 'send', {
-                      amount: new USwapNumber(quote.sellAmount).toSignificant(),
-                      ticker: assetFrom?.ticker ?? ''
-                    })}
-                  </span>
-                )}
+                {submitting && <LoaderCircle size={20} className="animate-spin" />}
+                <span>
+                  {submitting
+                    ? tConfirm('openWallet', { chain: assetFrom ? chainLabel(assetFrom.chain) : '' })
+                    : tConfirm(bchToken ? 'sendFirst' : 'send', {
+                        amount: new USwapNumber(quote.sellAmount).toSignificant(),
+                        ticker: assetFrom?.ticker ?? ''
+                      })}
+                </span>
               </GenericButton>
-              {submitting && (
-                <p className="bridge-sign-hint" role="status">
-                  {tConfirm('approveInWallet', { chain: assetFrom ? chainLabel(assetFrom.chain) : '' })}
-                </p>
-              )}
             </div>
           </>
         ) : (
