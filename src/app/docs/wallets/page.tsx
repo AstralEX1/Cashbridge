@@ -89,7 +89,7 @@ export default function Page() {
 
       <h2 id="paste">Pasting an address</h2>
       <p>
-        With the <Link href="/docs/guides/cashbridge-router">Cashbridge Router</Link> on, the BCH button has a menu with <strong>Paste wallet address</strong>. You can then receive PUSD or BCH at an address without connecting its wallet, because receiving needs no signature. A pasted PUSD address must accept CashTokens. Many wallets show a separate token address for this, so check that you copied the right one.
+        With the <Link href="/docs/guides/cashbridge-router">Cashbridge Router</Link> on, the BCH button has a menu with <strong>Paste wallet address</strong>. You can then receive PUSD or BCH at an address without connecting its wallet, because receiving needs no signature. A pasted PUSD address must be a token-aware one that starts with <code>bitcoincash:z</code>; many wallets show it separately from the plain <code>bitcoincash:q</code> address. A plain BCH address takes the <code>q</code> form. The field turns red and the button stays disabled for anything else, including addresses of other chains and old-style <code>1…</code> addresses, which look the same as Bitcoin&apos;s.
       </p>
 
       <h2 id="safety">What a wallet connection can and cannot do</h2>

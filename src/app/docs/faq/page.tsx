@@ -85,7 +85,7 @@ export default function Page() {
         <summary>The pasted address is refused</summary>
         <div>
           <p>
-            An address for PUSD or another token must accept CashTokens. Many Bitcoin Cash wallets show a separate token address for that purpose. Copy the token address, not the plain one.
+            An address for PUSD or another token must accept CashTokens. Many Bitcoin Cash wallets show a separate token address for that purpose. Copy the token address (it starts with <code>bitcoincash:z</code>), not the plain one. Addresses of other chains, such as Ethereum or Solana, and old-style <code>1…</code> addresses are refused too: the field turns red and the button stays disabled.
           </p>
         </div>
       </details>

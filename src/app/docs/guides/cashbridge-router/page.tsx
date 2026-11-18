@@ -37,7 +37,7 @@ export default function Page() {
 
         <Step title="Say where the PUSD goes">
           <p>
-            Connect your BCH wallet as usual, or open the menu on the BCH button and choose <strong>Paste wallet address</strong>. A pasted address must accept CashTokens, which many wallets show as a separate token address. Receiving needs no signature from that wallet, and the same address is the fallback if the PUSD cannot be bought.
+            Connect your BCH wallet as usual, or open the menu on the BCH button and choose <strong>Paste wallet address</strong>. A pasted PUSD address must be a token-aware one, which many wallets show separately and which starts with <code>bitcoincash:z</code>. A plain <code>bitcoincash:q</code> address is refused, and so is anything that is not a Bitcoin Cash address. Receiving needs no signature from that wallet, and the same address is the fallback if the PUSD cannot be bought.
           </p>
         </Step>
 
