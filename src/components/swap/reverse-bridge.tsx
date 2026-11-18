@@ -759,6 +759,8 @@ const useDepositStep = (tx: BridgeTx) => {
   const outputs = op.reverse?.sale?.outputs ?? []
   const fundingKey = outputs.map(o => `${o.txid}:${o.vout}:${o.value}`).join('|')
   const walletMatches = wallet.state === 'connected' && !!wallet.binding && wallet.binding.pubkey === op.binding.pubkey
+  // The right wallet, only away (its app in the background): the button waits for it to answer.
+  const walletAway = !walletMatches && !!wallet.binding && wallet.binding.pubkey === op.binding.pubkey
   const walletName = wallet.walletName ?? op.walletName ?? t('wallet.yourWallet')
 
   // Quoted and built in the background and kept fresh, so the button goes straight to the wallet.
@@ -828,6 +830,7 @@ const useDepositStep = (tx: BridgeTx) => {
     sign,
     keep,
     walletMatches,
+    walletAway,
     retry: () => prepared.refetch()
   }
 }
@@ -1079,9 +1082,9 @@ const ReverseReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: numb
               bchUsd={bchUsd}
             />
           )}
-          {!step.walletMatches && (
+          {!step.walletMatches && (!step.walletAway || reconnectStalled) && (
             <p className="bridge-flow-message">
-              {t('progress.reconnectBch')}
+              {step.walletAway ? t('wallet.reconnectStalled', { name: step.walletName }) : t('progress.reconnectBch')}
               {reconnectStalled && (
                 <>
                   {' '}
@@ -1102,15 +1105,18 @@ const ReverseReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: numb
             colorType="3"
             onClick={step.sign}
             disabled={step.phase !== 'idle' || step.preparing || !step.walletMatches}
+            aria-busy={step.phase !== 'idle' || step.preparing || step.walletAway}
           >
-            {(step.phase !== 'idle' || step.preparing) && <LoaderCircle size={18} className="animate-spin" />}
+            {(step.phase !== 'idle' || step.preparing || step.walletAway) && <LoaderCircle size={18} className="animate-spin" />}
             {step.phase === 'signing'
               ? t('reverse.waitingWallet', { wallet: step.walletName })
               : step.phase === 'sending'
                 ? t('reverse.sending')
                 : step.phase === 'preparing' || step.preparing
                   ? t('reverse.preparing')
-                  : t('reverse.bridgeAction', { ticker: tx.assetTo.ticker })}
+                  : step.walletAway
+                    ? t('reverse.walletAway')
+                    : t('reverse.bridgeAction', { ticker: tx.assetTo.ticker })}
           </GenericButton>
           <SignHint dark phase={step.phase} walletName={step.walletName} note={step.note} onCancel={step.cancel} />
           {!prepared && !step.preparing && step.error && (

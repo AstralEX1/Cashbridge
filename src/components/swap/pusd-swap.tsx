@@ -967,7 +967,7 @@ const ReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: number; com
             (reconnectStalled ? (
               <BchStalledNotice className="bridge-flow-message" />
             ) : (
-              <p className="bridge-flow-message">{t('progress.reconnectBch')}</p>
+              !leg.walletAway && <p className="bridge-flow-message">{t('progress.reconnectBch')}</p>
             ))}
           {leg.error && <SwapError error={new Error(leg.error)} />}
         </>
@@ -979,13 +979,16 @@ const ReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: number; com
             colorType="3"
             onClick={leg.sign}
             disabled={!leg.reviewed || !!leg.busy || !leg.walletMatches}
+            aria-busy={!!leg.busy || leg.walletAway}
           >
-            {leg.busy && <LoaderCircle size={18} className="animate-spin" />}
+            {(leg.busy || leg.walletAway) && <LoaderCircle size={18} className="animate-spin" />}
             {leg.phase === 'signing'
               ? t('reverse.waitingWallet', { wallet: leg.walletName })
               : leg.phase === 'sending'
                 ? t('reverse.sending')
-                : t('progress.swapAction', { ticker: token.ticker })}
+                : leg.walletAway
+                  ? t('reverse.walletAway')
+                  : t('progress.swapAction', { ticker: token.ticker })}
           </GenericButton>
           <SignHint dark phase={leg.phase} walletName={leg.walletName} note={leg.note} onCancel={leg.cancel} />
           {!leg.reviewed && !leg.busy && leg.error && (
@@ -1074,6 +1077,8 @@ const useSecondLeg = (tx: BridgeTx) => {
   const total = (op.received ?? []).reduce((sum, o) => sum + BigInt(o.value), 0n)
   // The binding outlives a wallet that is briefly away (see bch-wallet.tsx); signing needs it live.
   const walletMatches = walletState === 'connected' && !!binding && binding.pubkey === op.binding.pubkey
+  // The right wallet, only away (its app in the background): the button waits for it to answer.
+  const walletAway = !walletMatches && !!binding && binding.pubkey === op.binding.pubkey
   const signing = useRef(false)
   const preparation = useRef(0)
   const fundingKey = (op.received ?? []).map(o => `${o.txid}:${o.vout}:${o.value}`).join('|')
@@ -1210,6 +1215,7 @@ const useSecondLeg = (tx: BridgeTx) => {
     cancel: () => abort.current?.abort(),
     error,
     walletMatches,
+    walletAway,
     prepare,
     sign,
     keep,
