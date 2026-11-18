@@ -10,13 +10,34 @@ interface Options {
   description?: ReactNode
   icon?: ReactNode
   duration?: number
+  // An explorer link under the text.
+  actionLabel?: string
+  actionHref?: string
+  dismissLabel?: string
+  // Called when the toast is closed (its button, a swipe or `toast.dismiss`), not when it times out.
+  onDismiss?: () => void
 }
 
-const show = (status: TxToastStatus, title: ReactNode, { id, description, icon, duration }: Options = {}): Id =>
-  sonner.custom(toastId => <TxToastCard status={status} title={title} description={description} icon={icon} onDismiss={() => sonner.dismiss(toastId)} />, {
-    ...(id === undefined ? {} : { id }),
-    duration: duration ?? (status === 'loading' || status === 'error' ? Infinity : 5000)
-  })
+const show = (status: TxToastStatus, title: ReactNode, { id, description, icon, duration, actionLabel, actionHref, dismissLabel, onDismiss }: Options = {}): Id =>
+  sonner.custom(
+    toastId => (
+      <TxToastCard
+        status={status}
+        title={title}
+        description={description}
+        icon={icon}
+        actionLabel={actionLabel}
+        actionHref={actionHref}
+        dismissLabel={dismissLabel}
+        onDismiss={() => sonner.dismiss(toastId)}
+      />
+    ),
+    {
+      ...(id === undefined ? {} : { id }),
+      onDismiss,
+      duration: duration ?? (status === 'loading' || status === 'error' ? Infinity : 5000)
+    }
+  )
 
 // `toast(message)` alone is a plain info toast.
 export const toast = Object.assign((title: ReactNode, options?: Options) => show('info', title, options), {
