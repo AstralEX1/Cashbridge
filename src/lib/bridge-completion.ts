@@ -1,4 +1,5 @@
 import { Chain } from '@tcswap/core'
+import { formatBaseUnits } from '@/lib/bridge'
 import { sourceTransactionId } from '@/lib/source-transaction'
 import type { BridgeOperation, SwapTransaction } from '@/store/transaction-store'
 
@@ -40,4 +41,35 @@ export const bridgeCompletionTransactions = (tx: SwapTransaction & { bridge: Bri
     for (const refund of op.refunds ?? []) if (!refund.pending) add('refundOn', tx.assetFrom.chain, refund.txid)
   }
   return transactions
+}
+
+export interface BridgeOutcome {
+  // 'bch': native BCH; 'source': the operation's own source asset, refunded to where it came from.
+  asset: 'bch' | 'source'
+  // Decimal amount (BCH and THORChain refunds both count in 1e8 units).
+  amount: string
+}
+
+const sats = (values: (string | undefined)[]) => values.reduce((sum, value) => sum + (value && /^\d+$/.test(value) ? BigInt(value) : 0n), 0n)
+const outcomeOf = (asset: BridgeOutcome['asset'], total: bigint): BridgeOutcome | undefined =>
+  total > 0n ? { asset, amount: formatBaseUnits(total, 8) } : undefined
+
+// What a finished operation actually left the user holding when it is not the planned payout: the
+// BCH kept after step 1, or a refund. Undefined while it runs, or when the planned asset arrived.
+export const bridgeOutcome = (tx: SwapTransaction & { bridge: BridgeOperation }): BridgeOutcome | undefined => {
+  const op = tx.bridge
+  if (op.direction === 'reverse') {
+    if (op.stage === 'kept_bch') return outcomeOf('bch', sats((op.reverse?.sale?.outputs ?? []).map(output => output.value)))
+    if (op.stage === 'refunded') return outcomeOf('bch', sats([op.reverse?.refund?.amountSats]))
+    return undefined
+  }
+  if (op.stage === 'kept_bch') return outcomeOf('bch', sats((op.received ?? []).map(output => output.value)))
+  if (op.stage === 'refunded') {
+    const source = tx.assetFrom.identifier.toUpperCase()
+    return outcomeOf(
+      'source',
+      sats((op.refunds ?? []).filter(refund => !refund.pending && refund.asset.toUpperCase() === source).map(refund => refund.amount))
+    )
+  }
+  return undefined
 }

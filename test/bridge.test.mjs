@@ -10,7 +10,7 @@ import { assertBridgeQuoteRequest, getQuotes, isBridgeRoute } from '../src/lib/a
 import { BelowMinimumError, minimumFromProviderErrors, resolveQuoteError } from '../src/lib/errors.ts'
 import { BridgeConfig } from '../src/config.ts'
 import { Chain } from '@tcswap/core'
-import { bridgeCompletionTransactions } from '../src/lib/bridge-completion.ts'
+import { bridgeCompletionTransactions, bridgeOutcome } from '../src/lib/bridge-completion.ts'
 import { cauldronLiquidityUrl, getCauldronApy, parseCauldronApy } from '../src/lib/cauldron-liquidity.ts'
 import { inboundHash, otherKey, otherPubkey, OTHER_TOKEN, outboundTx, pubkey, PUSD, signBuild, swapBuild } from './fixtures/bridge-fixtures.mjs'
 
@@ -59,6 +59,23 @@ test('completion history handles reverse, BCH-only, missing hashes and confirmed
   assert.equal(bridgeCompletionTransactions(tx).at(-1).kind, 'refundOn')
   tx.bridge = { stage: 'completed', received: [{ txid: '' }, {}], refunds: [{ txid: refund, pending: true }, { txid: deposit, pending: false }] }
   assert.deepEqual(bridgeCompletionTransactions(tx).map(item => item.hash), [deposit])
+})
+
+test('history shows the BCH kept or the refund instead of the planned payout', () => {
+  const usdc = 'BASE.USDC-0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+  const forward = { assetFrom: { identifier: usdc }, bridge: { stage: 'kept_bch', received: [{ value: '20000000' }, { value: '237100' }] } }
+  assert.deepEqual(bridgeOutcome(forward), { asset: 'bch', amount: '0.202371' })
+  forward.bridge = { stage: 'refunded', refunds: [{ asset: usdc.toUpperCase(), amount: '480000000', pending: false }, { asset: usdc, amount: '1', pending: true }] }
+  assert.deepEqual(bridgeOutcome(forward), { asset: 'source', amount: '4.8' })
+  forward.bridge = { stage: 'completed', received: [{ value: '20000000' }] }
+  assert.equal(bridgeOutcome(forward), undefined, 'a delivered payout keeps the planned asset')
+
+  const reverse = { assetFrom: { identifier: 'BCH.PUSD-x' }, bridge: { stage: 'kept_bch', direction: 'reverse', reverse: { sale: { bchOut: '1', outputs: [{ value: '20237100' }] } } } }
+  assert.deepEqual(bridgeOutcome(reverse), { asset: 'bch', amount: '0.202371' })
+  reverse.bridge = { stage: 'refunded', direction: 'reverse', reverse: { refund: { txid: 'a', amountSats: '20100000' } } }
+  assert.deepEqual(bridgeOutcome(reverse), { asset: 'bch', amount: '0.201' })
+  for (const bridge of [{ stage: 'second_leg_pending', direction: 'reverse', reverse: {} }, { stage: 'kept_bch', direction: 'reverse', reverse: { sale: { outputs: [{ value: 'bad' }] } } }, { stage: 'kept_bch' }])
+    assert.equal(bridgeOutcome({ assetFrom: { identifier: usdc }, bridge }), undefined)
 })
 
 test('completion history preserves case-sensitive non-hex source transaction IDs', () => {
