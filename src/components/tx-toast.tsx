@@ -1,6 +1,6 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { createContext, type ReactNode, useContext } from 'react'
 
 export type TxToastStatus = 'loading' | 'success' | 'error' | 'warning' | 'info'
 
@@ -17,6 +17,9 @@ export interface TxToastCardProps {
   // Plays the exit animation; the owner unmounts the card afterwards.
   leaving?: boolean
 }
+
+// The close button's label when the toast does not bring its own; the site's toaster provides it in the page's language.
+export const TxToastDismissLabel = createContext<string | undefined>(undefined)
 
 const Check = () => (
   <svg viewBox="0 0 12 12" fill="none" strokeWidth="2" aria-hidden="true">
@@ -68,34 +71,30 @@ const TokenRing = ({ done, children }: { done: boolean; children: ReactNode }) =
   </span>
 )
 
-export const TxToastCard = ({ status, title, description, icon, actionLabel, actionHref, dismissLabel, onDismiss, leaving }: TxToastCardProps) => (
-  <div
-    role={status === 'error' ? 'alert' : 'status'}
-    className={`tx-toast${status === 'error' ? ' is-error' : ''}${leaving ? ' is-leaving' : ''}`}
-  >
-    {icon && (status === 'loading' || status === 'success') ? (
-      <TokenRing done={status === 'success'}>{icon}</TokenRing>
-    ) : (
-      <Glyph status={status} />
-    )}
-    <div className="tx-toast-body">
-      <p className="tx-toast-title">{title}</p>
-      {description && <p className="tx-toast-description">{description}</p>}
-      {actionLabel && actionHref && (
-        <a className="tx-toast-action" href={actionHref} target="_blank" rel="noopener noreferrer">
-          {actionLabel}
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M7 17 17 7M9 7h8v8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+export const TxToastCard = ({ status, title, description, icon, actionLabel, actionHref, dismissLabel, onDismiss, leaving }: TxToastCardProps) => {
+  const fallbackLabel = useContext(TxToastDismissLabel)
+  return (
+    <div role={status === 'error' ? 'alert' : 'status'} className={['tx-toast', status === 'error' && 'is-error', leaving && 'is-leaving'].filter(Boolean).join(' ')}>
+      {icon && (status === 'loading' || status === 'success') ? <TokenRing done={status === 'success'}>{icon}</TokenRing> : <Glyph status={status} />}
+      <div className="tx-toast-body">
+        <p className="tx-toast-title">{title}</p>
+        {description && <p className="tx-toast-description">{description}</p>}
+        {actionLabel && actionHref && (
+          <a className="tx-toast-action" href={actionHref} target="_blank" rel="noopener noreferrer">
+            {actionLabel}
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M7 17 17 7M9 7h8v8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </a>
+        )}
+      </div>
+      {onDismiss && (
+        <button type="button" className="tx-toast-dismiss" aria-label={dismissLabel ?? fallbackLabel} onClick={onDismiss}>
+          <svg viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
           </svg>
-        </a>
+        </button>
       )}
     </div>
-    {onDismiss && (
-      <button type="button" className="tx-toast-dismiss" aria-label={dismissLabel} onClick={onDismiss}>
-        <svg viewBox="0 0 12 12" fill="none" aria-hidden="true">
-          <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        </svg>
-      </button>
-    )}
-  </div>
-)
+  )
+}

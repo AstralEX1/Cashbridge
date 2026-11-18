@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { TxToastCard } from '../src/components/tx-toast.tsx'
+import { TxToastCard, TxToastDismissLabel } from '../src/components/tx-toast.tsx'
+import { fromToast } from '../src/lib/utils.ts'
 
 const token = createElement('img', { src: '/tokens/pusd.svg', alt: '' })
 const render = props => renderToStaticMarkup(createElement(TxToastCard, { title: 'PUSD swap sent', ...props }))
@@ -41,4 +42,20 @@ test('the explorer link and the dismiss button only exist when given, and leavin
   assert.match(html, /href="https:\/\/example\.com\/tx\/1" target="_blank" rel="noopener noreferrer"/)
   assert.match(html, /aria-label="Dismiss"/)
   assert.match(html, /class="tx-toast is-leaving"/)
+})
+
+test('the close button falls back to the label the toaster provides', () => {
+  const html = renderToStaticMarkup(
+    createElement(TxToastDismissLabel.Provider, { value: 'Close' }, createElement(TxToastCard, { status: 'error', title: 'Failed', onDismiss() {} }))
+  )
+  assert.match(html, /aria-label="Close"/)
+  assert.match(render({ status: 'error', onDismiss() {}, dismissLabel: 'Dismiss' }), /aria-label="Dismiss"/)
+})
+
+test('pointer and focus events from inside the toast stack are told apart from the rest of the page', () => {
+  globalThis.Element ??= class {}
+  const at = inStack => Object.assign(new Element(), { closest: selector => (inStack && selector === '[data-sonner-toaster]' ? {} : null) })
+  assert.equal(fromToast({ target: at(true) }), true)
+  assert.equal(fromToast({ target: at(false) }), false)
+  assert.equal(fromToast({ target: null }), false)
 })
