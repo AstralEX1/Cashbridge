@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { Drawer as DrawerPrimitive } from 'vaul'
-import { cn } from '@/lib/utils'
+import { cn, fromToast } from '@/lib/utils'
 
 // Vaul's `repositionInputs` pushes the header off-screen when the keyboard opens; DrawerContent handles it instead.
 function Drawer({ ...props }: React.ComponentProps<typeof DrawerPrimitive.Root>) {
@@ -62,7 +62,7 @@ function DrawerOverlay({ className, ...props }: React.ComponentProps<typeof Draw
   )
 }
 
-function DrawerContent({ className, children, style, ...props }: React.ComponentProps<typeof DrawerPrimitive.Content>) {
+function DrawerContent({ className, children, style, onInteractOutside, ...props }: React.ComponentProps<typeof DrawerPrimitive.Content>) {
   const keyboard = useKeyboardInset()
   const keyboardStyle: React.CSSProperties | undefined = keyboard.inset > 0 ? { bottom: keyboard.inset, maxHeight: keyboard.height - 16 } : undefined
 
@@ -81,6 +81,10 @@ function DrawerContent({ className, children, style, ...props }: React.Component
         )}
         style={{ ...style, ...keyboardStyle }}
         {...props}
+        onInteractOutside={event => {
+          if (fromToast(event)) event.preventDefault()
+          else onInteractOutside?.(event)
+        }}
       >
         <div className="bg-muted mx-auto mt-4 hidden h-2 w-[100px] shrink-0 rounded-full group-data-[vaul-drawer-direction=bottom]/drawer-content:block" />
         {children}

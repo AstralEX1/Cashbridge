@@ -4,7 +4,7 @@ import * as React from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { XIcon } from 'lucide-react'
 import { useTranslations } from 'next-intl'
-import { cn } from '@/lib/utils'
+import { cn, fromToast } from '@/lib/utils'
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
@@ -39,6 +39,7 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onInteractOutside,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
@@ -54,6 +55,10 @@ function DialogContent({
           className
         )}
         {...props}
+        onInteractOutside={event => {
+          if (fromToast(event)) event.preventDefault()
+          else onInteractOutside?.(event)
+        }}
       >
         {children}
         {showCloseButton && (

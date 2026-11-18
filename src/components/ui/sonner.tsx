@@ -3,6 +3,8 @@
 import { Toaster as Sonner, ToasterProps } from 'sonner'
 
 // Sonner only places, stacks and times the toasts; every toast is a `TxToastCard` (see `@/lib/toast`).
+// An open Radix dialog sets `pointer-events: none` on the body and the stack inherits it, so without `auto` it would
+// neither expand on hover nor take a click on its close button.
 const Toaster = ({ ...props }: ToasterProps) => (
   <Sonner
     position="bottom-right"
@@ -11,6 +13,7 @@ const Toaster = ({ ...props }: ToasterProps) => (
     expand={false}
     offset={{ right: 24, bottom: 24 }}
     mobileOffset={{ right: 16, left: 16, bottom: 16 }}
+    style={{ pointerEvents: 'auto' }}
     toastOptions={{ unstyled: true, classNames: { toast: 'tx-sonner-toast' } }}
     {...props}
   />

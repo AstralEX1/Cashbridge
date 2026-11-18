@@ -5,6 +5,11 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+// Radix closes a modal on any pointer or focus event outside it; a click on a toast must not close the dialog under it.
+export function fromToast(event: Event) {
+  return event.target instanceof Element && !!event.target.closest('[data-sonner-toaster]')
+}
+
 export function toCurrencyFixed(value: string): string {
   if (!value.includes('.')) return value + '.00'
   const dot = value.indexOf('.')

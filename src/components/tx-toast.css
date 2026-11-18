@@ -229,6 +229,8 @@
 .tx-toast-dismiss svg {
   width: 12px;
   height: 12px;
+  /* Sonner starts a swipe on any pointer-down that is not on a button itself, so the button must be the target. */
+  pointer-events: none;
 }
 .tx-toast :is(a, button):focus-visible {
   outline: 2px solid var(--tx-toast-accent);
