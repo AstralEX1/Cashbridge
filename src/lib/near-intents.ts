@@ -22,6 +22,9 @@ const REFERRAL = 'cashbridge'
 export const FORWARD_DEADLINE_MS = 60 * 60_000
 export const REVERSE_DEADLINE_MS = 4 * 60 * 60_000
 
+// The form's slippage is a percentage; 1Click takes basis points.
+export const nearSlippageBps = (slippage?: number) => Math.round((slippage ?? 1) * 100)
+
 // THORChain-style chain prefix to 1Click's `blockchain`. Only chains the bridge has wallets for and whose deposit
 // is a plain transfer (XRP and Stellar deposits need a memo the wallet send does not carry).
 const CHAINS: Record<string, string> = {

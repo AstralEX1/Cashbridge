@@ -146,7 +146,8 @@ export interface ReverseDetails {
   deposit?: ReverseDeposit
   // The payout transaction on the destination chain, and its amount in the buy asset's base units.
   payout?: { hash: string; amount?: string }
-  refund?: { txid: string; amountSats: string }
+  // A NEAR Intents refund carries no txid: 1Click's status reports the amount only.
+  refund?: { txid?: string; amountSats: string }
   // Deposit txids signed earlier for this operation (a rejected broadcast is re-quoted and re-signed).
   priorDepositTxids?: string[]
   // Set when the Cashbridge Router runs the sale and the deposit: its order (id and capability), the signed send of
@@ -155,6 +156,9 @@ export interface ReverseDetails {
   // The bound wallet's own inputs of the first transaction, and when it went to the wallet: an answer that never came
   // back is settled by whether they get spent.
   signing?: { inputs: { txid: string; vout: number }[]; sentAt: number }
+  // Set when NEAR Intents carries the BCH out instead of THORChain (chosen on the form); the deposit's quote is then
+  // the operation's `near`.
+  route?: 'near'
 }
 
 // A leg carried by NEAR Intents instead of THORChain: the one-use deposit address its status is read by, and the

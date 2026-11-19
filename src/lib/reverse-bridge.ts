@@ -6,13 +6,14 @@ import { getProvider } from '@tcswap/toolboxes/evm'
 import type { Asset } from '@/components/swap/asset'
 import { BridgeConfig } from '@/config'
 import { getInboundAddresses, getQuotes, getTxStatus, isBridgeRoute, type TxStatusResponse } from '@/lib/api'
-import { type BchBinding, decodeTx, getTransactionState, listWalletCoins } from '@/lib/bch'
+import { addressToLockingBytecode, type BchBinding, decodeTx, getTransactionState, listWalletCoins } from '@/lib/bch'
 import { formatBaseUnits, minOutputFor } from '@/lib/bridge'
 import { withLock } from '@/lib/bridge-first-leg'
 import { BroadcastRejected, broadcastBchTransaction, parseP2pkhUnlock, prepareTokenTrade } from '@/lib/cauldron'
 import type { CauldronToken } from '@/lib/cauldron-tokens'
 import { buildDeposit, type BuiltDeposit, checkDepositMemo, checkInbound, DepositError, type InboundAddress, matchPayout, pickBchFunding, TRANSFER_OUT_TOPIC } from '@/lib/thorchain-deposit'
-import { cosmosPayout, type ChainPayout, solanaPayout, thorchainPayout, tronPayout, utxoPayout, xrpPayout } from '@/lib/payout-check'
+import { cosmosPayout, type ChainPayout, evmTransferPayout, type PayoutExpectation, solanaPayout, thorchainPayout, tronPayout, utxoPayout, xrpPayout } from '@/lib/payout-check'
+import { getNearQuote, getNearStatus, interpretNearStatus, nearLegOf, nearSlippageBps } from '@/lib/near-intents'
 import { isEvmChain } from '@/lib/payout-chains'
 import { BLOCKCHAIR_CHAINS } from '@/lib/blockchair'
 import { postJson, rpcBase, XRPL_RPC_URL } from '@/lib/transfer-status'
@@ -20,7 +21,7 @@ import { generateId } from '@/lib/utils'
 import { blockchairProxyUrl, getUSwap } from '@/lib/wallets'
 import type { Signable } from '@/lib/bch-signing'
 import { SIGN_REQUEST_EXPIRY_S } from '@/lib/bch-walletconnect'
-import { type BridgeOperation, getActiveBridge, type ReverseDetails, type SwapTransaction, transactionStore } from '@/store/transaction-store'
+import { type BridgeOperation, getActiveBridge, type NearLeg, type ReverseDetails, type SwapTransaction, transactionStore } from '@/store/transaction-store'
 
 // The reverse bridge: (token -> BCH on Cauldron, step 1) then a BCH deposit to THORChain paying an
 // THORChain asset's address (step 2). Both transactions are built here, checked, signed in the bound BCH wallet
@@ -178,6 +179,8 @@ export interface PreparedDeposit {
   built: BuiltDeposit
   route: QuoteResponseRoute
   router?: string
+  // Set for a deposit to NEAR Intents: the executable quote whose one-use address the deposit pays.
+  near?: NearLeg
 }
 
 const pickRoute = (routes: QuoteResponseRoute[]) =>
@@ -241,6 +244,91 @@ export const prepareBchDeposit = async (args: { amountSats: bigint; binding: Bch
   const { utxos } = await listWalletCoins(args.binding.lockingBytecode)
   const funding = utxos.filter(u => !u.hasToken).map(u => ({ txid: u.txid, vout: u.vout, value: u.value.toString() }))
   return prepareDeposit({ ...args, funding, payAll: false })
+}
+
+// --- Step 2 through NEAR Intents ---------------------------------------------------------------------
+
+// Bitcoin Cash's standard relay fee; a NEAR deposit has no THORNode gas rate to follow.
+const NEAR_DEPOSIT_FEE_RATE = 1n
+
+// A deposit to a NEAR Intents one-use address instead of THORChain's vault: an executable 1Click quote for the BCH
+// being sent (paying `destination`, refunds to the bound address), and a plain transfer of exactly that amount to the
+// quoted address: no memo, change back to the wallet. `payAll` and `amountSats` work as in prepareDeposit.
+export const prepareNearDeposit = async ({
+  funding,
+  payAll,
+  amountSats,
+  binding,
+  buyAsset,
+  destination,
+  slippage
+}: {
+  funding: { txid: string; vout: number; value: string }[]
+  payAll: boolean
+  amountSats?: bigint
+  binding: BchBinding
+  buyAsset: string
+  destination: string
+  slippage: number
+}): Promise<PreparedDeposit> => {
+  const feeRate = NEAR_DEPOSIT_FEE_RATE
+  // Sized against a P2PKH output like the bound address's own; 1Click's BCH deposit addresses are P2PKH.
+  const sizingScript = binding.lockingBytecode
+  if (!payAll) funding = pickBchFunding(funding, amountSats ?? 0n, binding.lockingBytecode, sizingScript, feeRate)
+  const amount = buildDeposit({ funding, lockingBytecode: binding.lockingBytecode, vaultScript: sizingScript, payAll, amountSats, feeRate }).amountSats
+  const route = await getNearQuote({
+    sellAsset: BridgeConfig.buyAsset,
+    buyAsset,
+    sellAmount: formatBaseUnits(amount, 8),
+    recipient: destination,
+    refundTo: binding.cashAddress,
+    dry: false,
+    slippageBps: nearSlippageBps(slippage)
+  })
+  if (!route) throw new DepositError('NEAR Intents does not carry this asset')
+  const near = nearLegOf(route)
+  if (BigInt(near.amountIn) !== amount) throw new DepositError('The NEAR Intents quote is for a different amount')
+  const vaultScript = addressToLockingBytecode(near.depositAddress)
+  if (!vaultScript || vaultScript === binding.lockingBytecode) throw new DepositError('The NEAR Intents deposit address is not a BCH address')
+  const built = buildDeposit({ funding, lockingBytecode: binding.lockingBytecode, vaultScript, amountSats: amount, feeRate })
+  return { built, route, near }
+}
+
+// A plain BCH deposit through NEAR Intents of `amountSats` from the bound address, quoted and built, ready to sign.
+export const prepareNearBchDeposit = async (args: { amountSats: bigint; binding: BchBinding; buyAsset: string; destination: string; slippage: number }) => {
+  const { utxos } = await listWalletCoins(args.binding.lockingBytecode)
+  const funding = utxos.filter(u => !u.hasToken).map(u => ({ txid: u.txid, vout: u.vout, value: u.value.toString() }))
+  return prepareNearDeposit({ ...args, funding, payAll: false })
+}
+
+// A transaction on the destination chain named by its hash, counted only if that chain's own node shows it paying the
+// destination (no memo asked): an EVM receipt and transaction, or the chain's own lookup.
+const payoutByHash = async (chain: string, hash: string, expect: PayoutExpectation): Promise<ChainPayout | undefined> => {
+  if (!isEvmChain(chain)) return payoutOnChain(chain, hash, expect)
+  const provider = await getProvider(chain as EVMChain)
+  const id = hash.startsWith('0x') ? hash : `0x${hash}`
+  const [receipt, tx] = await Promise.all([provider.getTransactionReceipt(id), provider.getTransaction(id)])
+  return evmTransferPayout(receipt, tx, receipt?.hash ?? id, expect)
+}
+
+export type NearReverseOutcome = { payout: ChainPayout } | { refundSats?: string; reason?: string } | { error: string } | undefined
+
+// Where a NEAR Intents deposit stands. 1Click's status only points at the payout transactions; they count once the
+// destination chain shows them paying the destination, together at least the quoted minimum. A refund (to the bound
+// address) is 1Click's report, which names no BCH transaction.
+export const nearReverseOutcome = async (op: BridgeOperation): Promise<NearReverseOutcome> => {
+  const near = op.near
+  const reverse = op.reverse
+  if (!near || !reverse) return undefined
+  const view = interpretNearStatus(await getNearStatus(near.depositAddress))
+  if (view.kind === 'refunded') return { refundSats: view.amount, reason: view.reason }
+  if (view.kind === 'failed') return { error: view.reason }
+  if (view.kind === 'pending') return view.detail ? { error: view.detail } : undefined
+  const chain = destinationChainOf(reverse.buyAsset)
+  const expect = { destination: reverse.destination, buyAsset: reverse.buyAsset }
+  const found = (await Promise.all(view.txids.map(hash => payoutByHash(chain, hash, expect).catch(() => undefined)))).filter(p => p !== undefined)
+  const total = found.reduce((sum, p) => sum + BigInt(p.amount), 0n)
+  return found.length && total >= BigInt(near.minAmountOut) ? { payout: { hash: found[0].hash, amount: total.toString() } } : undefined
 }
 
 // Where the payout search starts on an EVM chain; other chains are looked up by THORNode's outbound hash.
@@ -316,9 +404,18 @@ export const depositReadyAt = (status: TxStatusResponse, nowMs = Date.now()) => 
 // is no payout yet; the next poll asks again.
 const nonEvmPayout = async (chain: string, out: OutTx, expect: { destination: string; depositTxid: string; buyAsset: string }): Promise<ChainPayout | undefined> => {
   if (chain === Chain.THORChain) return thorchainPayout(out, expect)
+  if (chain === Chain.Cosmos) {
+    const res = await fetch(`${await rpcBase(Chain.Cosmos)}/tx?hash=0x${out.id.replace(/^0x/i, '')}`, { signal: AbortSignal.timeout(15_000) })
+    const { result } = await res.json()
+    return result ? cosmosPayout(result, out.id, expect) : undefined
+  }
+  return payoutOnChain(chain, out.id, expect)
+}
+
+// A transaction on a chain without THORChain's router, looked up on that chain's own node by its hash.
+const payoutOnChain = async (chain: string, hash: string, expect: PayoutExpectation): Promise<ChainPayout | undefined> => {
   // The SDK config is what points getRPCUrl at our Solana proxy rather than the public node.
   getUSwap()
-  const hash = out.id
   const slug = BLOCKCHAIR_CHAINS[chain as UTXOChain]
   if (slug) {
     const res = await fetch(`${blockchairProxyUrl()}/${slug}/dashboards/transaction/${encodeURIComponent(hash.toLowerCase())}`, { signal: AbortSignal.timeout(15_000) })
@@ -343,11 +440,6 @@ const nonEvmPayout = async (chain: string, out: OutTx, expect: { destination: st
     const id = hash.replace(/^0x/i, '').toLowerCase()
     const [tx, info] = await Promise.all([postJson(`${base}/wallet/gettransactionbyid`, { value: id }), postJson(`${base}/wallet/gettransactioninfobyid`, { value: id })])
     return tronPayout(tx, info, id, expect)
-  }
-  if (chain === Chain.Cosmos) {
-    const res = await fetch(`${await rpcBase(Chain.Cosmos)}/tx?hash=0x${hash.replace(/^0x/i, '')}`, { signal: AbortSignal.timeout(15_000) })
-    const { result } = await res.json()
-    return result ? cosmosPayout(result, hash, expect) : undefined
   }
   return undefined
 }

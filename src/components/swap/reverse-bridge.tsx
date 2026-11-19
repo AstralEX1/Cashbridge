@@ -17,7 +17,7 @@ import { GenericButton } from '@/components/generic-button'
 import { useDialog } from '@/components/global-dialog'
 import { TransactionHistoryDialog } from '@/components/header/transaction-history-dialog'
 import type { Asset } from '@/components/swap/asset'
-import { BchMark, CauldronMark, HoverCard, ThorchainMark, TokenMark } from '@/components/swap/bridge-marks'
+import { BchMark, CauldronMark, HoverCard, NearMark, ThorchainMark, TokenMark } from '@/components/swap/bridge-marks'
 import { shortBridgeAddress } from '@/components/swap/bridge-wallet-badge'
 import { BridgeFlow, chainTxUrl, type FlowBar, type FlowStage, type FlowToast, type FlowToken, thorchainTxUrl } from '@/components/swap/pusd-swap'
 import { useBchSideBalance } from '@/components/swap/reverse-inputs'
@@ -58,8 +58,11 @@ import {
   depositReadyAt,
   destinationChainOf,
   findPayout,
+  nearReverseOutcome,
   prepareBchDeposit,
   prepareDeposit,
+  prepareNearBchDeposit,
+  prepareNearDeposit,
   prepareSale,
   OPEN_REQUEST_MS,
   type PreparedDeposit,
@@ -71,6 +74,7 @@ import {
   unsignedOutcome
 } from '@/lib/reverse-bridge'
 import { DEPOSIT_FEE_RESERVE } from '@/lib/thorchain-deposit'
+import { isNearRoute, nearExplorerUrl, submitNearDeposit } from '@/lib/near-intents'
 import { resolveFees } from '@/lib/swap-helpers'
 import { isEvmChain } from '@/lib/payout-chains'
 import { generateId } from '@/lib/utils'
@@ -112,26 +116,27 @@ const sendDeposit = async (uid: string, prepared: PreparedDeposit, update: Updat
   const tx = await freshOperation(uid)
   const op = tx?.bridge
   if (!op?.reverse || !wallet.signer || !wallet.binding) throw new Error('The BCH wallet is not connected')
-  const { built, route, router } = prepared
-  const startBlock = await blockHeight(destinationChainOf(op.reverse.buyAsset)).catch(() => undefined)
+  const { built, route, router, near } = prepared
+  const startBlock = near ? undefined : await blockHeight(destinationChainOf(op.reverse.buyAsset)).catch(() => undefined)
   const asset = tx!.assetTo.ticker
   const { txid, signedHex } = await signInWallet(
     wallet.signer,
     op.binding,
     built,
-    `Send ${formatBch(built.amountSats)} BCH to THORChain for at least ${route.expectedBuyAmountMaxSlippage ?? route.expectedBuyAmount} ${asset}`,
+    `Send ${formatBch(built.amountSats)} BCH to ${near ? 'NEAR Intents' : 'THORChain'} for at least ${route.expectedBuyAmountMaxSlippage ?? route.expectedBuyAmount} ${asset}`,
     { signal }
   )
   update(uid, current => ({
     stage: 'second_leg_signed',
     ...(current.reverse?.sale ? {} : { hash: txid }),
+    ...(near ? { near } : {}),
     reverse: {
       ...current.reverse!,
       deposit: {
         attempt: generateId(),
         amountSats: built.amountSats.toString(),
         minerFeeSats: built.minerFeeSats.toString(),
-        memo: route.memo!,
+        memo: route.memo ?? '',
         inboundAddress: route.inboundAddress!,
         router,
         startBlock,
@@ -143,6 +148,7 @@ const sendDeposit = async (uid: string, prepared: PreparedDeposit, update: Updat
     }
   }))
   await broadcastDeposit(uid, signedHex, txid, update)
+  if (near) void submitNearDeposit(near.depositAddress, txid)
 }
 
 // --- Tracking ------------------------------------------------------------------------------------
@@ -252,6 +258,17 @@ export const syncReverse = async (tx: BridgeTx, update: Update) => {
     }
     case 'second_leg_pending': {
       if (!deposit?.txid) return
+      if (op.near) {
+        const outcome = await nearReverseOutcome(op)
+        if (!outcome) return op.error && update(tx.uid, () => ({ error: undefined }))
+        if ('payout' in outcome) return update(tx.uid, current => ({ stage: 'completed', error: undefined, reverse: { ...current.reverse!, payout: outcome.payout } }))
+        if ('error' in outcome) return outcome.error !== op.error && update(tx.uid, () => ({ error: outcome.error }))
+        return update(tx.uid, current => ({
+          stage: 'refunded',
+          error: undefined,
+          reverse: { ...current.reverse!, refund: { amountSats: outcome.refundSats ?? current.reverse!.deposit!.amountSats } }
+        }))
+      }
       const [found, refund, readyAt] = await Promise.all([
         findPayout(op).catch(() => undefined),
         findThorchainOutbound(deposit.txid, op.binding.lockingBytecode, 'REFUND').catch(() => undefined),
@@ -422,17 +439,18 @@ export const SignHint = ({
   ) : null
 }
 
-const RouteSteps = ({ token, asset, thorMinutes, total }: { token: CauldronToken | null; asset: Asset; thorMinutes?: number; total: string }) => {
+const RouteSteps = ({ token, asset, thorMinutes, total, near }: { token: CauldronToken | null; asset: Asset; thorMinutes?: number; total: string; near?: boolean }) => {
   const t = useTranslations('bridge.reverse')
   const tConfirm = useTranslations('bridge.confirm')
   const chain = chainLabel(asset.chain)
+  const BridgeMark = near ? NearMark : ThorchainMark
   return (
     <HoverCard
       label={
         <>
           <span>{token ? 2 : 1}</span>
           {token && <CauldronMark />}
-          <ThorchainMark />
+          <BridgeMark />
         </>
       }
     >
@@ -451,15 +469,15 @@ const RouteSteps = ({ token, asset, thorMinutes, total }: { token: CauldronToken
             </span>
           </span>
           <span className="bridge-tip-step">
-            <ThorchainMark size={22} />
+            <BridgeMark size={22} />
             <span>
               <strong>{t('routeBridge', { to: asset.ticker })}</strong>
-              <span className="bridge-tip-label">{t('routeBridgeDetail', { chain, minutes: thorMinutes ?? '—' })}</span>
+              <span className="bridge-tip-label">{t(near ? 'routeBridgeDetailNear' : 'routeBridgeDetail', { chain, minutes: thorMinutes ?? '—' })}</span>
             </span>
           </span>
         </span>
       ) : (
-        <span className="bridge-tip-label">{t('routeSingle', { to: asset.ticker, chain })}</span>
+        <span className="bridge-tip-label">{t(near ? 'routeSingleNear' : 'routeSingle', { to: asset.ticker, chain })}</span>
       )}
     </HoverCard>
   )
@@ -482,6 +500,9 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
   const wallet = useBchWallet()
   const update = useUpdateBridge()
   const live = useQuote().quote
+  // The form refreshes its quote on a timer, and a refreshing quote reads as none: the dialog keeps
+  // the last one it showed (the deposit itself is always quoted again right before signing).
+  const [quote, setQuote] = useState(live)
   const sale = useTokenSale(token, amount)
   const [open, setOpen] = useState(false)
   const [phase, setPhase] = useState<SignPhase>('idle')
@@ -510,12 +531,18 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
   }, [amount, token])
   // The transaction is prepared while the dialog is open and kept fresh, so Confirm goes straight
   // to the wallet. Nothing is refreshed while a request is out.
+  // NEAR Intents carries the BCH out when the form's chosen route is its quote; the Cashbridge Router uses THORChain.
+  const viaNear = !viaRouter && isNearRoute(quote)
   const prepared = useQuery({
-    queryKey: ['reverse-prepared', token?.category ?? 'BCH', units?.toString(), asset?.identifier, destination, binding?.pubkey],
+    queryKey: ['reverse-prepared', token?.category ?? 'BCH', units?.toString(), asset?.identifier, destination, binding?.pubkey, viaNear],
     queryFn: async (): Promise<Prepared> =>
       token
         ? { sale: await prepareSale(token, units!, binding!) }
-        : { deposit: await prepareBchDeposit({ amountSats: units!, binding: binding!, buyAsset: asset!.identifier, shortCode: asset!.shortCode, destination: destination!, slippage: slippage ?? 1 }) },
+        : {
+            deposit: viaNear
+              ? await prepareNearBchDeposit({ amountSats: units!, binding: binding!, buyAsset: asset!.identifier, destination: destination!, slippage: slippage ?? 1 })
+              : await prepareBchDeposit({ amountSats: units!, binding: binding!, buyAsset: asset!.identifier, shortCode: asset!.shortCode, destination: destination!, slippage: slippage ?? 1 })
+          },
     // A Router order is opened only on Confirm, so the background refresh never leaves unused orders behind.
     enabled: isOpen && !submitting && !viaRouter && !!binding && !!destination && !!asset && !!units && units > 0n,
     staleTime: PREPARED_TTL_MS,
@@ -523,9 +550,6 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
     gcTime: 0,
     retry: 1
   })
-  // The form refreshes its quote on a timer, and a refreshing quote reads as none: the dialog keeps
-  // the last one it showed (the deposit itself is always quoted again right before signing).
-  const [quote, setQuote] = useState(live)
   useEffect(() => {
     if (live && !submitting) setQuote(live)
   }, [live, submitting])
@@ -572,7 +596,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
       const ready: Prepared = viaRouter ? {} : fresh ? prepared.data! : (await prepared.refetch({ throwOnError: true })).data!
       if (controller.signal.aborted) throw new SignCancelled('Cancelled')
       const record = {
-        provider: ProviderName.THORCHAIN,
+        provider: viaNear ? ProviderName.NEAR : ProviderName.THORCHAIN,
         chainId: getChainConfig(Chain.BitcoinCash).chainId,
         timestamp: new Date(),
         estimatedTime: thorSeconds,
@@ -583,7 +607,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
         addressFrom: binding.cashAddress,
         addressTo: destination
       }
-      const reverse = { buyAsset: asset.identifier, destination }
+      const reverse = { buyAsset: asset.identifier, destination, ...(viaNear ? { route: 'near' as const } : {}) }
       if (viaRouter && token) {
         const routed = await prepareRouterSale({ token, units, binding, buyAsset: asset.identifier, shortCode: asset.shortCode, destination, slippage: slippage ?? 1 })
         if (controller.signal.aborted) throw new SignCancelled('Cancelled')
@@ -772,7 +796,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
                       {t('route')}
                     </dt>
                     <dd>
-                      <RouteSteps token={token} asset={asset} thorMinutes={thorSeconds ? formatMinutes(thorSeconds) : undefined} total={minutes} />
+                      <RouteSteps token={token} asset={asset} thorMinutes={thorSeconds ? formatMinutes(thorSeconds) : undefined} total={minutes} near={viaNear} />
                     </dd>
                   </div>
                   <div>
@@ -823,8 +847,8 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
                         </span>
                         <span className="bridge-tip-sep" />
                         <span className="bridge-tip-row">
-                          <span className="bridge-tip-label">{t('thorFee')}</span>
-                          <span>{usdText(thorFeeUsd === undefined ? undefined : -thorFeeUsd) ?? '—'}</span>
+                          <span className="bridge-tip-label">{t(viaNear ? 'nearFee' : 'thorFee')}</span>
+                          <span>{viaNear ? t('nearFeeIncluded') : (usdText(thorFeeUsd === undefined ? undefined : -thorFeeUsd) ?? '—')}</span>
                         </span>
                         {token && (
                           <span className="bridge-tip-row">
@@ -901,16 +925,10 @@ const useDepositStep = (tx: BridgeTx) => {
   // Quoted and built in the background and kept fresh, so the button goes straight to the wallet.
   const prepared = useQuery({
     queryKey: ['reverse-deposit', tx.uid, fundingKey],
-    queryFn: () =>
-      prepareDeposit({
-        funding: outputs,
-        payAll: true,
-        binding: op.binding,
-        buyAsset: op.reverse!.buyAsset,
-        shortCode: tx.assetTo.shortCode,
-        destination: op.reverse!.destination,
-        slippage: slippage ?? 1
-      }),
+    queryFn: () => {
+      const args = { funding: outputs, payAll: true, binding: op.binding, buyAsset: op.reverse!.buyAsset, destination: op.reverse!.destination, slippage: slippage ?? 1 }
+      return op.reverse!.route === 'near' ? prepareNearDeposit(args) : prepareDeposit({ ...args, shortCode: tx.assetTo.shortCode })
+    },
     enabled: op.stage === 'bch_ready' && outputs.length > 0 && !!op.reverse && phase === 'idle',
     refetchInterval: PREPARED_TTL_MS,
     retry: 1,
@@ -970,7 +988,7 @@ const useDepositStep = (tx: BridgeTx) => {
   }
 }
 
-const DepositQuoteBlock = ({ route, amountSats, minerFeeSats, ticker, bchUsd }: { route: QuoteResponseRoute; amountSats: bigint; minerFeeSats: bigint; ticker: string; bchUsd?: number }) => {
+const DepositQuoteBlock = ({ route, amountSats, minerFeeSats, ticker, bchUsd, near }: { route: QuoteResponseRoute; amountSats: bigint; minerFeeSats: bigint; ticker: string; bchUsd?: number; near?: boolean }) => {
   const t = useTranslations('bridge.reverse')
   const tProgress = useTranslations('bridge.progress')
   const [open, setOpen] = useState(true)
@@ -986,7 +1004,7 @@ const DepositQuoteBlock = ({ route, amountSats, minerFeeSats, ticker, bchUsd }: 
       {open && (
         <dl className="bridge-confirm-rows">
           <div>
-            <dt>{t('deposit')}</dt>
+            <dt>{t(near ? 'depositNear' : 'deposit')}</dt>
             <dd>{formatAmount(bch, 8)} BCH</dd>
           </div>
           <div>
@@ -1063,9 +1081,11 @@ export const ReverseOperationPanel = ({ uid, onClose }: { uid?: string; onClose:
   const saleHref = reverse.sale?.txid ? chainTxUrl(Chain.BitcoinCash, reverse.sale.txid) : undefined
   const bridgeHref = reverse.payout
     ? chainTxUrl(target.chain, reverse.payout.hash)
-    : reverse.deposit?.txid
-      ? thorchainTxUrl(reverse.deposit.txid)
-      : undefined
+    : op.near
+      ? nearExplorerUrl(op.near.depositAddress)
+      : reverse.deposit?.txid
+        ? thorchainTxUrl(reverse.deposit.txid)
+        : undefined
   const bridgeBar = (): FlowBar =>
     completed
       ? { fill: 1, done: true, href: bridgeHref }
@@ -1111,9 +1131,9 @@ export const ReverseOperationPanel = ({ uid, onClose }: { uid?: string; onClose:
   const toasts: FlowToast[] = [
     ...(reverse.sale?.txid ? [{ id: `sale:${reverse.sale.txid}`, title: t('reverse.toastSwap', { ticker: token?.ticker ?? '' }), hash: reverse.sale.txid, chain: Chain.BitcoinCash, time: timeOf(start), icon: sent.icon, pending: !saleDone }] : []),
     // THORChain waits for BCH confirmations before it swaps, so the deposit turns until the payout (or refund) arrives.
-    ...(reverse.deposit?.txid ? [{ id: `deposit:${reverse.deposit.txid}`, title: t('reverse.toastDeposit'), hash: reverse.deposit.txid, chain: Chain.BitcoinCash, icon: bch.icon, pending: !reverse.payout && !reverse.refund }] : []),
+    ...(reverse.deposit?.txid ? [{ id: `deposit:${reverse.deposit.txid}`, title: t(op.near ? 'reverse.toastDepositNear' : 'reverse.toastDeposit'), hash: reverse.deposit.txid, chain: Chain.BitcoinCash, icon: bch.icon, pending: !reverse.payout && !reverse.refund }] : []),
     ...(reverse.payout ? [{ id: `payout:${reverse.payout.hash}`, title: t('reverse.toastPayout', { ticker: target.ticker }), hash: reverse.payout.hash, chain: target.chain, icon: out.icon }] : []),
-    ...(reverse.refund ? [{ id: `refund:${reverse.refund.txid}`, title: t('reverse.toastRefund'), hash: reverse.refund.txid, chain: Chain.BitcoinCash, icon: bch.icon }] : [])
+    ...(reverse.refund?.txid ? [{ id: `refund:${reverse.refund.txid}`, title: t('reverse.toastRefund'), hash: reverse.refund.txid, chain: Chain.BitcoinCash, icon: bch.icon }] : [])
   ]
     .filter(item => !dismissed.includes(item.id))
     .reverse()
@@ -1216,6 +1236,7 @@ const ReverseReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: numb
               minerFeeSats={prepared.built.minerFeeSats}
               ticker={tx.assetTo.ticker}
               bchUsd={bchUsd}
+              near={!!prepared.near}
             />
           )}
           {!step.walletMatches && (!step.walletAway || reconnectStalled) && (

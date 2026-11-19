@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl'
 import { NearMark, ThorchainMark } from '@/components/swap/bridge-marks'
 import { useTokenQuoteFor } from '@/components/swap/pusd-swap'
 import { useQuote } from '@/hooks/use-quote'
+import { useAssetFrom } from '@/hooks/use-swap'
 import { formatBaseUnits } from '@/lib/bridge'
 import { firstLegSeconds, formatMinutes } from '@/lib/bridge-summary'
 import { useSwapStore } from '@/store/swap-store'
@@ -13,12 +14,17 @@ const ROUTES = [
   { key: 'near', name: 'NEAR Intents', Mark: NearMark }
 ] as const
 
-// The two bridges side by side when both quote: what each would deliver (the token through the same Cauldron
-// swap, else BCH) and how long it takes. The better one is taken unless the user picks the other.
+// The two bridges side by side when both quote: what each would deliver (into BCH: the token through the same
+// Cauldron swap, else BCH; back from BCH: the other chain's asset) and how long it takes. The better one is taken
+// unless the user picks the other.
 export const RouteCompare = () => {
   const t = useTranslations('bridge.routes')
   const { routes, quote, best } = useQuote()
-  const token = useSwapStore(state => state.bchToken)
+  const reverse = useSwapStore(state => state.reverse)
+  const payout = useAssetFrom()
+  // Back from BCH the store's token is the one sold, not one bought.
+  const bchToken = useSwapStore(state => state.bchToken)
+  const token = reverse ? null : bchToken
   const setChoice = useSwapStore(state => state.setRouteChoice)
   const estimates = {
     thorchain: useTokenQuoteFor(token ? routes?.thorchain?.expectedBuyAmount : undefined, token),
@@ -39,7 +45,7 @@ export const RouteCompare = () => {
                 ? '…'
                 : `${route.expectedBuyAmount} BCH`
               : `${formatBaseUnits(estimate.output, token.decimals)} ${token.ticker}`
-            : `${route.expectedBuyAmount} BCH`
+            : `${route.expectedBuyAmount} ${reverse ? (payout?.ticker ?? '') : 'BCH'}`
         const seconds = route ? firstLegSeconds(route.estimatedTime) : undefined
         const selected = !!route && route === quote
         return (

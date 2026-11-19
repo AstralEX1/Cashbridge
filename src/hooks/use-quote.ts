@@ -12,7 +12,7 @@ import { useTokenSale } from '@/hooks/use-token-sale'
 import { BridgeConfig } from '@/config'
 import { useSwapStore } from '@/store/swap-store'
 import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
-import { getNearQuote, type NearRoute } from '@/lib/near-intents'
+import { getNearQuote, nearSlippageBps, type NearRoute } from '@/lib/near-intents'
 
 // The two bridges' quotes for the same transfer; either may be missing.
 export interface BridgeRoutes {
@@ -54,9 +54,9 @@ export const useQuote = (): UseQuote => {
   const sellAsset = reverse ? BridgeConfig.buyAsset : assetFrom?.identifier
   const buyAsset = reverse ? assetFrom?.identifier : assetTo?.identifier
   const sellAmount = reverse && bchToken ? sale.bridgeAmount : valueFrom.eqValue(0) ? undefined : valueFrom.toSignificant()
-  // NEAR Intents carries manual forward transfers; the Cashbridge Router and transfers back stay on THORChain for now.
+  // NEAR Intents carries manual transfers both ways; the Cashbridge Router stays on THORChain.
   const { automatic } = useAutomaticBridge()
-  const nearAllowed = BridgeConfig.nearIntents && !reverse && !automatic && !isPrivateSwap
+  const nearAllowed = BridgeConfig.nearIntents && !automatic && !isPrivateSwap
   const choice = useSwapStore(state => state.routeChoice)
 
   const queryKey = [
@@ -159,9 +159,6 @@ export const bestRoute = (routes?: BridgeRoutes): 'thorchain' | 'near' | undefin
   if (!routes.thorchain) return 'near'
   return new USwapNumber(routes.near.expectedBuyAmount).gt(new USwapNumber(routes.thorchain.expectedBuyAmount)) ? 'near' : 'thorchain'
 }
-
-// The form's slippage is a percentage; 1Click takes basis points.
-export const nearSlippageBps = (slippage?: number) => Math.round((slippage ?? 1) * 100)
 
 export const isQuoteFor = (quote: QuoteResponseRoute, sellAsset?: string, buyAsset?: string) =>
   quote.sellAsset.toLowerCase() === sellAsset?.toLowerCase() && quote.buyAsset.toLowerCase() === buyAsset?.toLowerCase()

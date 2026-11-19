@@ -129,7 +129,7 @@ export const Swap = () => {
       <RouterHint />
 
       {/* Forward: THORChain or NEAR Intents swap to native BCH, then a separately signed Cauldron swap to the token.
-            Reverse: a Cauldron sale of the token for BCH, then a BCH deposit to THORChain. No limit,
+            Reverse: a Cauldron sale of the token for BCH, then a BCH deposit to THORChain or NEAR Intents. No limit,
             private or memoless entry points. */}
       <div className="bridge-card">
         {reverse ? (
@@ -157,7 +157,7 @@ export const Swap = () => {
           <SwapInputTo selecting={picker === 'to'} onSelectOpenChange={open => setPicker(open ? 'to' : undefined)} />
         )}
       </div>
-      {!reverse && <RouteCompare />}
+      <RouteCompare />
       {reverse ? (
         <ReverseSwapButton onShowBridge={() => setProgressId(activeBridge?.uid)} />
       ) : (
