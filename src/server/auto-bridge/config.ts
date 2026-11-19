@@ -44,6 +44,8 @@ export function loadConfig() {
     minConfirmations: integer('AUTO_BRIDGE_MIN_CONFIRMATIONS', 0, 0, 100),
     zeroConfMaxSats: BigInt(zero),
     maxWaitMs: integer('AUTO_BRIDGE_MAX_WAIT_SECONDS', 1800, 60, 86400) * 1000,
-    pollMs: integer('AUTO_BRIDGE_POLL_SECONDS', 5, 1, 60) * 1000
+    pollMs: integer('AUTO_BRIDGE_POLL_SECONDS', 5, 1, 60) * 1000,
+    // Off until the owner switches it on: new orders then pay into their own contract (src/lib/router-contract.ts).
+    contractOrders: process.env.AUTO_BRIDGE_CONTRACT_ORDERS === 'true'
   }
 }

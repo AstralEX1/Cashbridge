@@ -5,7 +5,9 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { binToHex, deriveHdPrivateNodeFromSeed, encodeHdPrivateKey, encodeTransaction, hexToBin } from '@bitauth/libauth'
-import { PublicWallet, WorkerWallet } from '../src/server/auto-bridge/wallet.ts'
+import { orderUnlockBytes, PublicWallet, WorkerWallet } from '../src/server/auto-bridge/wallet.ts'
+import { orderBinding, REFUND_AFTER_SECONDS } from '../src/lib/router-contract.ts'
+import { addressToLockingBytecode } from '../src/lib/bch.ts'
 import { OrderStore } from '../src/server/auto-bridge/store.ts'
 import { bindingFromPubkey, decodeTx, txidOf } from '../src/lib/bch.ts'
 import { bestTrade, BroadcastRejected, checkPoolCovenants, poolLockingBytecode, reviewBuild, tradeTransaction } from '../src/lib/cauldron.ts'
@@ -103,7 +105,8 @@ const localBuild = (order, sellSats = 990000n) => {
     cashAddress: order.refundAddress,
     payout: { tokenScript: order.recipientScript, changeScript: order.refundScript },
     sell: sellSats,
-    minOutput: BigInt(order.minPusd)
+    minOutput: BigInt(order.minPusd),
+    ownUnlockBytes: orderUnlockBytes(order)
   }
   return { build: tradeTransaction(trade, buildIntent), intent: buildIntent }
 }
@@ -150,9 +153,9 @@ test('refund signs only verified order BCH to the immutable fallback and persist
   }
 })
 
-const environment = (path = ':memory:') => {
+const environment = (path = ':memory:', contractOrders = false) => {
   const signer = wallet(),
-    store = new OrderStore(path, signer.xpub, limits)
+    store = new OrderStore(path, signer.xpub, limits, undefined, undefined, contractOrders)
   const order = store.create(randomUUID(), capability(), intent, '200', 100)
   const hex = outboundTx({ to: hexToBin(order.binding.lockingBytecode), amount: 1000000n })
   const outid = txidOf(hex),
@@ -229,6 +232,47 @@ const environment = (path = ':memory:') => {
     }
   }
 }
+
+test('a contract order deposits into the contract of its own terms, which the browser can rebuild', () => {
+  const signer = wallet(),
+    store = new OrderStore(':memory:', signer.xpub, limits, undefined, undefined, true)
+  try {
+    const token = capability()
+    const order = store.create(randomUUID(), token, intent, '200', 1_000_000)
+    const view = store.public(order.id, token)
+    assert.match(view.depositAddress, /^bitcoincash:p/)
+    assert.deepEqual(view.contract, { routerKey: signer.binding(order.addressIndex).pubkey, refundAfter: 1000 + REFUND_AFTER_SECONDS })
+    const terms = {
+      ...view.contract,
+      recipientScript: addressToLockingBytecode(view.recipientAddress),
+      refundScript: addressToLockingBytecode(view.refundAddress),
+      minPusd: view.minPusd
+    }
+    assert.equal(orderBinding(terms, 0).cashAddress, view.depositAddress)
+    assert.notEqual(orderBinding({ ...terms, minPusd: '1' }, 0).cashAddress, view.depositAddress)
+  } finally {
+    store.close()
+  }
+})
+
+test('the worker swaps a contract order to PUSD through the contract, and refunds every coin through it', async () => {
+  const env = environment(':memory:', true)
+  try {
+    await processOrder(env.store, env.gateway, env.signer, env.order, env.policy, env.build, () => 1000)
+    const [attempt] = env.store.attempts(env.order.id)
+    assert.equal(attempt.kind, 'swap')
+    assert.equal(env.store.get(env.order.id).state, 'submitted')
+    assert.ok(BigInt(attempt.pusdOut) >= 200n)
+    const order = { ...env.store.get(env.order.id), funding: [0, 1].map(vout => ({ txid: 'ee'.repeat(32), vout, value: '500000', confirmations: 1, unspent: true })) }
+    assert.throws(() => env.signer.signSwap(order, localBuild(order, 490000n).build, 490000n), /one coin/)
+    const refund = decodeTx(env.signer.signRefund(order).hex)
+    assert.equal(refund.outputs.length, 2)
+    assert.ok(refund.outputs.every(o => binToHex(o.lockingBytecode) === order.refundScript && o.valueSatoshis > 497000n))
+    assert.throws(() => env.signer.signRefund({ ...order, minPusd: '1' }), /signing intent/)
+  } finally {
+    env.store.close()
+  }
+})
 
 test('worker recovers a closed-browser order from BCH history and waits until the stream finishes', async () => {
   const env = environment()

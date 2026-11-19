@@ -16,8 +16,22 @@ import {
   type Transaction
 } from '@bitauth/libauth'
 import { bindingFromPubkey, decodeTx, addressPaysScript } from '@/lib/bch'
-import { checkPoolCovenants, checkSigned, reviewBuild, sourcesOf, type BuildResult } from '@/lib/cauldron'
+import { checkPoolCovenants, checkSigned, parseP2pkhUnlock, reviewBuild, sourcesOf, type BuildResult } from '@/lib/cauldron'
+import { orderBinding, orderRedeemScript, orderUnlock, parseOrderUnlock, type ContractFunction, type OrderTerms } from '@/lib/router-contract'
 import type { Attempt, Order } from '@/server/auto-bridge/types'
+
+type ContractOrder = Pick<Order, 'contract' | 'recipientScript' | 'refundScript' | 'minPusd'>
+const termsOf = (order: ContractOrder, routerKey: string): OrderTerms => ({
+  routerKey,
+  recipientScript: order.recipientScript,
+  refundScript: order.refundScript,
+  minPusd: order.minPusd,
+  refundAfter: order.contract!.refundAfter
+})
+
+// The bytes a signed contract input adds to the transaction (its unlocking script and the script's 3-byte length), for the fee.
+export const orderUnlockBytes = (order: Order) =>
+  order.contract ? orderUnlock(termsOf(order, order.binding.pubkey), 'convert', new Uint8Array(65)).length + 2 : undefined
 
 const validIndex = (index: number) => {
   if (!Number.isSafeInteger(index) || index < 0 || index >= 2 ** 31) throw new Error('Invalid HD address index')
@@ -40,6 +54,12 @@ export class PublicWallet {
     const branch = deriveHdPublicNodeChild(decoded.node, 0)
     const child = deriveHdPublicNodeChild(branch, index)
     return bindingFromPubkey(child.publicKey, index)
+  }
+
+  // Where the order's BCH is paid: its contract when it has one, else the plain address at its index.
+  deposit(order: ContractOrder & Pick<Order, 'addressIndex'>) {
+    const plain = this.binding(order.addressIndex)
+    return order.contract ? orderBinding(termsOf(order, plain.pubkey), order.addressIndex) : plain
   }
 }
 
@@ -69,7 +89,7 @@ export class WorkerWallet extends PublicWallet {
   }
 
   #assertOrder(order: Order) {
-    const binding = this.binding(order.addressIndex)
+    const binding = this.deposit(order)
     if (
       binding.lockingBytecode !== order.binding.lockingBytecode ||
       binding.pubkey !== order.binding.pubkey ||
@@ -83,11 +103,12 @@ export class WorkerWallet extends PublicWallet {
       throw new Error('Invalid signing intent')
   }
 
-  #sign(order: Order, transaction: Transaction, sourceOutputs: Output[], indexes: number[]) {
+  #sign(order: Order, transaction: Transaction, sourceOutputs: Output[], indexes: number[], fn: ContractFunction) {
     this.#assertOrder(order)
     const unsignedHex = binToHex(encodeTransaction(transaction))
     const key = this.#privateKey(order.addressIndex)
     const pubkey = hexToBin(order.binding.pubkey)
+    const terms = order.contract && termsOf(order, order.binding.pubkey)
     try {
       const signed = {
         ...transaction,
@@ -96,17 +117,18 @@ export class WorkerWallet extends PublicWallet {
           const preimage = generateSigningSerializationBch(
             { inputIndex, sourceOutputs, transaction },
             {
-              coveredBytecode: sourceOutputs[inputIndex].lockingBytecode,
+              coveredBytecode: terms ? orderRedeemScript(terms) : sourceOutputs[inputIndex].lockingBytecode,
               signingSerializationType: Uint8Array.of(0x61)
             }
           )
           const signature = secp256k1.signMessageHashSchnorr(key, hash256(preimage))
           if (typeof signature === 'string') throw new Error('BCH signing failed')
-          return { ...input, unlockingBytecode: Uint8Array.from([65, ...signature, 0x61, 33, ...pubkey]) }
+          const withType = Uint8Array.from([...signature, 0x61])
+          return { ...input, unlockingBytecode: terms ? orderUnlock(terms, fn, withType) : Uint8Array.from([65, ...withType, 33, ...pubkey]) }
         })
       }
       const hex = binToHex(encodeTransaction(signed))
-      return { hex, txid: checkSigned(unsignedHex, hex, indexes, sourceOutputs, order.binding.pubkey) }
+      return { hex, txid: checkSigned(unsignedHex, hex, indexes, sourceOutputs, order.binding.pubkey, terms ? parseOrderUnlock(terms) : parseP2pkhUnlock) }
     } finally {
       key.fill(0)
     }
@@ -115,6 +137,8 @@ export class WorkerWallet extends PublicWallet {
   signSwap(order: Order, build: BuildResult, sellSats: bigint): Attempt {
     this.#assertOrder(order)
     if (sellSats <= 0n || sellSats > order.funding.reduce((sum, coin) => sum + BigInt(coin.value), 0n)) throw new Error('Invalid sale amount')
+    // The contract binds each coin to the payout at its own index, so a contract order swaps exactly one coin.
+    if (order.contract && order.funding.length !== 1) throw new Error('A contract order swaps one coin')
     const reviewed = reviewBuild(build, {
       category: BridgeConfig.pusd.category,
       side: 'buy',
@@ -124,11 +148,12 @@ export class WorkerWallet extends PublicWallet {
       cashAddress: order.refundAddress,
       payout: { tokenScript: order.recipientScript, changeScript: order.refundScript },
       sell: sellSats,
-      minOutput: BigInt(order.minPusd)
+      minOutput: BigInt(order.minPusd),
+      ownUnlockBytes: orderUnlockBytes(order)
     })
     checkPoolCovenants(reviewed)
     return {
-      ...this.#sign(order, decodeTx(reviewed.unsignedHex), sourcesOf(reviewed), reviewed.ownIndexes),
+      ...this.#sign(order, decodeTx(reviewed.unsignedHex), sourcesOf(reviewed), reviewed.ownIndexes, 'convert'),
       kind: 'swap',
       pusdOut: reviewed.output.toString(),
       status: 'signed'
@@ -147,18 +172,22 @@ export class WorkerWallet extends PublicWallet {
         sequenceNumber: 0xffffffff,
         unlockingBytecode: new Uint8Array()
       })),
-      outputs: [{ lockingBytecode: hexToBin(order.refundScript), valueSatoshis: total }]
+      // A contract pays each coin back at its own index; a plain address returns them all in one output.
+      outputs: (order.contract ? order.funding.map(coin => BigInt(coin.value)) : [total]).map(valueSatoshis => ({ lockingBytecode: hexToBin(order.refundScript), valueSatoshis }))
     }
-    const fee = BigInt(encodeTransaction(tx).length + tx.inputs.length * 100)
-    if (total - fee < 546n) throw new Error('BCH refund would be dust')
-    tx.outputs[0].valueSatoshis = total - fee
+    const unlockBytes = orderUnlockBytes(order) ?? 100
+    const fee = BigInt(encodeTransaction(tx).length + tx.inputs.length * unlockBytes)
+    const share = (fee + BigInt(tx.outputs.length) - 1n) / BigInt(tx.outputs.length)
+    if (tx.outputs.some(output => output.valueSatoshis - share < 546n)) throw new Error('BCH refund would be dust')
+    tx.outputs.forEach(output => (output.valueSatoshis -= share))
     const sources = order.funding.map(coin => ({ lockingBytecode: hexToBin(order.binding.lockingBytecode), valueSatoshis: BigInt(coin.value) }))
     return {
       ...this.#sign(
         order,
         tx,
         sources,
-        tx.inputs.map((_, index) => index)
+        tx.inputs.map((_, index) => index),
+        'giveBack'
       ),
       kind: 'refund',
       pusdOut: '0',

@@ -11,7 +11,7 @@ export async function runWorker() {
   const config = loadConfig()
   const wallet = new WorkerWallet(readCredential(process.env.AUTO_BRIDGE_KEY_FILE, true))
   if (wallet.xpub !== config.xpub) throw new Error('Worker key does not match the deposit wallet')
-  const orders = new OrderStore(config.database, config.xpub, config.limits, config.maxWaitMs, config.guardFile),
+  const orders = new OrderStore(config.database, config.xpub, config.limits, config.maxWaitMs, config.guardFile, config.contractOrders),
     gateway = new BchGateway()
   const { startOrderServer } = await import('@/server/auto-bridge/http')
   const { quoteToken } = await import('@/lib/cauldron')
