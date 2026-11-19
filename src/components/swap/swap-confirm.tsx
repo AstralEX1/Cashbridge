@@ -43,7 +43,7 @@ interface BridgeConfirmProps {
   token: CauldronToken | null
   // The bound BCH wallet's address; the route pays it.
   bchAddress: string
-  automatic?: { minPusd: string; refundAddress: string }
+  automatic?: { minPusd: string; refundAddress: string; contract?: boolean }
 }
 
 // The bridge's confirm screen: who sends to whom, how much arrives, and one collapsible block with
@@ -142,7 +142,7 @@ export const BridgeConfirm = ({ quote, token, bchAddress, automatic }: BridgeCon
             </div>
             {pusdQuote.error && <p className="bridge-confirm-note">{t('pusdUnavailable', { ticker: receivedTicker })}</p>}
             {automatic && <div className="bridge-confirm-note">
-              <p>{tAuto('custody')}</p>
+              <p>{tAuto(automatic.contract ? 'contractCustody' : 'custody')}</p>
               <p title={automatic.refundAddress}>{tAuto('fallback', { address: shortBridgeAddress(automatic.refundAddress) })}</p>
             </div>}
           </section>
