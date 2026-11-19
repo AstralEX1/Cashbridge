@@ -1,22 +1,23 @@
-import { FlatCompat } from '@eslint/eslintrc'
-import { dirname } from 'path'
-import { fileURLToPath } from 'url'
+import { defineConfig, globalIgnores } from 'eslint/config'
+import nextVitals from 'eslint-config-next/core-web-vitals'
+import nextTs from 'eslint-config-next/typescript'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname
-})
-
-const eslintConfig = [
-  ...compat.config({
-    extends: ['next/core-web-vitals', 'next/typescript'],
+const eslintConfig = defineConfig([
+  ...nextVitals,
+  ...nextTs,
+  {
     rules: {
-      '@typescript-eslint/no-explicit-any': 'off'
-    },
-    ignorePatterns: ['rujira.js/']
-  })
-]
+      '@typescript-eslint/no-explicit-any': 'off',
+      // React Compiler readiness checks from react-hooks 7. The app does not run the compiler, so they
+      // stay visible as warnings instead of failing the build over code that renders correctly today.
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/purity': 'warn',
+      'react-hooks/immutability': 'warn',
+      'react-hooks/refs': 'warn',
+      'react-hooks/preserve-manual-memoization': 'warn'
+    }
+  },
+  globalIgnores(['.next/**', 'out/**', 'build/**', 'next-env.d.ts', 'rujira.js/**'])
+])
 
 export default eslintConfig

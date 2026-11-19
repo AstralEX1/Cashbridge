@@ -3,11 +3,14 @@ import { useTranslations } from 'next-intl'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useIsPrivateSend, usePrivateSwapAcknowledged, useSetPrivateSwapAcknowledged } from '@/store/private-swap-store'
 
-const externalLink = (href: string) => (chunks: ReactNode) => (
-  <a className="underline" href={href} rel="noopener noreferrer" target="_blank">
-    {chunks}
-  </a>
-)
+const externalLink = (href: string) =>
+  function ExternalLink(chunks: ReactNode) {
+    return (
+      <a className="underline" href={href} rel="noopener noreferrer" target="_blank">
+        {chunks}
+      </a>
+    )
+  }
 
 // `send` overrides the swap form's mode, for the wallet Send dialog's Private Send tab.
 export const SwapPrivateDisclaimer = ({ send }: { send?: boolean }) => {

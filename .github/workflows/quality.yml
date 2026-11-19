@@ -26,6 +26,7 @@ jobs:
       - run: npm install --global npm@12.0.2
       - run: npm ci --ignore-scripts
       - run: npx tsc --noEmit --incremental false -p tsconfig.json
+      - run: npm run lint
       - run: npm run test:bridge
       - run: npm run test:auto-bridge
       - run: node --no-warnings --import ./test/register-ts-alias.mjs --test test/wallets.test.mjs

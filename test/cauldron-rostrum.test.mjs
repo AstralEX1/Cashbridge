@@ -178,6 +178,7 @@ test('WsRpc hands server notifications and the close to its listeners', async ()
     readyState = 1
     sent = []
     constructor() {
+      // eslint-disable-next-line @typescript-eslint/no-this-alias -- the test drives the socket the code under test opened
       socket = this
       queueMicrotask(() => this.onopen())
     }
