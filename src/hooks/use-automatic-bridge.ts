@@ -1,4 +1,5 @@
 import { useBchWallet } from '@/components/bch-wallet'
+import { BridgeConfig } from '@/config'
 import { automaticEligible } from '@/lib/auto-bridge-contract'
 import { bchAddressProblem, bindingFromAddress } from '@/lib/bch'
 import { automaticPreference } from '@/store/auto-bridge-store'
@@ -10,6 +11,7 @@ export const useAutomaticHydrated = () => useSyncExternalStore(noSubscribe, () =
 
 // The Cashbridge Router toggle covers the forward routes that need no BCH signature from the user:
 // a Cauldron token (the service buys it) and plain BCH (nothing to swap). Only a token changes how it executes.
+// Back from BCH it covers a token when sales are on: one signature sends it to the Router's sale contract.
 export const useAutomaticBridge = () => {
   const reverse = useSwapStore(state => state.reverse)
   const token = useSwapStore(state => state.bchToken)
@@ -17,12 +19,12 @@ export const useAutomaticBridge = () => {
   const address = automaticPreference(state => state.recipient)
   const wallet = useBchWallet()
   const hydrated = useAutomaticHydrated()
-  const eligible = automaticEligible(reverse, token?.category)
+  const eligible = automaticEligible(reverse, token?.category, BridgeConfig.routerSales)
   const plainBch = !reverse && token === null
   const routerAvailable = eligible || plainBch
   const automatic = hydrated && eligible && mode === 'automatic'
-  // Both routes can pay a pasted address instead of the connected wallet.
-  const pasteAllowed = automatic || plainBch
+  // Both forward routes can pay a pasted address instead of the connected wallet.
+  const pasteAllowed = (automatic && !reverse) || plainBch
   const pasted = pasteAllowed ? address.trim() : ''
   // On the Router's token route a pasted address has to be token-aware.
   const pastedProblem = pasted ? bchAddressProblem(pasted, automatic) : undefined

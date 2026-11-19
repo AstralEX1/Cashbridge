@@ -33,7 +33,11 @@ import { useRates } from '@/hooks/use-rates'
 import { useAssetFrom } from '@/hooks/use-swap'
 import { useTokenSale } from '@/hooks/use-token-sale'
 import { useSetExternalWalletMode } from '@/hooks/use-wallets'
-import { checkUnspent, findThorchainOutbound, getTransactionState, historyIncludes } from '@/lib/bch'
+import { binToHex } from '@bitauth/libauth'
+import { checkUnspent, findThorchainOutbound, getRawTransaction, getTransactionState, historyIncludes } from '@/lib/bch'
+import { orderRequest } from '@/lib/auto-bridge-client'
+import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
+import { prepareRouterSale } from '@/lib/router-sale-client'
 import { formatBaseUnits, toBaseUnits } from '@/lib/bridge'
 import { withLock } from '@/lib/bridge-first-leg'
 import { bridgeCompletionTransactions } from '@/lib/bridge-completion'
@@ -49,6 +53,7 @@ import {
   blockHeight,
   broadcastSale,
   broadcastDeposit,
+  broadcastRouterSend,
   confirmReportedPayout,
   depositReadyAt,
   destinationChainOf,
@@ -138,12 +143,76 @@ const sendDeposit = async (uid: string, prepared: PreparedDeposit, update: Updat
 
 // --- Tracking ------------------------------------------------------------------------------------
 
+// BCH a transaction pays to the bound address, read from the chain.
+const bchPaidTo = async (txid: string, lockingBytecode: string) => {
+  const raw = await getRawTransaction(txid)
+  if (!raw) throw new Error('The BCH server does not have this transaction yet')
+  return raw.tx.outputs
+    .filter(o => !o.token && binToHex(o.lockingBytecode) === lockingBytecode)
+    .reduce((sum, o) => sum + o.valueSatoshis, 0n)
+    .toString()
+}
+
+// A transfer the Cashbridge Router runs: the user's send to the order's sale contract (sent again while the chain has
+// not seen it), then the Router's sale and THORChain deposit read from the order. The payout is then found on the
+// destination chain like any deposit's. True when the operation needs nothing more from syncReverse this time.
+const syncRouterOrder = async (tx: BridgeTx, update: Update) => {
+  const op = tx.bridge
+  const reverse = op.reverse!
+  const router = reverse.router!
+  const before = ['first_leg_pending', 'first_leg_unknown'].includes(op.stage)
+  if (router.sendTxid && router.signedHex && before && !(await getTransactionState(router.sendTxid)).seen)
+    await broadcastRouterSend(tx.uid, router.signedHex, router.sendTxid, update)
+  const order = await orderRequest({ id: router.id, capability: router.capability }, 'GET')
+  if (order.depositAddress !== router.depositAddress) throw new Error('The Cashbridge Router order changed its address')
+  const accepted = (kind: 'swap' | 'deposit' | 'refund') => order.attempts.find(a => a.kind === kind && a.status === 'accepted')
+  const [sold, deposited, returned] = [accepted('swap'), accepted('deposit'), accepted('refund')]
+  if (before) {
+    if (deposited && order.sale) {
+      update(tx.uid, current => ({
+        stage: 'second_leg_pending',
+        error: undefined,
+        reverse: {
+          ...current.reverse!,
+          sale: { ...current.reverse!.sale!, txid: sold?.txid },
+          deposit: {
+            attempt: generateId(),
+            amountSats: deposited.pusdOut,
+            minerFeeSats: '0',
+            memo: order.sale!.memo,
+            inboundAddress: order.sale!.vaultAddress,
+            router: router.payoutRouter,
+            startBlock: router.startBlock,
+            expectedOut: tx.amountTo,
+            txid: deposited.txid,
+            signedAt: Date.now()
+          }
+        }
+      }))
+    } else if (order.state === 'refunded' || (!router.sendTxid && order.receivedSats === '0' && !order.attempts.length)) {
+      // Given back before any deposit (or never sent: the page went away mid-signing and the contract got nothing).
+      update(tx.uid, () => ({ stage: 'failed', error: router.sendTxid ? 'The Cashbridge Router sent the coins back to your wallet' : 'Nothing was signed, so nothing was sent' }))
+    } else if (order.state === 'manual_review') {
+      update(tx.uid, () => ({ error: 'The Cashbridge Router stopped this order for a manual check' }))
+    }
+    return true
+  }
+  // THORChain refunded to the contract and the Router gave the BCH back (a refund to the memo's address is found as usual).
+  if (op.stage === 'second_leg_pending' && order.state === 'refunded' && returned) {
+    const amountSats = await bchPaidTo(returned.txid, op.binding.lockingBytecode)
+    update(tx.uid, current => ({ stage: 'refunded', reverse: { ...current.reverse!, refund: { txid: returned.txid, amountSats } } }))
+    return true
+  }
+  return false
+}
+
 // Progress from the chains: the BCH transactions on Fulcrum, the payout as the router's TransferOut
 // event on an EVM chain's RPC or the outbound on another chain's own node, a refund as THORChain's REFUND:<deposit> payment at the bound address.
 export const syncReverse = async (tx: BridgeTx, update: Update) => {
   const op = tx.bridge
   const reverse = op.reverse
   if (!reverse) return
+  if (reverse.router && (await syncRouterOrder(tx, update))) return
   const sale = reverse.sale
   const deposit = reverse.deposit
   switch (op.stage) {
@@ -393,8 +462,11 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
   const tReverse = useTranslations('bridge.reverse')
   const tBridge = useTranslations('bridge')
   const tSwap = useTranslations('swap')
+  const tAuto = useTranslations('automatic')
   const asset = useAssetFrom()
   const destination = usePayoutAddress()
+  // The Cashbridge Router sells the token and deposits the BCH: the wallet signs one send to the order's contract.
+  const viaRouter = useAutomaticBridge().automatic
   const token = useSwapStore(state => state.bchToken)
   const amount = useSwapStore(state => state.amountFrom)
   const setAmountFrom = useSwapStore(state => state.setAmountFrom)
@@ -436,7 +508,8 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
       token
         ? { sale: await prepareSale(token, units!, binding!) }
         : { deposit: await prepareBchDeposit({ amountSats: units!, binding: binding!, buyAsset: asset!.identifier, shortCode: asset!.shortCode, destination: destination!, slippage: slippage ?? 1 }) },
-    enabled: isOpen && !submitting && !!binding && !!destination && !!asset && !!units && units > 0n,
+    // A Router order is opened only on Confirm, so the background refresh never leaves unused orders behind.
+    enabled: isOpen && !submitting && !viaRouter && !!binding && !!destination && !!asset && !!units && units > 0n,
     staleTime: PREPARED_TTL_MS,
     refetchInterval: PREPARED_TTL_MS,
     gcTime: 0,
@@ -488,7 +561,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
     try {
       setPhase('preparing')
       const fresh = prepared.data && Date.now() - prepared.dataUpdatedAt < PREPARED_TTL_MS
-      const ready = fresh ? prepared.data! : (await prepared.refetch({ throwOnError: true })).data!
+      const ready: Prepared = viaRouter ? {} : fresh ? prepared.data! : (await prepared.refetch({ throwOnError: true })).data!
       if (controller.signal.aborted) throw new SignCancelled('Cancelled')
       const record = {
         provider: ProviderName.THORCHAIN,
@@ -503,7 +576,38 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
         addressTo: destination
       }
       const reverse = { buyAsset: asset.identifier, destination }
-      if (token && ready.sale) {
+      if (viaRouter && token) {
+        const routed = await prepareRouterSale({ token, units, binding, buyAsset: asset.identifier, shortCode: asset.shortCode, destination, slippage: slippage ?? 1 })
+        if (controller.signal.aborted) throw new SignCancelled('Cancelled')
+        const { id, capability, order } = routed.reference
+        uid = await startReverseOperation(
+          { ...record, amountTo: routed.expectedOut },
+          {
+            stage: 'first_leg_signing',
+            destinationAsset: 'TOKEN',
+            token,
+            binding,
+            walletName: wallet.walletName ?? undefined,
+            reverse: {
+              ...reverse,
+              sale: { attempt: generateId(), sellTokens: routed.sellTokens.toString(), minOutput: routed.minSats.toString(), bchOut: routed.bchOut.toString(), minerFeeSats: routed.send.feeSats.toString() },
+              router: { id, capability, depositAddress: order!.depositAddress, payoutRouter: routed.payoutRouter, startBlock: routed.startBlock }
+            }
+          }
+        )
+        setPhase('signing')
+        const { txid, signedHex } = await signInWallet(
+          wallet.signer,
+          binding,
+          routed.send,
+          `Send ${formatBaseUnits(routed.sellTokens, token.decimals)} ${token.ticker} to this transfer's Cashbridge Router contract`,
+          { signal: controller.signal }
+        )
+        setPhase('sending')
+        const saved = uid
+        update(saved, op => ({ stage: 'first_leg_pending', hash: txid, reverse: { ...op.reverse!, router: { ...op.reverse!.router!, sendTxid: txid, signedHex } } }))
+        await broadcastRouterSend(saved, signedHex, txid, update)
+      } else if (token && ready.sale) {
         const reviewed = ready.sale
         uid = await startReverseOperation(record, {
           stage: 'first_leg_signing',
@@ -715,6 +819,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
           </div>
         </ScrollArea>
         <div className="space-y-3 p-4 pt-2 md:px-7 md:pb-7">
+          {viaRouter && <p className="bridge-confirm-note">{tAuto('saleCustody', { ticker })}</p>}
           {needsImpact && <SwapAddressWarning checked={acceptedImpact} onCheckedChange={setAcceptedImpact} text={tBridge('automatic.highImpact')} />}
           <GenericButton
             colorType="3"
@@ -734,7 +839,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
                     ? tReverse('sending')
                     : walletAway
                       ? tReverse('walletAway')
-                      : token
+                      : token && !viaRouter
                         ? tReverse('swapFirst', { amount: formatAmount(sentAmount), ticker })
                         : t('send', { amount: formatAmount(sentAmount), ticker })}
             </span>

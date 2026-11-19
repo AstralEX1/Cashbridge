@@ -161,7 +161,7 @@ export const Swap = () => {
       ) : (
         <SwapButton instantSwapSupported={false} instantSwapAvailable={false} onShowBridge={() => setProgressId(activeBridge?.uid)} />
       )}
-      {!automatic && <BchWalletStatus />}
+      {(!automatic || reverse) && <BchWalletStatus />}
 
       <BridgeOperationPanel uid={progressId} onClose={() => setProgressId(undefined)} />
       <BackgroundBridges onOpen={setProgressId} />
