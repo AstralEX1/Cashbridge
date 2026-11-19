@@ -34,6 +34,8 @@ export interface PublicOrder extends OrderIntent {
   apiVersion?: 2
   id: string
   depositAddress: string
+  // Present when the deposit is the order's contract: with the addresses and amounts above, it gives the address.
+  contract?: { routerKey: string; refundAfter: number }
   minPusd: string
   maxWaitSeconds: number
   state: OrderState

@@ -5,7 +5,7 @@ import { inboundMatchesBinding, interpretTxStatus } from '@/lib/bridge'
 import { BroadcastRejected, buildTokenTrade, type BuildIntent, type BuildResult } from '@/lib/cauldron'
 import { OrderStore } from '@/server/auto-bridge/store'
 import { isTerminal, type Attempt, type Order } from '@/server/auto-bridge/types'
-import { WorkerWallet } from '@/server/auto-bridge/wallet'
+import { orderUnlockBytes, WorkerWallet } from '@/server/auto-bridge/wallet'
 import { BridgeConfig } from '@/config'
 import { sourceIdFromMemo, sourceTransactionId, sameSourceTransaction } from '@/lib/source-transaction'
 
@@ -36,7 +36,8 @@ export const buildOrderTrade: TradeBuilder = async order =>
     tokenAddress: order.recipientAddress,
     cashAddress: order.refundAddress,
     sell: order.funding.reduce((sum, coin) => sum + BigInt(coin.value), 0n),
-    minOutput: BigInt(order.minPusd)
+    minOutput: BigInt(order.minPusd),
+    ownUnlockBytes: orderUnlockBytes(order)
   })
 
 // Recheck actual prevouts from the validating node after construction; indexer metadata is not evidence.
@@ -320,7 +321,9 @@ export async function processOrder(
   try {
     const deadline = order.deadline ?? order.receivedAt! + Math.min(order.maxWaitMs, policy.maxWaitMs)
     let trade: Awaited<ReturnType<TradeBuilder>> | undefined
-    if (clock() < deadline && total <= store.limits.maxOrderSats && store.exposure() <= store.limits.maxPendingSats) {
+    // A contract pays each coin's swap at the coin's own index, so a contract order that got two coins goes back as BCH.
+    const swappable = !order.contract || order.funding.length === 1
+    if (swappable && clock() < deadline && total <= store.limits.maxOrderSats && store.exposure() <= store.limits.maxPendingSats) {
       trade = await build(order)
       const { sourcesOf, reviewBuild } = await import('@/lib/cauldron')
       const reviewed = reviewBuild(trade.build, {

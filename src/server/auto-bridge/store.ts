@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { addressToLockingBytecode, decodeTx } from '@/lib/bch'
 import { binToHex } from '@bitauth/libauth'
 import { BridgeConfig } from '@/config'
+import { REFUND_AFTER_SECONDS } from '@/lib/router-contract'
 import { PublicWallet } from '@/server/auto-bridge/wallet'
 import { OrderError, positiveAmount, type Attempt, type Limits, type Order, type OrderIntent, type PublicOrder } from '@/server/auto-bridge/types'
 
@@ -33,7 +34,9 @@ export class OrderStore {
     xpub: string,
     readonly limits: Limits,
     private readonly maxWaitMs = 1800000,
-    guardFile = path === ':memory:' ? undefined : `${path}.guard`
+    guardFile = path === ':memory:' ? undefined : `${path}.guard`,
+    // New orders get a contract deposit (non-custodial) instead of a plain Router address.
+    private readonly contractOrders = false
   ) {
     this.wallet = new PublicWallet(xpub)
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
@@ -193,7 +196,9 @@ export class OrderStore {
       )
         throw new OrderError(503, 'Bridge capacity reached')
       const { next } = this.db.prepare('SELECT COALESCE(MAX(address_index), -1) + 1 AS next FROM orders').get() as { next: number }
-      const binding = this.wallet.binding(next)
+      // A contract order's deposit commits to its payout terms; anyone may send it back after REFUND_AFTER_SECONDS.
+      const contract = this.contractOrders ? { refundAfter: Math.floor(now / 1000) + REFUND_AFTER_SECONDS } : undefined
+      const binding = this.wallet.deposit({ ...intent, addressIndex: next, contract, recipientScript, refundScript, minPusd })
       if ([recipientScript, refundScript].some(script => script === binding.lockingBytecode || this.isDepositScript(script)))
         throw new OrderError(400, 'Recipient must be outside the deposit wallet')
       const order: Order = {
@@ -209,7 +214,8 @@ export class OrderStore {
         version: 0,
         createdAt: now,
         updatedAt: now,
-        funding: []
+        funding: [],
+        ...(contract && { contract })
       }
       this.db
         .prepare('INSERT INTO orders VALUES (?, ?, ?, ?, ?, ?, ?)')
@@ -320,6 +326,7 @@ export class OrderStore {
       expectedBchSats: order.expectedBchSats,
       source: order.source,
       depositAddress: order.binding.cashAddress,
+      contract: order.contract && { routerKey: order.binding.pubkey, refundAfter: order.contract.refundAfter },
       minPusd: order.minPusd,
       maxWaitSeconds: Math.floor(order.maxWaitMs / 1000),
       state: order.state,
