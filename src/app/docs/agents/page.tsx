@@ -79,7 +79,7 @@ export default function Page() {
         It never signs or sends a transaction. Whatever it prepares still has to be signed by the user.
       </Callout>
       <ul>
-        <li>Before an EVM transaction is handed out, the server checks it against THORChain itself: it must call the chain&apos;s current THORChain router, pay the current vault, carry the quoted memo and move the quoted asset. A transaction that fails any check is not returned.</li>
+        <li>The server builds an EVM transaction itself from THORChain&apos;s own data: it calls the chain&apos;s current THORChain router, pays the current vault and carries the quoted memo and asset. A quote whose vault is not the current one, or whose memo does not pay the destination, gets no transaction.</li>
         <li>The memo must pay the destination that was asked for. With a Router order, it must pay the order&apos;s contract, and the server checks that contract is built from the order&apos;s own terms, exactly as the site does.</li>
         <li>A Router order can only buy at least its minimum of the token for the recipient, or send the BCH back to them. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.</li>
         <li>The order token is the only key to a Router order. The agent should keep it with the transfer; it is not shown again.</li>
