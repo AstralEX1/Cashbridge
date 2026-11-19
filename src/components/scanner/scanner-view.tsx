@@ -1,67 +1,71 @@
 'use client'
 
-import { ArrowUpRight, Search } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
-import type { FeedOrder } from '@/lib/auto-bridge-contract'
-import { RUNS } from '@/lib/mainnet-runs'
-import { hashLookups, matchesQuery, scanRows } from '@/lib/scanner'
+import { ArrowLeftRight, ArrowUpRight, CircleCheck, Search, SearchX, Wallet, Zap } from 'lucide-react'
+import { useState } from 'react'
+import { NumberTicker } from '@/components/landing/number-ticker'
+import { chainIcon, chainName, hashLookups, matchesQuery } from '@/lib/scanner'
+import { LiveDot } from './live-dot'
 import { ScanList } from './scan-list'
+import { useScanFeed } from './use-scan-feed'
 
 type Filter = 'all' | 'router' | 'manual'
-const FILTERS: [Filter, string][] = [
-  ['all', 'All'],
-  ['router', 'Router'],
-  ['manual', 'Manual']
+const FILTERS: [Filter, string, React.ReactNode][] = [
+  ['all', 'All transfers', 'All'],
+  ['router', 'Cashbridge Router', <Zap key="router" size={16} aria-hidden />],
+  ['manual', 'Manual', <Wallet key="manual" size={16} aria-hidden />]
 ]
-const REFRESH_MS = 30_000
 
 export function ScannerView() {
-  // undefined while loading, null when the Router feed cannot be reached.
-  const [orders, setOrders] = useState<FeedOrder[] | null | undefined>(undefined)
-  const [now, setNow] = useState<number>()
+  const { rows, now, live } = useScanFeed()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
 
-  useEffect(() => {
-    let live = true
-    const load = async () => {
-      if (document.hidden) return
-      try {
-        const res = await fetch('/api/scanner', { cache: 'no-store' })
-        const body = res.ok ? await res.json() : null
-        if (live) setOrders(Array.isArray(body?.orders) ? body.orders : null)
-      } catch {
-        if (live) setOrders(null)
-      }
-      if (live) setNow(Date.now())
-    }
-    load()
-    const timer = setInterval(load, REFRESH_MS)
-    return () => {
-      live = false
-      clearInterval(timer)
-    }
-  }, [])
-
-  const rows = useMemo(() => scanRows(orders ?? [], RUNS), [orders])
   const shown = rows.filter(row => (filter === 'all' || row.router === (filter === 'router')) && matchesQuery(row, query))
   const lookups = shown.length ? [] : hashLookups(query)
-  const stats: [string, number][] = [
-    ['Listed', rows.length],
-    ['Router', rows.filter(row => row.router).length],
-    ['Settled', rows.filter(row => row.status === 'completed').length],
-    ['Chains', new Set(rows.flatMap(row => [row.from.chain, row.to.chain])).size]
+  const chains = [...new Set(rows.flatMap(row => [row.from.chain, row.to.chain]))]
+  const stats: [string, React.ReactNode, number][] = [
+    ['Transfers', <ArrowLeftRight key="all" size={18} aria-hidden />, rows.length],
+    ['Router', <Zap key="router" size={18} aria-hidden />, rows.filter(row => row.router).length],
+    ['Settled', <CircleCheck key="done" size={18} aria-hidden />, rows.filter(row => row.status === 'completed').length]
   ]
 
   return (
     <>
-      <dl className="scanner-stats" data-ready={orders !== undefined || undefined}>
-        {stats.map(([label, value]) => (
+      <h1 className="scanner-title">
+        Scanner <LiveDot live={live} />
+      </h1>
+
+      <dl className="scanner-stats">
+        {stats.map(([label, icon, value]) => (
           <div key={label}>
-            <dt>{label}</dt>
-            <dd>{value}</dd>
+            <dt>
+              {icon}
+              <span>{label}</span>
+            </dt>
+            <dd>
+              <NumberTicker value={value} />
+            </dd>
           </div>
         ))}
+        <div>
+          <dt>
+            <span>Chains</span>
+          </dt>
+          <dd className="scanner-chains">
+            <NumberTicker value={chains.length} />
+            <span className="scanner-stack">
+              {chains.map(chain => {
+                const icon = chainIcon(chain)
+                return (
+                  icon && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img key={chain} src={icon} alt={chainName(chain)} title={chainName(chain)} width={26} height={26} />
+                  )
+                )
+              })}
+            </span>
+          </dd>
+        </div>
       </dl>
 
       <div className="scanner-tools">
@@ -77,44 +81,28 @@ export function ScannerView() {
             autoComplete="off"
           />
         </label>
-        <div className="scanner-filters" role="group" aria-label="Filter by execution mode">
-          {FILTERS.map(([value, label]) => (
-            <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>
-              {label}
+        <div className="scanner-filters" role="group" aria-label="Filter by mode">
+          {FILTERS.map(([value, label, content]) => (
+            <button key={value} type="button" aria-pressed={filter === value} aria-label={label} title={label} onClick={() => setFilter(value)}>
+              {content}
             </button>
           ))}
         </div>
       </div>
 
-      <p className="scanner-feed" aria-live="polite">
-        {orders === undefined
-          ? 'Loading Router orders…'
-          : orders === null
-            ? 'Live Router feed unavailable. Showing verified mainnet transfers.'
-            : 'Router orders refresh every 30s.'}
-      </p>
-
-      <div className="scanner-table" data-ready={orders !== undefined || undefined}>
+      <div className="scanner-table" aria-live="polite">
         {shown.length > 0 ? (
           <ScanList rows={shown} now={now} />
         ) : (
           <div className="scanner-empty">
-            <p>No transfer matches “{query.trim()}”.</p>
-            {lookups.length > 0 && (
-              <p>
-                Look it up on{' '}
-                {lookups.map((leg, i) => (
-                  <span key={leg.label}>
-                    {i > 0 && ' or '}
-                    <a href={leg.url} target="_blank" rel="noopener noreferrer">
-                      the {leg.label}
-                      <ArrowUpRight size={13} aria-hidden />
-                    </a>
-                  </span>
-                ))}
-                .
-              </p>
-            )}
+            <SearchX size={28} aria-hidden />
+            <p>No match</p>
+            {lookups.map(leg => (
+              <a key={leg.label} href={leg.url} target="_blank" rel="noopener noreferrer">
+                {leg.label}
+                <ArrowUpRight size={14} aria-hidden />
+              </a>
+            ))}
           </div>
         )}
       </div>
