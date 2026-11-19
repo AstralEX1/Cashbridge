@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import { binToHex, encodeBase58AddressFormat, hexToBin, utf8ToBin } from '@bitauth/libauth'
 import { Registry } from '@cosmjs/proto-signing'
 import { TxRaw } from 'cosmjs-types/cosmos/tx/v1beta1/tx.js'
-import { cosmosPayout, solanaPayout, thorchainPayout, tronHex, tronPayout, utxoPayout, xrpPayout } from '../src/lib/payout-check.ts'
+import { cosmosPayout, evmTransferPayout, solanaPayout, thorchainPayout, tronHex, tronPayout, utxoPayout, xrpPayout } from '../src/lib/payout-check.ts'
 import { isPayoutChain, sameAddress } from '../src/lib/payout-chains.ts'
 import { checkDepositMemo, checkInbound } from '../src/lib/thorchain-deposit.ts'
 import { bindingFromPubkey } from '../src/lib/bch.ts'
@@ -159,4 +159,38 @@ test('a deposit to RUNE needs no THOR inbound; memos may name the asset by its s
   checkDepositMemo('=:z:t1dest', { buyAsset: 'ZEC.ZEC', destination: 't1dest' })
   assert.throws(() => checkDepositMemo(`=:o:${sol}`, { buyAsset: 'BTC.BTC', destination: sol, shortCode: 'b' }), /different asset/)
   assert.throws(() => checkDepositMemo(`=:SOL.SOL:${sol.toLowerCase()}`, { buyAsset: 'SOL.SOL', destination: sol }), /different address/)
+})
+
+test('a NEAR Intents payout carries no memo: found by its hash, it only has to pay the destination', () => {
+  const destination = 'bc1qdestination'
+  const hash = 'cd'.repeat(32)
+  const dashboard = outputs => ({ data: { [hash]: { transaction: { block_id: -1 }, outputs } } })
+  const near = { destination, buyAsset: 'BTC.BTC' }
+  assert.deepEqual(utxoPayout(dashboard([{ recipient: destination, value: 150_000, script_hex: '0014aa' }]), hash, near), { hash, amount: '150000' })
+  assert.equal(utxoPayout(dashboard([{ recipient: 'bc1qother', value: 150_000, script_hex: '0014aa' }]), hash, near), undefined)
+  // THORChain's own payouts still need the memo.
+  assert.equal(utxoPayout(dashboard([{ recipient: destination, value: 150_000, script_hex: '0014aa' }]), hash, { ...near, depositTxid: deposit }), undefined)
+
+  const tronDestination = encodeBase58AddressFormat(0x41, hexToBin('12'.repeat(20)))
+  const trx = { raw_data: { contract: [{ type: 'TransferContract', parameter: { value: { to_address: tronHex(tronDestination), amount: 5_000_000 } } }] } }
+  assert.deepEqual(tronPayout(trx, { blockNumber: 1 }, 'T', { destination: tronDestination, buyAsset: 'TRON.TRX' }), { hash: 'T', amount: '5000000' })
+})
+
+test('an EVM payout from NEAR Intents is the token’s Transfer to the destination, or a plain transfer of the coin', () => {
+  const destination = '0x76ff6F88f58e083b88A80B1764ae7002e303D1A6'
+  const usdc = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+  const TRANSFER = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+  const word = hex => `0x${hex.replace(/^0x/, '').toLowerCase().padStart(64, '0')}`
+  const transfer = (token, to, amount) => ({ address: token, topics: [TRANSFER, word('0x1111111111111111111111111111111111111111'), word(to)], data: word(amount.toString(16)) })
+  const expect = { destination, buyAsset: `BASE.USDC-${usdc.toUpperCase()}` }
+  const receipt = logs => ({ status: 1, logs })
+  assert.deepEqual(evmTransferPayout(receipt([transfer(usdc, destination, 4_950_000n)]), null, '0xh', expect), { hash: '0xh', amount: '4950000' })
+  assert.equal(evmTransferPayout(receipt([transfer(usdc, '0x2222222222222222222222222222222222222222', 4_950_000n)]), null, '0xh', expect), undefined, 'another recipient')
+  assert.equal(evmTransferPayout(receipt([transfer('0x3333333333333333333333333333333333333333', destination, 4_950_000n)]), null, '0xh', expect), undefined, 'another token')
+  assert.equal(evmTransferPayout({ status: 0, logs: [transfer(usdc, destination, 1n)] }, null, '0xh', expect), undefined, 'reverted')
+  assert.equal(evmTransferPayout(null, null, '0xh', expect), undefined, 'not mined')
+
+  const eth = { destination, buyAsset: 'BASE.ETH' }
+  assert.deepEqual(evmTransferPayout(receipt([]), { to: destination.toLowerCase(), value: 10n ** 15n }, '0xh', eth), { hash: '0xh', amount: '1000000000000000' })
+  assert.equal(evmTransferPayout(receipt([]), { to: usdc, value: 10n ** 15n }, '0xh', eth), undefined)
 })

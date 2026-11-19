@@ -903,6 +903,13 @@ test('a deposit pays the vault first, carries the memo, returns change, signs an
   assert.equal(all.amountSats + all.minerFeeSats, 1_500_000n)
   assert.throws(() => buildDeposit({ funding, lockingBytecode: binding.lockingBytecode, vaultScript: otherBinding.lockingBytecode, memo, amountSats: 5_000n, feeRate: 1n }), /minimum/)
   assert.throws(() => buildDeposit({ funding, lockingBytecode: binding.lockingBytecode, vaultScript: otherBinding.lockingBytecode, memo, amountSats: 1_499_900n, feeRate: 1n }), /does not cover/)
+
+  // A NEAR Intents deposit address takes a plain transfer: no memo output at all.
+  const plain = buildDeposit({ funding, lockingBytecode: binding.lockingBytecode, vaultScript: otherBinding.lockingBytecode, amountSats: 1_000_000n, feeRate: 1n })
+  const plainTx = decodeTransaction(hexToBin(plain.unsignedHex))
+  assert.deepEqual(plainTx.outputs.map(o => binToHex(o.lockingBytecode)), [otherBinding.lockingBytecode, binding.lockingBytecode])
+  assert.equal(plainTx.outputs[0].valueSatoshis, 1_000_000n)
+  assert.ok(plain.minerFeeSats < built.minerFeeSats)
 })
 
 test('the payout is the router’s TransferOut to the destination with the deposit’s OUT memo', async () => {

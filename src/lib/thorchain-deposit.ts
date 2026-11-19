@@ -84,7 +84,8 @@ export interface DepositIntent {
   funding: { txid: string; vout: number; value: string }[]
   lockingBytecode: string
   vaultScript: string
-  memo: string
+  // THORChain's swap memo. Absent for a NEAR Intents deposit address, which needs none: no OP_RETURN output then.
+  memo?: string
   // Satoshis to the vault; with `payAll` the vault gets everything but the fee and no change is made.
   amountSats?: bigint
   payAll?: boolean
@@ -124,7 +125,7 @@ export const buildDeposit = (intent: DepositIntent): BuiltDeposit => {
     inputs,
     outputs: [
       { lockingBytecode: vault, valueSatoshis: amount },
-      { lockingBytecode: opReturn(intent.memo), valueSatoshis: 0n },
+      ...(intent.memo ? [{ lockingBytecode: opReturn(intent.memo), valueSatoshis: 0n }] : []),
       ...(change > 0n ? [{ lockingBytecode: own, valueSatoshis: change }] : [])
     ]
   })
