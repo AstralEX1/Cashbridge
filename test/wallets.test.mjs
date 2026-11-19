@@ -62,6 +62,7 @@ beforeEach(() => {
   controls.hasAuthorizedAccount = async () => undefined
   controls.wallets.clear()
   controls.disconnected = []
+  controls.errors = []
   controls.account = undefined
   controls.bch = { state: 'idle', connect() {}, pairAgain() {}, disconnect() {} }
   controls.balance = null
@@ -250,6 +251,55 @@ test('a partial restore keeps the chains that did not come back, and a newer con
 
   await useWalletStore.getState().connect(WalletOption.METAMASK, [Chain.Ethereum])
   assert.deepEqual(savedLink(), [{ provider: WalletOption.METAMASK, chains: [Chain.Ethereum] }])
+})
+
+test('a saved WalletConnect wallet restores from its stored session only, and is forgotten once none is left', async () => {
+  useWalletStore.setState({ hasHydrated: false })
+  const link = [{ provider: WalletOption.WALLETCONNECT, chains: [Chain.Base] }]
+  cookies.set('tc-wallet-link', encodeURIComponent(JSON.stringify(link)))
+  const restored = account('0x4444444444444444444444444444444444444444', Chain.Base, WalletOption.WALLETCONNECT)
+  controls.wallets.set(`${WalletOption.WALLETCONNECT}:${Chain.Base}`, { chain: Chain.Base, walletType: WalletOption.WALLETCONNECT })
+  const configs = []
+  controls.getAccounts = async (_provider, _chains, config) => { configs.push(config); return [restored] }
+  await useWalletStore.persist.rehydrate()
+  await flush()
+  assert.deepEqual(configs, [{ restoreOnly: true }])
+  assert.deepEqual(useWalletStore.getState().accounts, [restored])
+  assert.deepEqual(savedLink(), link)
+
+  // The phone ended the session while the page was closed: no QR code on load, and no retry on every visit.
+  useWalletStore.setState({ accounts: [], hasHydrated: false })
+  controls.getAccounts = async () => { throw new Error('wallet_walletconnect_connection_not_established') }
+  await useWalletStore.persist.rehydrate()
+  await flush()
+  assert.deepEqual(useWalletStore.getState().accounts, [])
+  assert.deepEqual(savedLink(), [])
+})
+
+test('the phone ending a WalletConnect session drops its accounts and leaves the other wallets connected', () => {
+  const metamask = account()
+  const phone = account('0x4444444444444444444444444444444444444444', Chain.Base, WalletOption.WALLETCONNECT)
+  controls.wallets.set(`${WalletOption.METAMASK}:${Chain.Ethereum}`, { chain: Chain.Ethereum, walletType: WalletOption.METAMASK })
+  controls.wallets.set(`${WalletOption.WALLETCONNECT}:${Chain.Base}`, { chain: Chain.Base, walletType: WalletOption.WALLETCONNECT })
+  useWalletStore.setState({ accounts: [metamask, phone], selected: phone, connectedWallets: [WalletOption.METAMASK, WalletOption.WALLETCONNECT] })
+
+  controls.walletconnectDisconnect([Chain.Base])
+  const state = useWalletStore.getState()
+  assert.deepEqual(state.accounts, [metamask])
+  assert.deepEqual(state.connectedWallets, [WalletOption.METAMASK])
+  assert.equal(state.selected, undefined)
+  assert.deepEqual(savedLink(), [{ provider: WalletOption.METAMASK, chains: [Chain.Ethereum] }])
+})
+
+test('closing the WalletConnect QR window is a cancel, and its SDK errors reach the user in words', async () => {
+  controls.getAccounts = async () => { throw new Error('wallet_walletconnect_modal_closed') }
+  await assert.rejects(useWalletStore.getState().connect(WalletOption.WALLETCONNECT, [Chain.Base]))
+  assert.deepEqual(controls.errors, [])
+
+  controls.getAccounts = async () => { throw new Error('wallet_walletconnect_chain_not_supported') }
+  const describeError = error => (error.message.startsWith('wallet_walletconnect_chain_not_supported') ? 'No chains approved' : undefined)
+  await assert.rejects(useWalletStore.getState().connect(WalletOption.WALLETCONNECT, [Chain.Base], undefined, { describeError }))
+  assert.deepEqual(controls.errors, ['No chains approved'])
 })
 
 test('a locked or unauthorized wallet (empty eth_accounts) is not reconnected on load and stays saved', async () => {

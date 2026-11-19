@@ -9,6 +9,7 @@ export const controls = {
   // accountsChanged listeners the store installed, by provider.
   evmListeners: new Map(),
   disconnected: [],
+  errors: [],
   account: undefined,
   asset: { chain: Chain.Ethereum, identifier: 'ETH.ETH', ticker: 'ETH', decimals: 18 },
   bch: { state: 'idle', connect() {}, pairAgain() {}, disconnect() {} },
@@ -27,10 +28,14 @@ export const hasAuthorizedAccount = (...args) => controls.hasAuthorizedAccount(.
 export const getUSwap = () => ({
   getWallet: (provider, chain) => controls.wallets.get(`${provider}:${chain}`),
   getWalletByChain: chain => [...controls.wallets.values()].find(wallet => wallet.chain === chain),
-  disconnectChain: chain => controls.disconnected.push(chain)
+  disconnectChain: chain => controls.disconnected.push(chain),
+  disconnectWallet: (provider, chains) => chains.forEach(chain => controls.wallets.delete(`${provider}:${chain}`))
 })
 export const supportedChains = { METAMASK: [Chain.Ethereum, Chain.Base], EXODUS: [Chain.Bitcoin] }
 export const syncBraveAccountWatch = () => {}
+export const preloadWalletConnect = () => {}
+export const isWalletconnectDismissed = error => String(error?.message).startsWith('wallet_walletconnect_modal_closed')
+export const onWalletconnectDisconnect = listener => { controls.walletconnectDisconnect = listener }
 export const RESTORE_CHECKED = new Set([WalletOption.METAMASK, WalletOption.RABBY])
 export const watchEvmAccounts = (provider, listener) => {
   controls.evmListeners.set(provider, listener)
@@ -62,7 +67,8 @@ export const CredenzaHeader = Credenza
 export const CredenzaTitle = Credenza
 export const CredenzaDescription = Credenza
 export const ScrollArea = Credenza
-export const WalletType = { browser: 'browser' }
+export const WalletType = { browser: 'browser', hardware: 'hardware', mobile: 'mobile' }
+export const describeWalletconnectError = () => undefined
 export const ALL_CHAINS = [Chain.Ethereum, Chain.Base, Chain.Bitcoin]
 export const COMING_SOON_CHAINS = []
 export const chainLabel = chain => ({ [Chain.Ethereum]: 'Ethereum', [Chain.Base]: 'Base', [Chain.Bitcoin]: 'Bitcoin', [Chain.BitcoinCash]: 'Bitcoin Cash' })[chain] ?? chain
@@ -70,7 +76,7 @@ export const isWalletAvailable = () => true
 export const WALLETS = [{ key: 'rabby', label: 'Rabby Wallet', option: WalletOption.RABBY, type: 'browser', supportedChains: [Chain.Ethereum, Chain.Base] }]
 export default function Image({ src, alt }) { return createElement('img', { src, alt }) }
 export const Tooltip = ({ children }) => children
-export const toast = { error() {}, success() {} }
+export const toast = { error: message => controls.errors.push(message), success() {} }
 export const useWizardConnect = () => { throw new Error('A real relay must never start in offline tests') }
 export const WizardConnectQRDialog = () => null
 export const useQueryClient = () => ({})

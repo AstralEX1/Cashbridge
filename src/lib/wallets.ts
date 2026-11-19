@@ -13,7 +13,9 @@ import { phantomWallet } from '@tcswap/wallets/phantom'
 import { trezorWallet } from '@tcswap/wallets/trezor'
 import { tronlinkWallet } from '@/lib/tronlink'
 import { vultisigWallet } from '@tcswap/wallets/vultisig'
-import { AppConfig, aggregatorApiUrl } from '@/config'
+import { preloadWalletconnect, walletconnectWallet } from '@tcswap/wallets/walletconnect'
+export { isWalletconnectDismissed, onWalletconnectDisconnect } from '@tcswap/wallets/walletconnect'
+import { AppConfig, aggregatorApiUrl, BridgeConfig } from '@/config'
 import { useWalletStore } from '@/store/wallets-store'
 import { BTC_PURPOSE_ADDRESS_TYPE, btcAddressType } from '@/lib/swap-helpers'
 
@@ -35,7 +37,8 @@ const defaultWallets = {
   ...phantomWallet,
   ...trezorWallet,
   ...tronlinkWallet,
-  ...vultisigWallet
+  ...vultisigWallet,
+  ...walletconnectWallet
 }
 
 function createUSwap(config: Parameters<typeof USwap>[0] = {}) {
@@ -78,7 +81,8 @@ export function getUSwap() {
   instance = createUSwap({
     config: {
       apiKeys: {
-        blockchair: 'sto' // fake key to just avoid logs like: No Blockchair API key found
+        blockchair: 'sto', // fake key to just avoid logs like: No Blockchair API key found
+        walletConnectProjectId: BridgeConfig.walletConnectProjectId
       },
       rpcUrls: {
         [Chain.Ethereum]: ['https://ethereum-rpc.publicnode.com', 'https://eth.llamarpc.com'],
@@ -145,6 +149,9 @@ export async function connectWallet(option: WalletOption, chains: Chain[], confi
       return connectEach(c => uSwap.connectTronLink(c))
     case WalletOption.EXODUS:
       return uSwap.connectExodus(chains)
+    case WalletOption.WALLETCONNECT:
+      // One session — one QR scan — for every chain; `restoreOnly` reuses a stored one rather than show a QR code.
+      return uSwap.connectWalletconnect(chains, { ...walletConnectOptions, restoreOnly: config?.restoreOnly })
     // Seed phrase and keystore-file import is disabled: the bridge never handles private keys.
     case WalletOption.KEYSTORE:
       throw new Error('Keystore and seed phrase import is disabled')
@@ -309,6 +316,21 @@ function btcPathMismatch(chain: Chain, address: string, derivationPath?: number[
   )
 }
 
+// What the wallet shows on its approval screen. The storage prefix keeps these sessions apart from the BCH
+// WalletConnect client's (src/components/bch-walletconnect.tsx): two clients on one store overwrite each
+// other's session list.
+const walletConnectOptions = {
+  metadata: { name: AppConfig.appName, description: AppConfig.description, icons: [`${AppConfig.baseUrl}/icon.svg`] },
+  customStoragePrefix: 'evm'
+}
+
+// Starts loading WalletConnect and its relay connection while the user picks a wallet, so its window
+// opens as soon as they press connect and the QR code follows quickly.
+export function preloadWalletConnect() {
+  getUSwap()
+  preloadWalletconnect(walletConnectOptions)
+}
+
 const BTC_ADDRESS_TYPE_LABEL = {
   taproot: 'Taproot',
   nativeSegwit: 'Native SegWit',
@@ -334,5 +356,6 @@ export const supportedChains = {
   [WalletOption.TRONLINK]: tronlinkWallet.connectTronLink.supportedChains,
   [WalletOption.TRUSTWALLET_WEB]: evmWallet.connectEVMWallet.supportedChains,
   [WalletOption.VULTISIG]: vultisigWallet.connectVultisig.supportedChains,
+  [WalletOption.WALLETCONNECT]: walletconnectWallet.connectWalletconnect.supportedChains,
   [WalletOption.WALLET_SELECTOR]: [Chain.Near]
 } satisfies Partial<Record<WalletOption, Chain[]>>

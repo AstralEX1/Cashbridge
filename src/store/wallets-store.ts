@@ -3,7 +3,17 @@ import { toast } from '@/lib/toast'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { readWalletLink, type WalletLink, writeWalletLink } from '@/store/wallets-store-cookie'
-import { getAccounts, getUSwap, hasAuthorizedAccount, RESTORE_CHECKED, supportedChains, syncBraveAccountWatch, watchEvmAccounts } from '@/lib/wallets'
+import {
+  getAccounts,
+  getUSwap,
+  hasAuthorizedAccount,
+  isWalletconnectDismissed,
+  onWalletconnectDisconnect,
+  RESTORE_CHECKED,
+  supportedChains,
+  syncBraveAccountWatch,
+  watchEvmAccounts
+} from '@/lib/wallets'
 
 export interface WalletAccount {
   address: string
@@ -20,10 +30,15 @@ interface WalletState {
   externalWalletMode: boolean
 
   select: (account?: WalletAccount) => void
-  // `quiet` (a background restore) skips the error toast.
-  connect: (wallet: WalletOption, chains: Chain[], config?: any, options?: { quiet?: boolean }) => Promise<void>
+  // `quiet` (a background restore) skips the error toast; `describeError` words it.
+  connect: (wallet: WalletOption, chains: Chain[], config?: any, options?: ConnectOptions) => Promise<void>
   disconnect: (wallet: WalletOption) => void
   setExternalWalletMode: (enabled: boolean) => void
+}
+
+interface ConnectOptions {
+  quiet?: boolean
+  describeError?: (error: unknown) => string | undefined
 }
 
 // A disconnect or newer connect invalidates older async replies, including session restoration.
@@ -68,7 +83,7 @@ export const useWalletStore = create<WalletState>()(
         set({ selected: account, ...(account ? { externalWalletMode: false } : {}) })
       },
 
-      connect: async (wallet: WalletOption, chains: Chain[], config?: any, options?: { quiet?: boolean }) => {
+      connect: async (wallet: WalletOption, chains: Chain[], config?: any, options?: ConnectOptions) => {
         const version = nextConnectionVersion(wallet)
         try {
           const newAccounts = await track(wallet, () => getAccounts(wallet, chains, config))
@@ -93,7 +108,8 @@ export const useWalletStore = create<WalletState>()(
           })
         } catch (err: any) {
           if (connectionVersions.get(wallet) !== version) return
-          if (!options?.quiet) toast.error(err.message)
+          // Closing WalletConnect's QR window is a cancel, not a failure.
+          if (!options?.quiet && !isWalletconnectDismissed(err)) toast.error(options?.describeError?.(err) ?? err.message)
           throw err
         }
       },
@@ -150,7 +166,9 @@ export const useWalletStore = create<WalletState>()(
           const defaultChains = w.chains.filter(chain => !w.paths?.[chain])
 
           const accounts: WalletAccount[] = []
-          if (defaultChains.length > 0) accounts.push(...(await getAccounts(w.provider, defaultChains)))
+          // WalletConnect reuses its stored session; with none left it stays disconnected rather than show a QR code.
+          const config = w.provider === WalletOption.WALLETCONNECT ? { restoreOnly: true } : undefined
+          if (defaultChains.length > 0) accounts.push(...(await getAccounts(w.provider, defaultChains, config)))
           for (const chain of pathChains) {
             accounts.push(...(await getAccounts(w.provider, [chain], { derivationPath: w.paths?.[chain] })))
           }
@@ -164,9 +182,13 @@ export const useWalletStore = create<WalletState>()(
               const w = link[index]
               // A disconnect or newer connect during the restore already settled this provider's entry.
               if (connectionVersions.get(w.provider) !== versions.get(w.provider)) return []
-              const restored = result.status === 'fulfilled' ? result.value : []
-              // Fully restored entries are written from the accounts; partial or failed ones stay kept.
-              if (w.chains.every(chain => restored.some(a => a.network === chain))) keptLinks.delete(w.provider)
+              // A chain the phone ended while it was set up is no longer in core.
+              const restored = result.status === 'fulfilled' ? result.value.filter(isInCore) : []
+              // Fully restored entries are written from the accounts; partial or failed ones stay kept, except
+              // WalletConnect's: a chain its stored session lacks never comes back on a retry.
+              if (w.provider === WalletOption.WALLETCONNECT || w.chains.every(chain => restored.some(a => a.network === chain))) {
+                keptLinks.delete(w.provider)
+              }
               return restored
             })
 
@@ -186,6 +208,26 @@ export const useWalletStore = create<WalletState>()(
     }
   )
 )
+
+// The phone ended a WalletConnect session (or it expired): its chains are no longer connected. Core decides
+// what is left, as the store's accounts may not be in yet (rehydration, a connect in flight).
+onWalletconnectDisconnect(chains => {
+  getUSwap().disconnectWallet(WalletOption.WALLETCONNECT, chains)
+
+  useWalletStore.setState(state => {
+    const accounts = state.accounts.filter(a => a.provider !== WalletOption.WALLETCONNECT || isInCore(a))
+    return {
+      accounts,
+      selected: state.selected && isInCore(state.selected) ? state.selected : accounts.find(a => a.network === state.selected?.network),
+      connectedWallets: Array.from(new Set(accounts.map(a => a.provider)))
+    }
+  })
+})
+
+// Whether core still holds the account's wallet; a WalletConnect chain the phone ended is dropped from it.
+function isInCore(account: WalletAccount): boolean {
+  return account.provider !== WalletOption.WALLETCONNECT || !!getUSwap().getWallet(account.provider, account.network)
+}
 
 // Mirror connected providers/chains to the shared cookie when they change.
 useWalletStore.subscribe(state => {
