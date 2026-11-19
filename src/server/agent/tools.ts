@@ -270,39 +270,46 @@ const freshInbound = (inbounds: InboundAddress[], chain: string, vault: string) 
   return inbound
 }
 
-// The aggregator's unsigned EVM transaction, checked against THORChain itself before it is handed out: it calls the
-// chain's THORChain router, pays the current vault, carries the quoted memo and moves the quoted asset.
-const evmTransactions = (route: QuoteResponseRoute, chain: string, inbound: InboundAddress) => {
-  const tx = route.tx as { to?: string; from?: string; data?: string; value?: string } | undefined
-  if (!tx || typeof tx !== 'object' || typeof tx.data !== 'string' || !tx.to) throw new ToolError('THORChain gave no transaction for this quote; ask for a new one')
-  const call = (() => {
-    try {
-      return DEPOSIT_ABI.parseTransaction({ data: tx.data, value: tx.value ?? '0' })
-    } catch {
-      return null
-    }
-  })()
+const THORNODE_URL = 'https://gateway.liquify.com/chain/thorchain_api'
+
+// A token's own decimals, as THORChain's pool records them.
+const poolDecimals = async (asset: string) => {
+  const pool = await fetch(`${THORNODE_URL}/thorchain/pool/${encodeURIComponent(asset)}`, { signal: AbortSignal.timeout(QUOTE_TIMEOUT_MS) })
+    .then(res => (res.ok ? res.json() : undefined))
+    .catch(() => undefined)
+  if (!Number.isInteger(pool?.decimals)) throw new ToolError(`THORChain did not give the decimals of ${asset}; try again shortly`)
+  return pool.decimals as number
+}
+
+// The EVM deposit, built here from THORNode's current router and vault and the quoted memo and expiry. The
+// aggregator's ready-made transaction is simulated against the wallet, so it fails before the token is approved.
+const evmTransactions = async (route: QuoteResponseRoute, chain: string, inbound: InboundAddress) => {
+  if (!inbound.router) throw new ToolError(`THORChain has no ${chain} router right now`)
+  const expiry = Number(route.expiration)
+  if (!Number.isSafeInteger(expiry) || expiry * 1000 <= Date.now()) throw new ToolError('THORChain gave this quote no valid expiry; ask for a new one')
   const token = route.sellAsset.split('-')[1]?.toLowerCase()
   const asset = token && isAddress(token) ? getAddress(token) : ZeroAddress
-  if (
-    !call ||
-    !inbound.router ||
-    tx.to.toLowerCase() !== inbound.router.toLowerCase() ||
-    String(call.args.vault).toLowerCase() !== inbound.address.toLowerCase() ||
-    call.args.memo !== route.memo ||
-    getAddress(String(call.args.asset)) !== asset
-  )
-    throw new ToolError('The prepared transaction does not match its quote, so it is not handed out; ask for a new quote')
+  // Every EVM gas asset THORChain carries has 18 decimals.
+  const decimals = asset === ZeroAddress ? 18 : await poolDecimals(route.sellAsset)
+  let amount: bigint
+  try {
+    amount = toBaseUnits(route.sellAmount, decimals)
+  } catch {
+    throw new ToolError(`"amount" has more decimals than ${route.sellAsset} takes (${decimals})`)
+  }
+  const router = getAddress(inbound.router)
+  const from = route.sourceAddress
   const chainId = Number(getChainConfig(chain as Chain).chainId)
-  const deposit = { step: 'deposit', to: tx.to, from: tx.from, data: tx.data, value: tx.value ?? '0', chain_id: chainId }
+  const data = DEPOSIT_ABI.encodeFunctionData('depositWithExpiry', [inbound.address, asset, amount, route.memo, expiry])
+  const deposit = { step: 'deposit', to: router, from, data, value: asset === ZeroAddress ? amount.toString() : '0', chain_id: chainId }
   if (asset === ZeroAddress) return [deposit]
   return [
     {
       step: 'approve',
       description: `Let the THORChain router take ${route.sellAmount} of the token. Skip it when the allowance already covers this amount.`,
       to: asset,
-      from: tx.from,
-      data: APPROVE_ABI.encodeFunctionData('approve', [inbound.router, call.args.amount]),
+      from,
+      data: APPROVE_ABI.encodeFunctionData('approve', [router, amount]),
       value: '0',
       chain_id: chainId
     },
@@ -344,7 +351,7 @@ const depositOf = async (route: QuoteResponseRoute, destination: string, reverse
       expires_at: /^\d{9,11}$/.test(route.expiration ?? '') ? new Date(Number(route.expiration) * 1000).toISOString() : route.expiration,
       how_to_send: evm ? 'Sign and send the transactions below in order from source_address.' : HOW_TO_SEND[kind]
     },
-    ...(evm && { transactions: evmTransactions(route, chain, inbound) })
+    ...(evm && { transactions: await evmTransactions(route, chain, inbound) })
   }
 }
 
@@ -401,7 +408,6 @@ const prepareBridge = async (args: Args, context: ToolContext) => {
       buyAsset: external,
       sellAmount: amount,
       slippage: percent,
-      dry: false,
       sourceAddress: from,
       destinationAddress: destination,
       refundAddress: from
@@ -412,7 +418,7 @@ const prepareBridge = async (args: Args, context: ToolContext) => {
   const sourceChain = external.split('.')[0].toUpperCase()
   if ((EVMChains as readonly string[]).includes(sourceChain) && !isAddress(source)) throw new ToolError(`"source_address" must be the ${sourceChain} address that sends the funds`)
   const executable = (to: string) =>
-    thorchainRoute({ sellAsset: external, buyAsset: BridgeConfig.buyAsset, sellAmount: amount, slippage: percent, dry: false, sourceAddress: source, destinationAddress: to, refundAddress: source })
+    thorchainRoute({ sellAsset: external, buyAsset: BridgeConfig.buyAsset, sellAmount: amount, slippage: percent, sourceAddress: source, destinationAddress: to, refundAddress: source })
 
   if (via === 'near_intents') {
     if (side.token) throw new ToolError('NEAR Intents pays plain BCH only; use route thorchain for a CashToken')

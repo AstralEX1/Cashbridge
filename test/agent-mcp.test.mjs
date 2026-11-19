@@ -27,12 +27,10 @@ const NEAR_DEPOSIT = '0x6666666666666666666666666666666666666666'
 const NEAR_BCH_DEPOSIT = bindingFromPubkey(otherPubkey, 2).cashAddress
 let nearBchDeposit = NEAR_BCH_DEPOSIT
 let tamper = route => route
-const evmTx = (asset, memo, amount, value = '0') => ({ to: ROUTER, from: SOURCE, value, data: DEPOSIT.encodeFunctionData('depositWithExpiry', [VAULT, asset, amount, memo, 1_900_000_000n]) })
 const aggregator = request => {
   quotes.push(request)
   const forward = request.buyAsset === 'BCH.BCH'
   const memo = request.destinationAddress ? `=:${request.buyAsset}:${request.destinationAddress}:0/1/0` : undefined
-  const token = request.sellAsset.split('-')[1]
   const route = {
     providers: ['THORCHAIN'],
     sellAsset: request.sellAsset,
@@ -42,8 +40,8 @@ const aggregator = request => {
     fees: [{ type: 'outbound', amount: '0.0001', asset: 'BCH.BCH', chain: 'BCH', protocol: 'THORCHAIN' }],
     estimatedTime: { total: 600 },
     expiration: '1900000000',
-    ...(request.destinationAddress && { destinationAddress: request.destinationAddress.replace(/^bitcoincash:/, ''), memo, inboundAddress: VAULT }),
-    ...(request.dry === false && { tx: evmTx(token ? token.toLowerCase() : '0x0000000000000000000000000000000000000000', memo, token ? 25_000_000n : 10n ** 16n, token ? '0' : (10n ** 16n).toString()) })
+    ...(request.sourceAddress && { sourceAddress: request.sourceAddress }),
+    ...(request.destinationAddress && { destinationAddress: request.destinationAddress.replace(/^bitcoincash:/, ''), memo, inboundAddress: VAULT })
   }
   return { routes: [tamper(route)] }
 }
@@ -98,6 +96,7 @@ before(async () => {
         quote: { ...(!body.dry && { depositAddress: body.originAsset === 'nep141:bch.omft.near' ? nearBchDeposit : NEAR_DEPOSIT }), amountIn: body.amount, amountInFormatted: '25', minAmountIn: body.amount, amountOut: '6000000', amountOutFormatted: '0.06', minAmountOut: '5900000', deadline: '2030-01-01T01:00:00.000Z', timeEstimate: 40 }
       })
     }
+    if (url.startsWith('https://gateway.liquify.com/chain/thorchain_api/thorchain/pool/')) return Response.json({ asset: decodeURIComponent(url.split('/').pop()), decimals: 6 })
     if (url.endsWith('/thorchain/inbound_addresses'))
       return Response.json([{ chain: 'BASE', address: VAULT, router: ROUTER, halted: false }, { chain: 'BCH', address: recipient.cashAddress, halted: false }])
     throw new Error(`Unexpected fetch ${url}`)
@@ -170,23 +169,31 @@ test('a forward transfer to BCH returns the approval and the verified router dep
   assert.equal(data.deposit.inbound_address, VAULT)
   assert.equal(data.deposit.expires_at, new Date(1_900_000_000_000).toISOString())
   assert.deepEqual(data.transactions.map(t => [t.step, t.to.toLowerCase(), t.chain_id]), [['approve', '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', 8453], ['deposit', ROUTER, 8453]])
+  assert.equal(quotes[0].dry, undefined, 'the aggregator is not asked to simulate a wallet that has not approved yet')
   const approve = new Interface(['function approve(address spender, uint256 amount)']).decodeFunctionData('approve', data.transactions[0].data)
   assert.equal(approve.spender, ROUTER)
   assert.equal(approve.amount, 25_000_000n)
+  const deposit = DEPOSIT.decodeFunctionData('depositWithExpiry', data.transactions[1].data)
+  assert.deepEqual([deposit.vault, deposit.asset.toLowerCase(), deposit.amount, deposit.memo, deposit.expiration], [VAULT, '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', 25_000_000n, data.deposit.memo, 1_900_000_000n])
+  assert.equal(data.transactions[1].from, SOURCE)
+  assert.equal(data.transactions[1].value, '0')
 })
 
-test('a transaction that pays another vault or carries another memo is not handed out', async () => {
-  for (const change of [
-    route => ({ ...route, tx: { ...route.tx, data: DEPOSIT.encodeFunctionData('depositWithExpiry', ['0x4444444444444444444444444444444444444444', '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', 1n, route.memo, 1n]) } }),
-    route => ({ ...route, tx: { ...route.tx, data: DEPOSIT.encodeFunctionData('depositWithExpiry', [VAULT, '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', 1n, '=:BCH.BCH:qattacker', 1n]) } }),
-    route => ({ ...route, tx: { ...route.tx, to: '0x5555555555555555555555555555555555555555' } })
-  ]) {
-    tamper = change
-    const result = await call('prepare_bridge', { from_asset: USDC, to_asset: 'BCH.BCH', amount: '25', source_address: SOURCE, destination_address: recipient.cashAddress })
-    assert.equal(result.isError, true)
-    assert.match(result.content[0].text, /does not match its quote/)
+test('a quote that pays another vault, carries another memo or has expired gets no transaction', async () => {
+  try {
+    for (const [change, reason] of [
+      [route => ({ ...route, inboundAddress: '0x4444444444444444444444444444444444444444' }), /not THORChain's current BASE vault/],
+      [route => ({ ...route, memo: '=:BCH.BCH:qattacker' }), /no route/],
+      [route => ({ ...route, expiration: '1000' }), /no valid expiry/]
+    ]) {
+      tamper = change
+      const result = await call('prepare_bridge', { from_asset: USDC, to_asset: 'BCH.BCH', amount: '25', source_address: SOURCE, destination_address: recipient.cashAddress })
+      assert.equal(result.isError, true)
+      assert.match(result.content[0].text, reason)
+    }
+  } finally {
+    tamper = route => route
   }
-  tamper = route => route
 })
 
 test('a CashToken goes through a Router order whose deposit is its contract', async () => {
