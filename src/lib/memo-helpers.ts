@@ -109,22 +109,16 @@ export function findLimitSwapOrder(
 export function modifyMemoForLimitSwap(memo: string, priceAtomic: string, expiryBlocks?: number): string {
   if (!memo.startsWith('=:')) return memo
 
-  const parts = memo.split(':')
-  // parts:
-  // [0] "="
-  // [1] ASSET (eg ETH.USDT)
-  // [2] destination address
-  // [3] limit/interval/qty (optional)
-
-  if (parts.length < 3) throw new Error('Invalid memo')
-
-  const asset = parts[1]
-  const affiliate = parts[2]
+  // Memo fields are `:`; a BCH cashaddr destination also contains `:`, so rejoin it like swapMemoPays.
+  const [, asset, ...rest] = memo.split(':')
+  if (!asset || !rest[0]) throw new Error('Invalid memo')
+  const destination = rest[0].toLowerCase() === 'bitcoincash' ? `${rest[0]}:${rest[1] ?? ''}` : rest[0]
+  if (!destination) throw new Error('Invalid memo')
 
   const interval = expiryBlocks || 1
   const qty = 0
 
-  return `=<:${asset}:${affiliate}:${priceAtomic}/${interval}/${qty}`
+  return `=<:${asset}:${destination}:${priceAtomic}/${interval}/${qty}`
 }
 
 export function prepareQuoteForLimitSwap(quote: QuoteResponseRoute, limitBuyAmount?: string, expiryBlocks?: number): QuoteResponseRoute {
