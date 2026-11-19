@@ -321,6 +321,23 @@ const fetchRawTx = async (client: WsRpc, txid: string): Promise<RawTx | null> =>
 
 export const getRawTransaction = (txid: string) => withElectrum(client => fetchRawTx(client, txid))
 
+// shortcut: inspect at most 80 recent transactions for 10 seconds, remain uncertain beyond that budget.
+export const findWalletTransaction = (lockingBytecode: string, matches: (raw: RawTx) => boolean) =>
+  withElectrum(async client => {
+    const history = await client.request<{ tx_hash: string; height: number }[]>('blockchain.scripthash.get_history', [scriptHash(lockingBytecode)])
+    if (!Array.isArray(history) || history.some(h => !h || !isTxid(h.tx_hash) || !Number.isInteger(h.height) || h.height < -1))
+      throw new Error('Unexpected BCH history response')
+    const recent = [...history].sort((a, b) => (b.height <= 0 ? Infinity : b.height) - (a.height <= 0 ? Infinity : a.height))
+    const deadline = Date.now() + 10_000
+    for (const item of recent.slice(0, 80)) {
+      if (Date.now() > deadline) throw new Error('BCH history recovery budget exceeded')
+      const raw = await fetchRawTx(client, item.tx_hash)
+      if (!raw) throw new Error('BCH history transaction is unavailable')
+      if (matches(raw)) return { ...raw, txid: normalizeTxid(item.tx_hash) }
+    }
+    if (recent.length > 80) throw new Error('BCH history recovery limit exceeded')
+  })
+
 export interface ScriptUtxo {
   txid: string
   vout: number

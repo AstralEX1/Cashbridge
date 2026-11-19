@@ -16,6 +16,7 @@ import { type FlowToast, FlowToasts } from '@/components/swap/flow-toasts'
 import { WalletAddressBadge } from '@/components/swap/bridge-wallet-badge'
 import { useBchWallet } from '@/components/bch-wallet'
 import { GenericButton } from '@/components/generic-button'
+import { BridgeHop } from '@/components/bridge-hop/bridge-hop'
 import { SwapError } from '@/components/swap/swap-error'
 import { BridgeConfig } from '@/config'
 import { useQuote } from '@/hooks/use-quote'
@@ -27,6 +28,7 @@ import { sourceTransactionId } from '@/lib/source-transaction'
 import { getTransferStatus } from '@/lib/transfer-status'
 import { firstLegFromChain, formatStepTime, type SourceReceipt, stepTime } from '@/lib/bridge-tracking'
 import { bridgeCompletionTransactions } from '@/lib/bridge-completion'
+import { hasSecondAuthorization, OPEN_SECOND_REQUEST_NOTE, recoverSecondSigning, rememberAttempt, sameSecondAttempt, signingDefinitelyStopped, signingRequest } from '@/lib/bridge-signing-recovery'
 import {
   formatBaseUnits,
   inboundMatchesBinding,
@@ -52,6 +54,7 @@ import { useSwapStore } from '@/store/swap-store'
 import {
   type BridgeOperation,
   type NearLeg,
+  type SecondLeg,
   type SwapTransaction,
   transactionStore,
   useSetTransactionDetails,
@@ -291,24 +294,30 @@ const syncFirstLeg = async (tx: BridgeTx, update: ReturnType<typeof useUpdateBri
 
 const syncReceived = async (tx: BridgeTx, update: ReturnType<typeof useUpdateBridge>) => {
   const op = tx.bridge
+  const recovery = await recoverSecondSigning(op)
+  if (recovery) return update(tx.uid, current => sameSecondAttempt(current, op) ? recovery : {})
   if (!op.received?.length) return
   const checked = await checkUnspent(op.binding.lockingBytecode, op.received)
   if (op.destinationAsset === 'BCH') {
     const ready = checked.every(o => o.confirmations >= BridgeConfig.minConfirmations)
     const nativeStage = op.firstLeg.result === 'refund_pending' ? 'first_leg_pending' : 'kept_bch'
-    return update(tx.uid, () => ({ stage: ready ? nativeStage : 'bch_unconfirmed', received: checked }))
+    return update(tx.uid, current => sameSecondAttempt(current, op) ? { stage: ready ? nativeStage : 'bch_unconfirmed', received: checked } : {})
   }
   const allUnspent = checked.every(o => o.unspent)
   // Outputs spent by something other than this app's second leg: the user moved their BCH.
   if (!allUnspent && op.stage === 'bch_ready') {
-    return update(tx.uid, () => ({ stage: 'kept_bch', received: checked, error: 'The received BCH was spent from your wallet outside this app' }))
+    return update(tx.uid, current => sameSecondAttempt(current, op) ? { stage: 'kept_bch', received: checked, error: 'The received BCH was spent from your wallet outside this app' } : {})
   }
   const ready = allUnspent && checked.every(o => o.confirmations >= BridgeConfig.minConfirmations)
-  update(tx.uid, () => ({ stage: ready ? 'bch_ready' : 'bch_unconfirmed', received: checked }))
+  update(tx.uid, current => sameSecondAttempt(current, op) ? { stage: ready ? 'bch_ready' : 'bch_unconfirmed', received: checked } : {})
 }
 
 const syncSecondLeg = async (tx: BridgeTx, update: ReturnType<typeof useUpdateBridge>) => {
   const op = tx.bridge
+  if (!op.secondLeg?.txid || op.priorSecondLegs?.length) {
+    const recovery = await recoverSecondSigning(op)
+    if (recovery) return update(tx.uid, current => sameSecondAttempt(current, op) ? recovery : {})
+  }
   const leg = op.secondLeg
   if (!leg?.txid) return
   const state = await getTransactionState(leg.txid)
@@ -431,6 +440,7 @@ export interface BridgeFlowProps {
   secondBar?: FlowBar
   details?: ReactNode
   actions?: ReactNode
+  waitGame?: ReactNode
   completion?: Omit<BridgeCompletionProps, 'onClose'>
   toasts: FlowToast[]
   onDismissToast: (id: string) => void
@@ -655,6 +665,7 @@ export const BridgeFlow = (props: BridgeFlowProps) => {
             )}
           </div>
         )}
+        {props.waitGame}
       </div>
 
       <FlowToasts toasts={props.toasts} onDismiss={props.onDismissToast} />
@@ -813,7 +824,7 @@ const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => 
   const pusdEstimate = useTokenQuoteFor(token && bchSats !== undefined && !op?.secondLeg ? formatBch(bchSats) : undefined, token ?? null)
   const { rates } = useRates(bridgeTx ? [bridgeTx.assetFrom.identifier, 'BCH.BCH'].sort() : [])
   const collapsedNow =
-    !!op && hasToken && ['bch_ready', 'second_leg_signed', 'second_leg_unknown', 'second_leg_pending', 'completed'].includes(op.stage)
+    !!op && hasToken && ['bch_ready', 'second_leg_signing', 'second_leg_signed', 'second_leg_unknown', 'second_leg_pending', 'completed'].includes(op.stage)
   const animateCollapse = useCollapseOnce(bridgeTx?.uid, collapsedNow)
 
   if (!bridgeTx || !op) return null
@@ -821,10 +832,10 @@ const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => 
   const terminal = isBridgeTerminal(op)
   const completed = op.stage === 'completed' || (op.stage === 'kept_bch' && !!op.received?.length && !op.error)
   const firstDone =
-    ['bch_ready', 'second_leg_signed', 'second_leg_unknown', 'second_leg_pending', 'completed', 'kept_bch'].includes(op.stage) ||
+    ['bch_ready', 'second_leg_signing', 'second_leg_signed', 'second_leg_unknown', 'second_leg_pending', 'completed', 'kept_bch'].includes(op.stage) ||
     (terminal && !!op.received?.length)
   const secondStarted = ['second_leg_signed', 'second_leg_unknown', 'second_leg_pending'].includes(op.stage)
-  const ready = op.stage === 'bch_ready' && hasToken
+  const ready = (op.stage === 'bch_ready' || op.stage === 'second_leg_signing') && hasToken
   const stage: FlowStage = completed
     ? 'done'
     : terminal
@@ -941,6 +952,7 @@ const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => 
     .reverse()
 
   const common = {
+    waitGame: <BridgeHop key={active.uid} operation={op} />,
     sourceChain: active.assetFrom.chain,
     sourceAddress: active.addressFrom,
     bchAddress: op.binding.cashAddress,
@@ -1078,7 +1090,7 @@ const ReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: number; com
               {t('progress.retry')}
             </button>
           )}
-          <button type="button" className="bridge-flow-link" onClick={leg.keep} disabled={!!leg.busy}>
+          <button type="button" className="bridge-flow-link" onClick={leg.keep} disabled={!!leg.busy || !leg.canKeep}>
             {t('progress.keepBch')}
           </button>
         </>
@@ -1185,6 +1197,13 @@ const useSecondLeg = (tx: BridgeTx) => {
     setError(undefined)
     setReview(undefined)
     try {
+      const current = await freshOperation(tx.uid)
+      if (current?.bridge.stage !== 'bch_ready') return
+      const recovery = await recoverSecondSigning(current.bridge)
+      if (recovery) {
+        update(tx.uid, live => sameSecondAttempt(live, current.bridge) ? recovery : {})
+        if (recovery.stage !== 'bch_ready') throw new Error(recovery.error)
+      }
       const funding = (op.received ?? []).map(o => ({ txid: o.txid, vout: o.vout, value: o.value }))
       const checked = await checkUnspent(op.binding.lockingBytecode, funding)
       if (checked.some(o => !o.unspent)) throw new Error(t('second.spent'))
@@ -1234,15 +1253,31 @@ const useSecondLeg = (tx: BridgeTx) => {
     setNote(undefined)
     let signed = false
     let retry = false
+    let attempt: string | undefined
     try {
       const done = await withLock(`bch-bridge-sign-${tx.uid}`, async () => {
         const current = await freshOperation(tx.uid)
         if (current?.bridge.stage !== 'bch_ready') throw new Error(t('second.movedOn'))
+        const recovery = await recoverSecondSigning(current.bridge)
+        if (recovery && recovery.stage !== 'bch_ready') {
+          update(tx.uid, live => sameSecondAttempt(live, current.bridge) ? recovery : {})
+          throw new Error(recovery.error)
+        }
 
         const { reviewed } = review
-        update(tx.uid, () => ({
+        const request = signingRequest(reviewed)
+        attempt = generateId()
+        let saved = false
+        update(tx.uid, live => {
+          if (!sameSecondAttempt(live, current.bridge)) return {}
+          saved = true
+          return {
+          stage: 'second_leg_signing',
+          error: undefined,
+          priorSecondLegs: rememberAttempt(live.priorSecondLegs, live.secondLeg),
           secondLeg: {
-            attempt: generateId(),
+            attempt: attempt!,
+            signing: request,
             category: token.category,
             sellSats: reviewed.sell.toString(),
             minOutput: reviewed.minOutput.toString(),
@@ -1250,7 +1285,8 @@ const useSecondLeg = (tx: BridgeTx) => {
             routerFeeSats: reviewed.routerFeeSats.toString(),
             minerFeeSats: reviewed.minerFeeSats.toString()
           }
-        }))
+        } })
+        if (!saved) throw new Error(t('second.movedOn'))
 
         const { txid, signedHex } = await signInWallet(
           signer,
@@ -1263,15 +1299,27 @@ const useSecondLeg = (tx: BridgeTx) => {
         setPhase('sending')
 
         // Saved before broadcasting, so a lost broadcast answer is reconciled by this id.
-        update(tx.uid, op => ({ stage: 'second_leg_signed', secondLeg: { ...op.secondLeg!, txid, signedHex } }))
+        let accepted = false
+        update(tx.uid, live => {
+          const prior = live.secondLeg
+          if (!prior || prior.attempt !== attempt || !['second_leg_signing', 'second_leg_unknown'].includes(live.stage)) return {}
+          accepted = true
+          const leg: SecondLeg = { ...prior, txid, signedHex }
+          return { stage: 'second_leg_signed', secondLeg: leg, priorSecondLegs: rememberAttempt(live.priorSecondLegs, leg) }
+        })
+        if (!accepted) throw new Error(t('second.movedOn'))
 
         await broadcast(tx.uid, signedHex, txid, update)
         return true
       })
       if (done === undefined) throw new Error(t('second.otherTab'))
     } catch (e) {
-      // Not signed: the attempt is dropped, and the BCH stays ready for the next try.
-      if (!signed) update(tx.uid, current => (current.stage === 'bch_ready' ? { secondLeg: undefined } : {}))
+      if (!signed && attempt) update(tx.uid, current => {
+        const leg = current.secondLeg
+        if (!leg || leg.attempt !== attempt || leg.txid || !['second_leg_signing', 'second_leg_unknown'].includes(current.stage)) return {}
+        retry = signingDefinitelyStopped(e)
+        return retry ? { stage: 'bch_ready', secondLeg: undefined } : { stage: 'second_leg_unknown', error: OPEN_SECOND_REQUEST_NOTE }
+      })
       if (e instanceof SignCancelled) setNote(t('reverse.signCancelled'))
       else if (e instanceof SignDeclined) setNote(t('reverse.signDeclined', { wallet: walletName }))
       else if (e instanceof SignTimedOut) setNote(t('reverse.signTimedOut', { wallet: walletName }))
@@ -1279,7 +1327,6 @@ const useSecondLeg = (tx: BridgeTx) => {
       else if (e instanceof SignUndelivered) setNote(t('reverse.signUndelivered', { wallet: walletName }))
       else setError(e instanceof Error ? e.message : t('second.failed'))
       setReview(undefined)
-      retry = true
     } finally {
       signing.current = false
       abort.current = undefined
@@ -1287,11 +1334,11 @@ const useSecondLeg = (tx: BridgeTx) => {
       setPhase('idle')
       // After the lock is released: prepare() does nothing while a signature is in flight, which
       // used to leave the button without a review (disabled) after a decline, timeout or cancel.
-      if (retry) void prepare()
+      if (retry) await prepare()
     }
   }
 
-  const keep = () => update(tx.uid, current => (current.stage === 'bch_ready' ? { stage: 'kept_bch' } : {}))
+  const keep = () => update(tx.uid, current => (current.stage === 'bch_ready' && !hasSecondAuthorization(current) ? { stage: 'kept_bch' } : {}))
   return {
     token,
     reviewed: expired ? undefined : review?.reviewed,
@@ -1306,6 +1353,7 @@ const useSecondLeg = (tx: BridgeTx) => {
     prepare,
     sign,
     keep,
+    canKeep: !hasSecondAuthorization(op),
     total
   }
 }
@@ -1351,7 +1399,7 @@ const SecondLegStatus = ({ tx }: { tx: BridgeTx }) => {
   const update = useUpdateBridge()
   const [busy, setBusy] = useState(false)
   const leg = tx.bridge.secondLeg
-  if (!leg?.txid) return null
+  if (!leg?.txid) return <p className="bridge-progress-note" role="status">{tx.bridge.error ?? OPEN_SECOND_REQUEST_NOTE}</p>
 
   // Re-sending the same signed bytes is safe: it is the same transaction, it cannot pay twice.
   const resend = async () => {

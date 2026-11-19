@@ -6,6 +6,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { Asset } from '@/components/swap/asset'
 import { type BchBinding, isValidBinding, type VerifiedOutput } from '@/lib/bch'
 import { type CauldronToken, isCauldronToken, PUSD_TOKEN } from '@/lib/cauldron-tokens'
+import type { Signable } from '@/lib/bch-signing'
 
 // 'broadcast': a send history cannot confirm on its chain - known to be submitted, nothing more.
 export type TxStatus = 'not_started' | 'pending' | 'swapping' | 'completed' | 'failed' | 'expired' | 'refunded' | 'unknown' | 'broadcast'
@@ -58,6 +59,8 @@ export type BridgeStage =
   | 'bch_unconfirmed'
   // Verified, confirmed, unspent BCH outputs: the second leg may be quoted and authorized.
   | 'bch_ready'
+  // The exact second-step authorization is saved before the wallet is opened.
+  | 'second_leg_signing'
   // A second-leg transaction was signed (its txid is saved before broadcast).
   | 'second_leg_signed'
   // Broadcast outcome unknown; reconciled by txid before anything else happens.
@@ -78,6 +81,10 @@ export interface BridgeRefund {
   pending: boolean
 }
 
+export interface BridgeSigningRequest extends Signable {
+  sentAt: number
+}
+
 export interface SecondLeg {
   // Fresh id per authorization, so a stale tab cannot act on a newer attempt.
   attempt: string
@@ -96,6 +103,7 @@ export interface SecondLeg {
   signedHex?: string
   confirmations?: number
   error?: string
+  signing?: BridgeSigningRequest
 }
 
 // A reverse operation: (token -> BCH on Cauldron, step 1) then a BCH deposit to THORChain paying an
@@ -136,6 +144,8 @@ export interface ReverseDeposit {
   txid?: string
   signedHex?: string
   error?: string
+  signing?: BridgeSigningRequest
+  near?: NearLeg
 }
 
 export interface ReverseDetails {
@@ -150,6 +160,8 @@ export interface ReverseDetails {
   refund?: { txid?: string; amountSats: string }
   // Deposit txids signed earlier for this operation (a rejected broadcast is re-quoted and re-signed).
   priorDepositTxids?: string[]
+  // Expired or rejected authorizations remain recoverable if their wallet later broadcasts them.
+  priorDeposits?: ReverseDeposit[]
   // Set when the Cashbridge Router runs the sale and the deposit: its order (id and capability), the signed send of
   // the tokens to the order's contract, and what the payout search needs.
   router?: { id: string; capability: string; depositAddress: string; sendTxid?: string; signedHex?: string; payoutRouter?: string; startBlock?: number }
@@ -208,6 +220,7 @@ export interface BridgeOperation {
   // Txids of earlier second-leg signatures (a rejected broadcast is re-quoted and re-signed): a spend
   // of the received BCH by any of them is still this operation's swap.
   priorSwapTxids?: string[]
+  priorSecondLegs?: SecondLeg[]
   error?: string
   updatedAt: number
 }
@@ -239,6 +252,7 @@ export const bridgeTxStatus = (op: BridgeOperation): TxStatus => {
     case 'second_leg_unknown':
       return 'unknown'
     case 'first_leg_signing':
+    case 'second_leg_signing':
       return 'not_started'
     case 'first_leg_pending':
       return 'swapping'
@@ -270,6 +284,7 @@ const sanitizeBridge = (op: BridgeOperation): BridgeOperation => {
   if (!isValidBinding(op.binding)) return { ...op, stage: isBridgeTerminal(op) ? op.stage : 'failed', error: 'Saved BCH address failed validation' }
   // Mid-signing when the page went away: the source wallet may have sent it.
   if (op.stage === 'first_leg_signing') return { ...op, stage: 'first_leg_unknown' }
+  if (op.stage === 'second_leg_signing') return { ...op, stage: 'second_leg_unknown' }
   // A completed operation carries no error (an older version could leave a stale one behind).
   if (op.stage === 'completed' && op.error) return { ...op, error: undefined }
   return op

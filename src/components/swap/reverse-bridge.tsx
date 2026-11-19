@@ -14,6 +14,7 @@ import { useBchWallet } from '@/components/bch-wallet'
 import { chainLabel } from '@/components/connect-wallet/config'
 import { ConnectWallet } from '@/components/connect-wallet/connect-wallet'
 import { GenericButton } from '@/components/generic-button'
+import { BridgeHop } from '@/components/bridge-hop/bridge-hop'
 import { useDialog } from '@/components/global-dialog'
 import { TransactionHistoryDialog } from '@/components/header/transaction-history-dialog'
 import type { Asset } from '@/components/swap/asset'
@@ -41,6 +42,7 @@ import { prepareRouterSale } from '@/lib/router-sale-client'
 import { formatBaseUnits, toBaseUnits } from '@/lib/bridge'
 import { withLock } from '@/lib/bridge-first-leg'
 import { bridgeCompletionTransactions } from '@/lib/bridge-completion'
+import { hasSecondAuthorization, OPEN_SECOND_REQUEST_NOTE, recoverSecondSigning, rememberAttempt, sameSecondAttempt, signingDefinitelyStopped, signingRequest } from '@/lib/bridge-signing-recovery'
 import { formatStepTime, stepTime } from '@/lib/bridge-tracking'
 import { formatAmount, formatMinutes, formatPercent, formatUsd, PUSD_LEG_SECONDS, valueImpact } from '@/lib/bridge-summary'
 import { type ReviewedSwap } from '@/lib/cauldron'
@@ -112,13 +114,41 @@ const freshOperation = async (uid: string) => {
 }
 
 // Signs a prepared deposit for the operation `uid` and broadcasts it.
-const sendDeposit = async (uid: string, prepared: PreparedDeposit, update: Update, wallet: ReturnType<typeof useBchWallet>, signal?: AbortSignal) => {
+const sendDeposit = async (uid: string, prepared: PreparedDeposit, update: Update, wallet: ReturnType<typeof useBchWallet>, signal?: AbortSignal, attempt = generateId()) => {
   const tx = await freshOperation(uid)
   const op = tx?.bridge
   if (!op?.reverse || !wallet.signer || !wallet.binding) throw new Error('The BCH wallet is not connected')
   const { built, route, router, near } = prepared
   const startBlock = near ? undefined : await blockHeight(destinationChainOf(op.reverse.buyAsset)).catch(() => undefined)
   const asset = tx!.assetTo.ticker
+  const request = signingRequest(built)
+  let saved = false
+  update(uid, current => {
+    if (!sameSecondAttempt(current, op)) return {}
+    saved = true
+    return {
+      stage: current.reverse?.sale ? 'second_leg_signing' : current.stage,
+      error: undefined,
+      ...(near ? { near } : {}),
+      reverse: {
+        ...current.reverse!,
+        priorDeposits: rememberAttempt(current.reverse?.priorDeposits, current.reverse?.deposit),
+        deposit: {
+          attempt,
+          signing: request,
+          near,
+          amountSats: built.amountSats.toString(),
+          minerFeeSats: built.minerFeeSats.toString(),
+          memo: route.memo ?? '',
+          inboundAddress: route.inboundAddress!,
+          router,
+          startBlock,
+          expectedOut: route.expectedBuyAmount
+        }
+      }
+    }
+  })
+  if (!saved) throw new Error('This transfer moved on before the wallet request')
   const { txid, signedHex } = await signInWallet(
     wallet.signer,
     op.binding,
@@ -126,27 +156,22 @@ const sendDeposit = async (uid: string, prepared: PreparedDeposit, update: Updat
     `Send ${formatBch(built.amountSats)} BCH to ${near ? 'NEAR Intents' : 'THORChain'} for at least ${route.expectedBuyAmountMaxSlippage ?? route.expectedBuyAmount} ${asset}`,
     { signal }
   )
-  update(uid, current => ({
+  let accepted = false
+  update(uid, current => {
+    if (current.reverse?.deposit?.attempt !== attempt || !['first_leg_signing', 'first_leg_unknown', 'second_leg_signing', 'second_leg_unknown'].includes(current.stage)) return {}
+    accepted = true
+    const deposit = { ...current.reverse.deposit, txid, signedHex, signedAt: Date.now() }
+    return {
     stage: 'second_leg_signed',
     ...(current.reverse?.sale ? {} : { hash: txid }),
     ...(near ? { near } : {}),
     reverse: {
       ...current.reverse!,
-      deposit: {
-        attempt: generateId(),
-        amountSats: built.amountSats.toString(),
-        minerFeeSats: built.minerFeeSats.toString(),
-        memo: route.memo ?? '',
-        inboundAddress: route.inboundAddress!,
-        router,
-        startBlock,
-        expectedOut: route.expectedBuyAmount,
-        txid,
-        signedHex,
-        signedAt: Date.now()
-      }
+      deposit,
+      priorDeposits: rememberAttempt(current.reverse.priorDeposits, deposit)
     }
-  }))
+  } })
+  if (!accepted) throw new Error('This transfer moved on before the wallet answered')
   await broadcastDeposit(uid, signedHex, txid, update)
   if (near) void submitNearDeposit(near.depositAddress, txid)
 }
@@ -225,6 +250,16 @@ export const syncReverse = async (tx: BridgeTx, update: Update) => {
   const reverse = op.reverse
   if (!reverse) return
   if (reverse.router && (await syncRouterOrder(tx, update))) return
+  if (op.stage !== 'second_leg_signing' && ['bch_ready', 'first_leg_unknown', 'second_leg_signed', 'second_leg_unknown', 'second_leg_pending'].includes(op.stage) &&
+    (reverse.deposit?.signing || reverse.priorDeposits?.length || (op.stage === 'second_leg_unknown' && !reverse.deposit?.txid))) {
+    const recovery = await recoverSecondSigning(op)
+    if (recovery) {
+      update(tx.uid, current => sameSecondAttempt(current, op) ? recovery : {})
+      if (recovery.stage !== 'second_leg_pending') return
+      // Continue payout tracking on the next poll with the recovered deposit's metadata.
+      if (!reverse.deposit?.txid || reverse.deposit.txid !== recovery.reverse?.deposit?.txid) return
+    }
+  }
   const sale = reverse.sale
   const deposit = reverse.deposit
   switch (op.stage) {
@@ -248,7 +283,7 @@ export const syncReverse = async (tx: BridgeTx, update: Update) => {
       if (checked.every(o => o.unspent)) return
       // Spent by one of this operation's deposits (a lost broadcast answer) is still ours.
       const ours = await historyIncludes(op.binding.lockingBytecode, reverse.priorDepositTxids ?? [])
-      if (ours.length === 0) update(tx.uid, () => ({ stage: 'kept_bch', error: 'The BCH from the swap was spent outside this app' }))
+      if (ours.length === 0) update(tx.uid, current => sameSecondAttempt(current, op) ? { stage: 'kept_bch', error: 'The BCH from the swap was spent outside this app' } : {})
       return
     }
     case 'second_leg_signed':
@@ -942,6 +977,7 @@ const useDepositStep = (tx: BridgeTx) => {
     abort.current = controller
     setError(undefined)
     setNote(undefined)
+    let attempt: string | undefined
     try {
       setPhase('preparing')
       const fresh = prepared.data && Date.now() - prepared.dataUpdatedAt < PREPARED_TTL_MS
@@ -950,19 +986,33 @@ const useDepositStep = (tx: BridgeTx) => {
       const done = await withLock(`bch-bridge-sign-${tx.uid}`, async () => {
         const current = await freshOperation(tx.uid)
         if (current?.bridge.stage !== 'bch_ready') throw new Error(t('second.movedOn'))
+        const recovery = await recoverSecondSigning(current.bridge)
+        if (recovery && recovery.stage !== 'bch_ready') {
+          update(tx.uid, live => sameSecondAttempt(live, current.bridge) ? recovery : {})
+          throw new Error(recovery.error)
+        }
         setPhase('signing')
-        await sendDeposit(tx.uid, ready, update, wallet, controller.signal)
+        attempt = generateId()
+        await sendDeposit(tx.uid, ready, update, wallet, controller.signal, attempt)
         return true
       })
       if (done === undefined) throw new Error(t('second.otherTab'))
     } catch (e) {
+      let retry = !attempt
+      if (attempt) update(tx.uid, current => {
+        const reverse = current.reverse
+        const deposit = reverse?.deposit
+        if (!reverse || !deposit || deposit.attempt !== attempt || deposit.txid || !['second_leg_signing', 'second_leg_unknown'].includes(current.stage)) return {}
+        retry = signingDefinitelyStopped(e)
+        return retry ? { stage: 'bch_ready', reverse: { ...reverse, deposit: undefined } } : { stage: 'second_leg_unknown', error: OPEN_SECOND_REQUEST_NOTE }
+      })
       if (e instanceof SignCancelled) setNote(t('reverse.signCancelled'))
       else if (e instanceof SignDeclined) setNote(t('reverse.signDeclined', { wallet: walletName }))
       else if (e instanceof SignTimedOut) setNote(t('reverse.signTimedOut', { wallet: walletName }))
       else if (e instanceof SignSessionLost) setNote(t('reverse.signSessionLost', { wallet: walletName }))
       else if (e instanceof SignUndelivered) setNote(t('reverse.signUndelivered', { wallet: walletName }))
       else setError(readableError(e, t('reverse.prepareFailed')))
-      void prepared.refetch()
+      if (retry) await prepared.refetch()
     } finally {
       inFlight.current = false
       abort.current = undefined
@@ -970,7 +1020,7 @@ const useDepositStep = (tx: BridgeTx) => {
     }
   }
 
-  const keep = () => update(tx.uid, current => (current.stage === 'bch_ready' ? { stage: 'kept_bch' } : {}))
+  const keep = () => update(tx.uid, current => (current.stage === 'bch_ready' && !hasSecondAuthorization(current) ? { stage: 'kept_bch' } : {}))
   const prepError = !prepared.data && prepared.error instanceof Error ? prepared.error.message : undefined
   return {
     prepared: prepared.data,
@@ -982,6 +1032,7 @@ const useDepositStep = (tx: BridgeTx) => {
     cancel: () => abort.current?.abort(),
     sign,
     keep,
+    canKeep: !hasSecondAuthorization(op),
     walletMatches,
     walletAway,
     retry: () => prepared.refetch()
@@ -1061,7 +1112,7 @@ export const ReverseOperationPanel = ({ uid, onClose }: { uid?: string; onClose:
   const completed = op.stage === 'completed' || keptBch
   const saleDone = !!token && !['first_leg_signing', 'first_leg_pending', 'first_leg_unknown'].includes(op.stage) && !!reverse.sale?.txid
   const depositing = ['second_leg_signed', 'second_leg_unknown', 'second_leg_pending'].includes(op.stage)
-  const ready = op.stage === 'bch_ready' && !!token
+  const ready = (op.stage === 'bch_ready' || op.stage === 'second_leg_signing') && !!token
   const stage: FlowStage = completed ? 'done' : terminal ? 'ended' : ready ? 'ready' : token ? (depositing ? 'swapping' : 'bridging') : 'plain'
 
   const eta = (time: ReturnType<typeof stepTime>) => {
@@ -1139,6 +1190,7 @@ export const ReverseOperationPanel = ({ uid, onClose }: { uid?: string; onClose:
     .reverse()
 
   const common = {
+    waitGame: <BridgeHop key={active.uid} operation={op} />,
     reverse: true,
     sourceChain: target.chain,
     sourceAddress: reverse.destination,
@@ -1281,7 +1333,7 @@ const ReverseReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: numb
               {t('progress.retry')}
             </button>
           )}
-          <button type="button" className="bridge-flow-link" onClick={step.keep} disabled={step.phase !== 'idle'}>
+          <button type="button" className="bridge-flow-link" onClick={step.keep} disabled={step.phase !== 'idle' || !step.canKeep}>
             {t('progress.keepBch')}
           </button>
         </>
