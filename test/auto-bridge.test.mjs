@@ -739,3 +739,114 @@ test('without a source hint only an inbound from the order sender, chain and ass
     env.store.close()
   }
 })
+
+// An order whose first leg goes through NEAR Intents: 1Click's status names the BCH payout, which pays the order address.
+const nearEnvironment = () => {
+  const signer = wallet(),
+    store = new OrderStore(':memory:', signer.xpub, limits, undefined, undefined, false, false, true)
+  const order = store.create(randomUUID(), capability(), intent, '200', 100)
+  const depositAddress = `0x${'12'.repeat(20)}`
+  store.update(order.id, order.version, { nearDepositAddress: depositAddress })
+  const payout = binToHex(
+    encodeTransaction({
+      version: 2,
+      locktime: 0,
+      inputs: [{ outpointTransactionHash: hexToBin('aa'.repeat(32)), outpointIndex: 0, sequenceNumber: 0xffffffff, unlockingBytecode: Uint8Array.from([0x00]) }],
+      outputs: [{ lockingBytecode: hexToBin(order.binding.lockingBytecode), valueSatoshis: 1000000n }]
+    })
+  )
+  const payoutId = txidOf(payout)
+  const raw = new Map(),
+    observed = new Map(),
+    thorAsked = []
+  let near = {
+    status: 'PENDING_DEPOSIT',
+    swapDetails: {},
+    quoteResponse: {
+      quoteRequest: { recipient: order.binding.cashAddress, destinationAsset: 'nep141:bch.omft.near', originAsset: 'nep141:base.omft.near' },
+      quote: { depositAddress, minAmountOut: '990000' }
+    }
+  }
+  const gateway = {
+    history: async () => [...raw.keys()],
+    raw: async id => raw.get(id),
+    tip: async () => 100,
+    coin: async (id, vout) => {
+      if (id === '08'.repeat(32) && vout === 0)
+        return {
+          output: { lockingBytecode: poolLockingBytecode(new Uint8Array(20).fill(7)), valueSatoshis: 108000000n, token: { category: hexToBin(BridgeConfig.pusd.category), amount: 30000n } },
+          confirmations: 1
+        }
+      return raw.has(id) && vout === 0 ? { output: decodeTx(raw.get(id)).outputs[0], confirmations: 1 } : undefined
+    },
+    thorStatus: async id => {
+      thorAsked.push(id)
+      return undefined
+    },
+    nearStatus: async address => (address === depositAddress ? near : undefined),
+    observe: async id => observed.get(id) ?? { seen: false, confirmations: 0 },
+    broadcast: async attempt => {
+      observed.set(attempt.txid, { seen: true, confirmations: 0 })
+    }
+  }
+  const policy = { minConfirmations: 1, zeroConfMaxSats: 0n, maxWaitMs: 60000 }
+  return {
+    store,
+    order,
+    raw,
+    payout,
+    payoutId,
+    thorAsked,
+    setNear: change => {
+      near = change(near)
+    },
+    run: at => processOrder(store, gateway, signer, store.get(order.id), policy, async current => localBuild(current), () => at),
+    state: () => store.get(order.id).state
+  }
+}
+
+test('a NEAR Intents order is funded by the BCH payout its signed quote sends to the order address', async () => {
+  const env = nearEnvironment()
+  try {
+    await env.run(1000)
+    assert.equal(env.state(), 'awaiting_deposit')
+    env.setNear(near => ({ ...near, status: 'PROCESSING' }))
+    await env.run(2000)
+    assert.equal(env.state(), 'streaming')
+    env.setNear(near => ({ ...near, status: 'SUCCESS', swapDetails: { destinationChainTxHashes: [{ hash: env.payoutId }] } }))
+    await env.run(3000)
+    assert.equal(env.state(), 'streaming', 'a payout the BCH node does not have yet is waited for')
+    env.raw.set(env.payoutId, env.payout)
+    await env.run(4000)
+    assert.equal(env.state(), 'submitted')
+    assert.deepEqual(env.store.get(env.order.id).funding.map(coin => coin.txid), [env.payoutId])
+    assert.equal(env.store.attempts(env.order.id)[0].kind, 'swap')
+    assert.deepEqual(env.thorAsked, [], 'a NEAR Intents order never asks THORChain')
+  } finally {
+    env.store.close()
+  }
+})
+
+test('a NEAR Intents quote paying elsewhere, a short payout or a refund never funds the order', async () => {
+  const cases = [
+    [near => ({ ...near, quoteResponse: { ...near.quoteResponse, quoteRequest: { ...near.quoteResponse.quoteRequest, recipient: refund.cashAddress } } }), 'manual_review'],
+    [near => ({ ...near, quoteResponse: { ...near.quoteResponse, quote: { ...near.quoteResponse.quote, minAmountOut: '1000001' } } }), 'manual_review'],
+    [near => ({ ...near, status: 'FAILED' }), 'manual_review'],
+    [near => ({ ...near, status: 'REFUNDED', swapDetails: { refundedAmountFormatted: '5' } }), 'source_refunded']
+  ]
+  for (const [change, state] of cases) {
+    const env = nearEnvironment()
+    try {
+      env.raw.set(env.payoutId, env.payout)
+      env.setNear(near => change({ ...near, status: 'SUCCESS', swapDetails: { destinationChainTxHashes: [{ hash: env.payoutId }] } }))
+      await env.run(1000)
+      assert.equal(env.state(), state)
+      assert.equal(env.store.attempts(env.order.id).length, 0)
+      assert.deepEqual(env.store.get(env.order.id).funding, [])
+      if (state === 'source_refunded')
+        assert.deepEqual(env.store.get(env.order.id).sourceRefunds, [{ asset: 'nep141:base.omft.near', amount: '500000000', pending: false, evidence: 'near_intents' }])
+    } finally {
+      env.store.close()
+    }
+  }
+})

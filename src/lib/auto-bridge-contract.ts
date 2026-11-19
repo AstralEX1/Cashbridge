@@ -47,7 +47,7 @@ export interface SourceRefund {
   amount: string
   txid?: string
   pending: boolean
-  evidence: 'thorchain'
+  evidence: 'thorchain' | 'near_intents'
 }
 export interface PublicOrder extends OrderIntent {
   apiVersion?: 2
@@ -62,6 +62,8 @@ export interface PublicOrder extends OrderIntent {
   updatedAt: number
   sourceHash?: string
   inboundHash?: string
+  // Set when the first leg goes through NEAR Intents: the source deposits here, and 1Click pays the order address.
+  nearDepositAddress?: string
   receivedSats: string
   receivedAt?: number
   bchReceipts?: { txid: string; amountSats: string; confirmations: number }[]

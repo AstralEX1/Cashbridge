@@ -159,3 +159,40 @@ test('the public scanner feed lists paid orders from the worker without addresse
     else process.env.AUTO_BRIDGE_SOCKET = previous
   }
 })
+
+test('a NEAR Intents deposit address is noted once, before the source hash, only when the Router takes NEAR orders', async () => {
+  const signer = new WorkerWallet(encodeHdPrivateKey({ network: 'mainnet', node: deriveHdPrivateNodeFromSeed(randomBytes(32)) }).hdPrivateKey)
+  const address = bindingFromPubkey(pubkey, 0).cashAddress
+  const near = `0x${'12'.repeat(20)}`
+  const request = (cap, body) =>
+    new NextRequest('https://bridge.example/api/auto-bridge/orders', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${cap}`, 'Content-Type': 'application/json', 'sec-fetch-site': 'same-origin', 'cf-connecting-ip': `near-${randomUUID()}` },
+      body: JSON.stringify(body)
+    })
+  const open = (nearOrders, contractOrders = false) => {
+    const store = new OrderStore(':memory:', signer.xpub, { maxOrderSats: 100000000n, maxPendingSats: 1000000000n, maxOpenOrders: 20 }, undefined, undefined, contractOrders, false, nearOrders)
+    const cap = randomBytes(32).toString('hex')
+    const order = store.create(randomUUID(), cap, { recipientAddress: address, refundAddress: address, expectedBchSats: '1000000' }, '980')
+    return { store, cap, id: order.id, service: { store, quote: async () => ({ output: 1000n }) } }
+  }
+  const off = open(false)
+  const contract = open(true, true)
+  const on = open(true)
+  try {
+    assert.equal((await attachSource(request(off.cap, { nearDepositAddress: near }), off.id, off.service)).status, 400)
+    assert.equal((await attachSource(request(contract.cap, { nearDepositAddress: near }), contract.id, contract.service)).status, 409)
+    assert.equal((await attachSource(request(on.cap, { nearDepositAddress: 'not an address' }), on.id, on.service)).status, 400)
+    const noted = await attachSource(request(on.cap, { nearDepositAddress: near }), on.id, on.service)
+    assert.equal(noted.status, 200)
+    assert.equal((await noted.json()).nearDepositAddress, near)
+    assert.equal((await attachSource(request(on.cap, { nearDepositAddress: `0x${'34'.repeat(20)}` }), on.id, on.service)).status, 409)
+    assert.equal((await attachSource(request(on.cap, { nearDepositAddress: near, sourceHash: 'ab'.repeat(32) }), on.id, on.service)).status, 200)
+    assert.equal(on.store.get(on.id).sourceHash, 'ab'.repeat(32))
+    assert.equal(on.store.get(on.id).nearDepositAddress, near)
+  } finally {
+    off.store.close()
+    contract.store.close()
+    on.store.close()
+  }
+})

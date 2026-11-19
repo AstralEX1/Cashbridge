@@ -26,6 +26,8 @@ export interface Order extends OrderIntent {
   updatedAt: number
   inboundHash?: string
   sourceHash?: string
+  // The 1Click deposit address of a NEAR Intents first leg, set once before the source is sent.
+  nearDepositAddress?: string
   funding: VerifiedOutput[]
   receivedAt?: number
   deadline?: number

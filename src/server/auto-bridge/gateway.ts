@@ -4,6 +4,7 @@ import { toBaseUnits } from '@/lib/bridge'
 import { BroadcastRejected, BroadcastUnknown, broadcastViaCauldron } from '@/lib/cauldron'
 import type { TxStatusResponse } from '@/lib/api'
 import type { InboundAddress } from '@/lib/thorchain-deposit'
+import { ONE_CLICK_URL, type NearStatusResponse } from '@/lib/near-intents'
 import type { Attempt } from '@/server/auto-bridge/types'
 import type { Gateway } from '@/server/auto-bridge/worker'
 import { readCredential } from '@/server/auto-bridge/config'
@@ -232,6 +233,15 @@ export class BchGateway implements Gateway {
     const inbounds = response.ok ? await response.json() : undefined
     if (!Array.isArray(inbounds)) throw new Error('THORChain inbound addresses unavailable')
     return inbounds
+  }
+  async nearStatus(depositAddress: string): Promise<NearStatusResponse | undefined> {
+    const response = await fetch(`${ONE_CLICK_URL}/status?depositAddress=${encodeURIComponent(depositAddress)}`, {
+      signal: AbortSignal.timeout(15000),
+      cache: 'no-store'
+    })
+    if (response.status === 404) return undefined
+    if (!response.ok) throw new Error('NEAR Intents status unavailable')
+    return response.json()
   }
   async observe(id: string) {
     try {

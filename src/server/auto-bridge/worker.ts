@@ -1,9 +1,10 @@
 import { binToHex, binsAreEqual, hexToBin, type Output, type Transaction } from '@bitauth/libauth'
 import type { TxStatusResponse } from '@/lib/api'
-import { addressToLockingBytecode, checkOutbound, decodeTx, isTxid, normalizeTxid, opReturnText, txidOf, type VerifiedOutput } from '@/lib/bch'
+import { addressToLockingBytecode, checkOutbound, checkPayment, decodeTx, isTxid, normalizeTxid, opReturnText, txidOf, type VerifiedOutput } from '@/lib/bch'
 import { inboundMatchesBinding, interpretTxStatus } from '@/lib/bridge'
 import { BroadcastRejected, buildTokenTrade, type BuildIntent, type BuildResult } from '@/lib/cauldron'
 import { checkInbound, type InboundAddress } from '@/lib/thorchain-deposit'
+import { interpretNearStatus, NEAR_BCH, type NearStatusResponse } from '@/lib/near-intents'
 import { OrderStore } from '@/server/auto-bridge/store'
 import { isTerminal, orderCategory, type Attempt, type Order, type SaleCoin } from '@/server/auto-bridge/types'
 import { orderUnlockBytes, WorkerWallet } from '@/server/auto-bridge/wallet'
@@ -19,6 +20,8 @@ export interface Gateway {
   broadcast(attempt: Attempt): Promise<void>
   // THORNode's inbound addresses; sale orders deposit only while their vault is current and trading is open.
   inbound?(): Promise<InboundAddress[]>
+  // 1Click's status of a NEAR Intents deposit address; undefined when 1Click does not know it.
+  nearStatus?(depositAddress: string): Promise<NearStatusResponse | undefined>
 }
 export interface Policy {
   minConfirmations: number
@@ -228,7 +231,7 @@ export async function processOrder(
     store.update(order.id, order.version, { state: 'manual_review', error: 'A customer destination is a service deposit address; operator verification is required.' }, clock())
     return
   }
-  const found = await thorchainFunding(store, gateway, order, history, clock)
+  const found = order.nearDepositAddress ? await nearFunding(store, gateway, order, clock) : await thorchainFunding(store, gateway, order, history, clock)
   if (!found) return
   const { received, evidence } = found
   const funding = [...new Map(received.map(coin => [`${coin.txid}:${coin.vout}`, coin])).values()]
@@ -409,6 +412,50 @@ async function thorchainFunding(store: OrderStore, gateway: Gateway, order: Orde
     received.push(...receipt.outputs)
   }
   return { received, evidence: { inboundHash, sourceRefunds: view.refunds.map(r => ({ ...r, evidence: 'thorchain' as const })) } }
+}
+
+// The NEAR Intents first leg. 1Click's status for the order's deposit address is only a pointer: its signed quote must
+// pay native BCH to this order's own address, and each payout it names is read from the BCH node and checked there.
+async function nearFunding(store: OrderStore, gateway: Gateway, order: Order, clock: () => number): Promise<Funding | undefined> {
+  const status = await gateway.nearStatus?.(order.nearDepositAddress!)
+  if (!status) return
+  const review = (error: string) => void store.update(order.id, order.version, { state: 'manual_review', error }, clock())
+  const { quoteRequest: request, quote } = status.quoteResponse ?? {}
+  const minimum = quote?.minAmountOut ?? ''
+  if (
+    quote?.depositAddress !== order.nearDepositAddress ||
+    request?.destinationAsset !== NEAR_BCH ||
+    !request.recipient ||
+    addressToLockingBytecode(request.recipient) !== order.binding.lockingBytecode ||
+    !/^\d{1,16}$/.test(minimum)
+  )
+    return review('The NEAR Intents quote does not pay this order address.')
+  const view = interpretNearStatus(status)
+  if (view.kind === 'failed') return review(view.reason)
+  if (view.kind === 'refunded') {
+    const refunds = view.amount ? [{ asset: order.source?.asset ?? request.originAsset ?? '', amount: view.amount, pending: false, evidence: 'near_intents' as const }] : []
+    store.update(order.id, order.version, { state: 'source_refunded', sourceRefunds: refunds }, clock())
+    return
+  }
+  if (view.kind === 'pending') {
+    if (status.status !== 'PENDING_DEPOSIT' && order.state !== 'streaming') store.update(order.id, order.version, { state: 'streaming' }, clock())
+    return
+  }
+  const tip = await gateway.tip(),
+    received: VerifiedOutput[] = []
+  for (const txid of new Set(view.txids.map(normalizeTxid))) {
+    if (!isTxid(txid)) return review('NEAR Intents reported a BCH payout that is not a transaction id.')
+    const hex = await gateway.raw(txid)
+    if (!hex) return
+    if (txidOf(hex) !== txid) throw new Error('BCH transaction hash mismatch')
+    const tx = decodeTx(hex)
+    const receipt = checkPayment({ hex, tx }, order.binding.lockingBytecode, { tip, utxos: await orderUtxos(gateway, order, txid, tx, tip) })
+    if (receipt.kind !== 'ok') return review('BCH payout failed order verification.')
+    received.push(...receipt.outputs)
+  }
+  if (received.reduce((sum, coin) => sum + BigInt(coin.value), 0n) < BigInt(minimum))
+    return review('NEAR Intents paid less BCH than its quote promised.')
+  return { received, evidence: {} }
 }
 
 // Custody discovery never authorizes a spend. It also runs for terminal and quarantined orders.

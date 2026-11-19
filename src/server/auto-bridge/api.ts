@@ -158,14 +158,26 @@ export async function attachSource(req: NextRequest, id: string, service: Servic
     guard(req, true)
     const cap = token(req),
       input = await body(req)
+    const near = input.nearDepositAddress
+    if (near !== undefined && (typeof near !== 'string' || !/^[0-9A-Za-z:]{20,120}$/.test(near))) throw new OrderError(400, 'Invalid NEAR Intents deposit address')
+    // The NEAR deposit address may come alone, before the wallet sends: the worker then finds the payout without the hash.
     const sourceHash = sourceTransactionId(input.sourceHash)
-    if (!sourceHash)
+    if (!sourceHash && (input.sourceHash !== undefined || near === undefined))
       throw new OrderError(400, 'Invalid source transaction identifier')
     const store = service.store,
       order = store.authorized(id, cap)
-    if (order.sourceHash && !sameSourceTransaction(order.sourceHash, sourceHash) && !sameSourceTransaction(order.inboundHash, sourceHash)) throw new OrderError(409, 'Order already has a source transaction')
-    if (order.inboundHash && !sameSourceTransaction(order.inboundHash, sourceHash)) throw new OrderError(409, 'Source transaction does not match the observed order')
-    if (!store.update(id, order.version, { sourceHash })) throw new OrderError(409, 'Order changed; retry the source hint')
+    if (near !== undefined && near !== order.nearDepositAddress) {
+      if (!store.nearOrders) throw new OrderError(400, 'NEAR Intents is not available through the Cashbridge Router')
+      // Set once, on a plain-address order nothing has paid yet (1Click pays only q… and p… addresses).
+      if (order.nearDepositAddress || order.contract || order.sale || order.state !== 'awaiting_deposit' || order.sourceHash || order.inboundHash)
+        throw new OrderError(409, 'Order already has a source route')
+    }
+    if (sourceHash) {
+      if (order.sourceHash && !sameSourceTransaction(order.sourceHash, sourceHash) && !sameSourceTransaction(order.inboundHash, sourceHash)) throw new OrderError(409, 'Order already has a source transaction')
+      if (order.inboundHash && !sameSourceTransaction(order.inboundHash, sourceHash)) throw new OrderError(409, 'Source transaction does not match the observed order')
+    }
+    if (!store.update(id, order.version, { ...(sourceHash && { sourceHash }), ...(near !== undefined && { nearDepositAddress: near }) }))
+      throw new OrderError(409, 'Order changed; retry the source hint')
     return reply(store.public(id, cap))
   } catch (error) {
     return errorReply(error)

@@ -48,6 +48,8 @@ export function loadConfig() {
     // Off until the owner switches it on: new orders then pay into their own contract (src/lib/router-contract.ts).
     contractOrders: process.env.AUTO_BRIDGE_CONTRACT_ORDERS === 'true',
     // Off until the owner switches it on: transfers back from BCH through the sale contract.
-    saleOrders: process.env.AUTO_BRIDGE_SALE_ORDERS === 'true'
+    saleOrders: process.env.AUTO_BRIDGE_SALE_ORDERS === 'true',
+    // Off until the owner switches it on: first legs through NEAR Intents as well as THORChain.
+    nearOrders: process.env.AUTO_BRIDGE_NEAR_ORDERS === 'true'
   }
 }

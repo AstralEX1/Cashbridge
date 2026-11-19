@@ -19,7 +19,7 @@ const capabilityHash = (capability: string) => {
 const intentHash = (intent: OrderIntent) =>
   hash(JSON.stringify([intent.recipientAddress, intent.refundAddress, intent.expectedBchSats, ...(intent.source ? [intent.source] : []), ...(intent.category ? [{ category: intent.category }] : []),
     ...(intent.sale ? [{ sale: intent.sale }] : [])]))
-type Patch = Partial<Pick<Order, 'state' | 'inboundHash' | 'sourceHash' | 'funding' | 'receivedAt' | 'deadline' | 'payoutTxid' | 'error' | 'observedFunding' | 'lastCheckedAt' | 'observation' | 'sourceRefunds'>>
+type Patch = Partial<Pick<Order, 'state' | 'inboundHash' | 'sourceHash' | 'funding' | 'receivedAt' | 'deadline' | 'payoutTxid' | 'error' | 'observedFunding' | 'lastCheckedAt' | 'observation' | 'sourceRefunds' | 'nearDepositAddress'>>
 const terminal = new Set(['completed', 'refunded', 'source_refunded', 'manual_review'])
 const coinsHeld = (order: Order) => [...new Map([
   ...(!['completed', 'refunded', 'source_refunded'].includes(order.state) ? order.funding : []),
@@ -42,7 +42,9 @@ export class OrderStore {
     // New orders get a contract deposit (non-custodial) instead of a plain Router address.
     private readonly contractOrders = false,
     // Sale orders (back from BCH through the sale contract) are admitted.
-    private readonly saleOrders = false
+    private readonly saleOrders = false,
+    // Orders may take their first leg through NEAR Intents (api.ts attachSource).
+    readonly nearOrders = false
   ) {
     this.wallet = new PublicWallet(xpub)
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
@@ -251,7 +253,7 @@ export class OrderStore {
     const old = this.get(id)
     if (!old || old.version !== version) return false
     const allowed: Patch = {}
-    for (const name of ['state', 'inboundHash', 'sourceHash', 'funding', 'receivedAt', 'deadline', 'payoutTxid', 'error', 'observedFunding', 'lastCheckedAt', 'observation', 'sourceRefunds'] as const) {
+    for (const name of ['state', 'inboundHash', 'sourceHash', 'funding', 'receivedAt', 'deadline', 'payoutTxid', 'error', 'observedFunding', 'lastCheckedAt', 'observation', 'sourceRefunds', 'nearDepositAddress'] as const) {
       if (Object.hasOwn(patch, name)) Object.assign(allowed, { [name]: patch[name] })
     }
     const order = { ...old, ...allowed, version: version + 1, updatedAt: now }
@@ -417,6 +419,7 @@ export class OrderStore {
       // The customer's own source stays visible; the verified inbound only stands in for a malformed legacy hint.
       sourceHash: sourceTransactionId(order.sourceHash) ?? order.inboundHash,
       inboundHash: order.inboundHash,
+      ...(order.nearDepositAddress && { nearDepositAddress: order.nearDepositAddress }),
       receivedSats: order.funding.reduce((sum, coin) => sum + BigInt(coin.value), 0n).toString(),
       receivedAt: order.receivedAt,
       deadline: order.deadline ?? (order.receivedAt === undefined ? undefined : order.receivedAt + order.maxWaitMs),

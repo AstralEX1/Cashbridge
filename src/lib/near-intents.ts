@@ -96,6 +96,11 @@ export type NearSwapStatus = 'KNOWN_DEPOSIT_TX' | 'PENDING_DEPOSIT' | 'INCOMPLET
 export interface NearStatusResponse {
   status: NearSwapStatus
   updatedAt?: string
+  // The signed quote this deposit address was made for.
+  quoteResponse?: {
+    quoteRequest?: { recipient?: string; refundTo?: string; originAsset?: string; destinationAsset?: string }
+    quote?: { depositAddress?: string; minAmountOut?: string }
+  }
   swapDetails?: {
     amountOut?: string
     depositedAmount?: string
