@@ -327,6 +327,38 @@ test('the route serves only the toolbox endpoints, for configured chains, with c
   assert.equal((await call(['bitcoin', 'dashboards', 'address', btc], { headers: { 'sec-fetch-site': 'cross-site' } })).status, 403)
 })
 
+test('Zcash is read from Blockchair in its own shape, and a used-up quota hands over to the next explorer', async () => {
+  const ZEC = 'https://api.blockchair.com/zcash'
+  const tAddr = 't1Rv4exT7bqhZqi2j7xz8bUHDMxwosrjADU'
+  upstreams({
+    [`${ZEC}/dashboards/transaction/${hashA}`]: json({
+      data: { [hashA]: { transaction: { hash: hashA, block_id: 3_588_844 }, inputs: [], outputs: [{ recipient: tAddr, value: 150_000, script_hex: dogeScript, type: 'pubkeyhash' }, { recipient: '', value: 0, script_hex: memoScript, type: 'nulldata' }] } },
+      context: { code: 200 }
+    }),
+    [`${ZEC}/raw/transaction/${hashA}`]: json({ data: { [hashA]: { raw_transaction: 'deadbeef', decoded_raw_transaction: {} } }, context: { code: 200 } }),
+    [`${ZEC}/dashboards/transaction/${hashB}`]: json({ data: [], context: { code: 200 } }),
+    [`https://zec1.trezor.io/api/v2/tx/${hashB}`]: down(),
+    [`${ZEC}/push/transaction`]: init => json(JSON.parse(init.body).data === '0400' ? { data: { transaction_hash: hashB } } : {})
+  })
+  const { body } = await call(['zcash', 'dashboards', 'transaction', hashA])
+  assert.deepEqual(body.data[hashA], {
+    transaction: { hash: hashA, block_id: 3_588_844 },
+    outputs: [{ recipient: tAddr, value: 150_000, script_hex: dogeScript }, { value: 0, script_hex: memoScript }]
+  })
+  assert.deepEqual(utxoPayout(body, hashA, { destination: tAddr, depositTxid: deposit, buyAsset: 'ZEC.ZEC' }), { hash: hashA, amount: '150000' })
+  assert.deepEqual((await call(['zcash', 'raw', 'transaction', hashA])).body.data, { [hashA]: { raw_transaction: 'deadbeef' } })
+  assert.deepEqual((await call(['zcash', 'dashboards', 'transaction', hashB])).body.data, {}, 'unknown to Blockchair, Trezor down')
+  assert.equal((await call(['zcash', 'push', 'transaction'], { method: 'POST', body: JSON.stringify({ data: '0400' }) })).body.data.transaction_hash, hashB)
+
+  upstreams({
+    [`${ZEC}/dashboards/transaction/${hashA}`]: json({ data: null, context: { code: 402, error: 'Limit exceeded' } }, 402),
+    [`https://zec1.trezor.io/api/v2/tx/${hashA}`]: json({ txid: hashA, blockHeight: 3_000_000, vout: [] })
+  })
+  const fallback = await call(['zcash', 'dashboards', 'transaction', hashA])
+  assert.equal(fallback.status, 200, 'a quota answer is not a bad request')
+  assert.equal(fallback.body.data[hashA].transaction.block_id, 3_000_000)
+})
+
 test('transaction lookups work on the chains that cannot look up addresses', async () => {
   upstreams({ [`https://zec1.trezor.io/api/v2/tx/${hashA}`]: json({ txid: hashA, blockHeight: 3_000_000, vout: [] }) })
   assert.equal((await call(['zcash', 'dashboards', 'transaction', hashA])).body.data[hashA].transaction.block_id, 3_000_000)

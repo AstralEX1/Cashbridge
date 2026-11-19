@@ -3,11 +3,11 @@ import { address, networks, type Network } from 'bitcoinjs-lib'
 import { BCH_PREFIX, decodeTx, RpcError, txidOf, WsRpc } from '@/lib/bch'
 
 // Keyless public explorers behind the Blockchair-shaped routes the UTXO toolbox and this app call
-// (src/app/api/blockchair), in four HTTP dialects: Esplora (mempool.space and its forks), Bitcore,
-// BlockCypher and Blockbook (Trezor's public backends), plus Fulcrum (Electrum servers) for Bitcoin
-// Cash. Each chain lists its explorers in order; a call moves to the next one when an explorer is
-// unreachable, rate-limited or failing, and stops at the first one that answers, including "not
-// found" only once every explorer has said so.
+// (src/app/api/blockchair), in five HTTP dialects: Esplora (mempool.space and its forks), Bitcore,
+// BlockCypher, Blockbook (Trezor's public backends) and Blockchair's own, plus Fulcrum (Electrum
+// servers) for Bitcoin Cash. Each chain lists its explorers in order; a call moves to the next one
+// when an explorer is unreachable, rate-limited or failing, and stops at the first one that answers,
+// including "not found" only once every explorer has said so.
 
 const TIMEOUT_MS = 5_000
 
@@ -52,10 +52,11 @@ async function ask(url: string, init?: RequestInit): Promise<string | null> {
   const text = await res.text()
   if (res.ok) return text
   if (res.status === 404) return null
-  // An HTML page is the explorer's CDN turning this server away (a Cloudflare block page), not the
-  // explorer judging the request, so the next explorer may still answer.
+  // Only a 400 or 422 is the explorer judging the request. Any other 4xx (a quota's 402 or 43x, a
+  // 403, a 429) and any HTML page (a CDN's Cloudflare block page) is about this server's access, so
+  // the next explorer may still answer.
   const page = /^\s*</.test(text) || !!res.headers.get('content-type')?.includes('text/html')
-  if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429 && !page) throw new Rejected(text.slice(0, 300) || `HTTP ${res.status}`)
+  if ((res.status === 400 || res.status === 422) && !page) throw new Rejected(text.slice(0, 300) || `HTTP ${res.status}`)
   throw new Error(`${url} answered ${res.status}${page ? ' with an HTML page' : ''}`)
 }
 
@@ -216,6 +217,33 @@ function blockCypher(coin: string): Explorer {
   }
 }
 
+// Blockchair itself, the dialect this route speaks, so its answers map one to one. Keyless use has a
+// small daily quota per IP, so it serves only the chain no other public explorer answers for.
+function blockchair(slug: string): Explorer {
+  const api = `https://api.blockchair.com/${slug}`
+  // An unknown transaction is `data: []`, as Blockchair answers it.
+  const entry = async (path: string, hash: string) => ((await askJson(`${api}/${path}/${hash}`))?.data ?? {})[hash] ?? null
+  const noAddresses = () => Promise.reject(new Error(`${api} is not asked for addresses`))
+  return {
+    name: api,
+    balance: noAddresses,
+    coins: noAddresses,
+    async tx(hash) {
+      const tx = await entry('dashboards/transaction', hash)
+      if (!tx) return null
+      return {
+        blockId: typeof tx.transaction?.block_id === 'number' && tx.transaction.block_id > 0 ? tx.transaction.block_id : -1,
+        outputs: (tx.outputs ?? []).map((o: { recipient?: string; value: number; script_hex: string }) => ({ recipient: o.recipient || undefined, value: Number(o.value), scriptHex: o.script_hex }))
+      }
+    },
+    rawTx: async hash => (await entry('raw/transaction', hash))?.raw_transaction ?? null,
+    broadcast: async hex => {
+      const answer = await askJson(`${api}/push/transaction`, { method: 'POST', body: JSON.stringify({ data: hex }), headers: { 'content-type': 'application/json' } })
+      return txid(answer?.data?.transaction_hash, api)
+    }
+  }
+}
+
 // Fulcrum: the Electrum protocol over WebSocket, the server kind src/lib/bch.ts checks BCH with. No CDN
 // bot filter sits in front of it, unlike Trezor's Blockbook, which answers the deployed site with a
 // Cloudflare block page. Transactions only: Bitcoin Cash has no address lookups here (cashaddr scripts
@@ -310,7 +338,7 @@ export const UTXO_CHAINS: Record<string, { network?: Network; explorers: Explore
   },
   'bitcoin-cash': { explorers: [fulcrum('wss://bch.imaginary.cash:50004'), fulcrum('wss://bch.loping.net:50004'), blockbook('https://bch1.trezor.io')] },
   dash: { explorers: [blockCypher('dash'), blockbook('https://dash1.trezor.io')] },
-  zcash: { explorers: [blockbook('https://zec1.trezor.io')] }
+  zcash: { explorers: [blockchair('zcash'), blockbook('https://zec1.trezor.io')] }
 }
 
 async function firstAnswer<T>(explorers: Explorer[], run: (explorer: Explorer) => Promise<T | null>): Promise<T | null> {
