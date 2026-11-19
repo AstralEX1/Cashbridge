@@ -35,3 +35,34 @@ cannot pay the BCH anywhere but the recipient and the fallback. An order that re
 If someone expires a coin before the Router acts, the order stops for review. `npm run contract:compile` rebuilds
 `contracts/router-order.json`; `src/lib/router-contract.ts` holds its bytecode, and `test/router-contract.test.mjs` runs it
 in the BCH VM on a real Cauldron trade.
+
+## Sale orders (Cashbridge Router back from BCH)
+
+With `AUTO_BRIDGE_SALE_ORDERS=true` on the Router and `NEXT_PUBLIC_ROUTER_SALES=true` on the site, a token transfer back
+from BCH can also go through the Router. The page quotes the Cauldron sale and the THORChain deposit, then opens an order
+whose deposit is the P2SH20 address of [`contracts/router-sale.cash`](../contracts/router-sale.cash), built from: the
+Router's key for this order, THORChain's BCH vault, the deposit memo (destination asset and address), the user's address
+for anything returned, the minimum BCH from the sale (the Router's quote less its slippage, which the page checks against
+its own quote) and a refund time three hours ahead.
+The page rebuilds the contract from these terms and refuses an order whose deposit is not that contract. The BCH wallet
+signs one transaction: the tokens to that address, with 2,000 sats so the coin can be returned as it came.
+
+A coin can leave the contract in four ways only:
+
+- **sell**, signed by the Router: a Cauldron sale whose output with the coin's own index pays at least the minimum BCH,
+  with no token, back into the same contract.
+- **deposit**, signed by the Router: the contract's BCH, alone in its transaction, to THORChain's vault with the order's
+  memo as the only other output, at most 2,000 sats to the miner. Being the only input makes the contract the sender
+  THORChain refunds.
+- **giveBack**, signed by the Router: each coin back to the user's address with the same token, amount and NFT
+  commitment, at most 2,000 sats to the miner.
+- **expire**, by anyone after the refund time: the same as giveBack.
+
+The Router signs the sale and the deposit together and broadcasts them back to back, so the deposit usually enters the
+mempool right after the sale. If THORChain no longer takes BCH at that vault, the sale cannot meet the minimum before the
+deadline, or the contract gets anything but one coin of the order's token, the coins go back. A THORChain refund that
+comes back to the contract goes on to the user; one paid to the memo's refund address ends the order as it is. The page
+follows the order for the sale and deposit, then finds the payout on the destination chain as for a manual deposit.
+
+`test/router-sale.test.mjs` runs the contract in the BCH VM on a real Cauldron sale, and
+`test/auto-bridge-sale.test.mjs` runs the Router's side against a fake network that VM-checks every broadcast.
