@@ -51,9 +51,9 @@ export const BridgeConfig = {
   // Second-leg price tolerance applied to the fresh Cauldron quote, in basis points (owner: 2% default, 2026-11-18).
   // The router fixes it into an order's minimum when the order is created; existing orders keep theirs.
   pusdSlippageBps: 200,
-  // Transfers back from BCH through the Cashbridge Router's sale contract; on only once the Router admits them
-  // (AUTO_BRIDGE_SALE_ORDERS on the Router).
-  routerSales: process.env.NEXT_PUBLIC_ROUTER_SALES === 'true',
+  // Transfers back from BCH through the Cashbridge Router's sale contract, which the Router admits with
+  // AUTO_BRIDGE_SALE_ORDERS. On by default; NEXT_PUBLIC_ROUTER_SALES=false hides the option.
+  routerSales: process.env.NEXT_PUBLIC_ROUTER_SALES !== 'false',
   cauldronBroadcastUrl: process.env.NEXT_PUBLIC_CAULDRON_BROADCAST_URL || 'https://broadcast.cauldron.quest/broadcast',
   // Cauldron's public pool indexer: the PUSD pools the second leg trades against. Each pool a trade
   // picks is checked unspent on a Fulcrum server first, since the list can lag the chain.
