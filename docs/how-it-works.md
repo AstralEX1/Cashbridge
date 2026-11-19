@@ -14,3 +14,24 @@ Forward: source wallet → THORChain → BCH in the user's BCH wallet → option
 6. Signed attempts are recorded before broadcast. Unknown replies reconcile/replay identical bytes. A mempool payout gives a provisional exact receipt; finality requires at least six confirmations. The UI can recover from local history in either execution mode.
 
 Automatic means fewer user signing steps; there are still several on-chain transactions and temporary service control of BCH. It does not make the bridge atomic or guarantee a PUSD payout.
+
+## Contract orders (Cashbridge Router without custody)
+
+With `AUTO_BRIDGE_CONTRACT_ORDERS=true` on the Router, a new order's deposit is not an address the Router holds keys for but
+the P2SH20 address of [`contracts/router-order.cash`](../contracts/router-order.cash), built from the order's terms: the
+Router's key for this order, the PUSD recipient, the BCH fallback, the quoted minimum PUSD and a refund time three hours
+after the order is created. THORChain pays the BCH there (it pays only 20-byte script hashes; a P2SH32 destination fails
+its address check). A coin can leave in three ways only, each checked against the output with the coin's own index:
+
+- **convert**, signed by the Router: a Cauldron trade that pays the recipient at least the quoted minimum PUSD. It is the
+  same trade as before, with the contract's input in place of the Router's.
+- **giveBack**, signed by the Router: the BCH back to the fallback, at most 2,000 sats to the miner.
+- **expire**, by anyone after the refund time: the same as giveBack, so nothing stays stuck if the Router stops.
+
+The order the browser receives carries the Router key and the refund time. The browser rebuilds the contract from them and the
+addresses and minimum it asked for, and refuses an order whose deposit is not that contract. The Router still chooses when
+to act (until the refund time) and which trade to make, so between the quoted minimum and the best price it is trusted; it
+cannot pay the BCH anywhere but the recipient and the fallback. An order that receives more than one coin goes back as BCH.
+If someone expires a coin before the Router acts, the order stops for review. `npm run contract:compile` rebuilds
+`contracts/router-order.json`; `src/lib/router-contract.ts` holds its bytecode, and `test/router-contract.test.mjs` runs it
+in the BCH VM on a real Cauldron trade.
