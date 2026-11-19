@@ -381,3 +381,53 @@ test('Fulcrum servers: the configured ones first, then the public ones, without 
     else process.env.AUTO_BRIDGE_FULCRUM_URL = previous
   }
 })
+
+test('history asks the next Fulcrum server when one cannot be reached and keeps the failing one last for a minute', async () => {
+  const names = ['BCHN_RPC_CONFIG_FILE', 'BCHN_RPC_COOKIE_FILE', 'BCHN_RPC_URL', 'AUTO_BRIDGE_FULCRUM_URL']
+  const previous = names.map(name => [name, process.env[name]])
+  const originalSocket = globalThis.WebSocket
+  const opened = []
+  class FakeSocket {
+    static OPEN = 1
+    readyState = 0
+    constructor(url) {
+      opened.push(new URL(url).hostname)
+      setTimeout(() => {
+        // Only the labelled-up host answers; others (including merged public Electrum URLs) stay down for this test.
+        if (url.includes('up.example')) {
+          this.readyState = 1
+          this.onopen?.()
+        } else this.onerror?.()
+      }, 0)
+    }
+    send(data) {
+      const { id } = JSON.parse(data)
+      setTimeout(() => this.onmessage?.({ data: JSON.stringify({ id, result: [{ tx_hash: 'AB'.repeat(32), height: 1 }] }) }), 0)
+    }
+    close() {
+      this.readyState = 3
+      this.onclose?.()
+    }
+  }
+  delete process.env.BCHN_RPC_CONFIG_FILE
+  delete process.env.BCHN_RPC_COOKIE_FILE
+  process.env.BCHN_RPC_URL = 'http://127.0.0.1:8332'
+  globalThis.WebSocket = FakeSocket
+  try {
+    process.env.AUTO_BRIDGE_FULCRUM_URL = ' wss://down.example:50004 , wss://up.example:443 ,'
+    const gateway = new BchGateway()
+    assert.deepEqual(await gateway.history('51'), ['ab'.repeat(32)])
+    assert.deepEqual(opened.slice(0, 2), ['down.example', 'up.example'])
+    opened.length = 0
+    assert.deepEqual(await gateway.history('51'), ['ab'.repeat(32)])
+    assert.deepEqual(opened, ['up.example'])
+    process.env.AUTO_BRIDGE_FULCRUM_URL = 'wss://down.example:50004,wss://down2.example:443'
+    await assert.rejects(new BchGateway().history('51'), /Could not connect/)
+  } finally {
+    globalThis.WebSocket = originalSocket
+    for (const [name, value] of previous) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  }
+})

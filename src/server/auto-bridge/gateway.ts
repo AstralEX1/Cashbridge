@@ -31,7 +31,8 @@ const INDEX_PROBE = 'f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831
 
 export class BchGateway implements Gateway {
   private readonly nodes: RpcNode[]
-  readonly fulcrums: string[]
+  // Configured Fulcrum URLs first, then the app's public ones; a failing server is asked last for COOLDOWN_MS (same idea as RPC nodes).
+  private readonly electrumServers: { url: string; downUntil: number }[]
   private readonly thornode: URL
   constructor() {
     try {
@@ -61,8 +62,16 @@ export class BchGateway implements Gateway {
       throw new Error('Invalid BCH RPC configuration or credential file')
     }
     // The configured Fulcrum servers (comma-separated) first, then the app's public ones, so one server down does not stall orders.
-    this.fulcrums = [...new Set([...(process.env.AUTO_BRIDGE_FULCRUM_URL ?? 'ws://127.0.0.1:50003').split(','), ...BridgeConfig.electrumUrls].map(url => url.trim()).filter(Boolean))]
+    this.electrumServers = [
+      ...new Set(
+        [...(process.env.AUTO_BRIDGE_FULCRUM_URL ?? 'ws://127.0.0.1:50003').split(','), ...BridgeConfig.electrumUrls].map(url => url.trim()).filter(Boolean)
+      ),
+    ].map(url => ({ url, downUntil: 0 }))
     this.thornode = new URL(process.env.THORNODE_URL ?? 'https://gateway.liquify.com/chain/thorchain_api/')
+  }
+
+  get fulcrums() {
+    return this.electrumServers.map(server => server.url)
   }
 
   private async rpcAt<T>(node: RpcNode, method: string, params: unknown[]): Promise<T> {
@@ -147,13 +156,17 @@ export class BchGateway implements Gateway {
 
   private async electrum<T>(method: string, params: unknown[]): Promise<T> {
     let lastError: unknown
-    for (const url of this.fulcrums) {
-      const rpc = new WsRpc(url)
+    const now = Date.now()
+    for (const server of [...this.electrumServers].sort((a, b) => Number(a.downUntil > now) - Number(b.downUntil > now))) {
+      const rpc = new WsRpc(server.url)
       try {
         await rpc.open()
-        return await rpc.request<T>(method, params)
+        const answer = await rpc.request<T>(method, params)
+        server.downUntil = 0
+        return answer
       } catch (error) {
         lastError = error
+        server.downUntil = Date.now() + COOLDOWN_MS
       } finally {
         rpc.close()
       }
