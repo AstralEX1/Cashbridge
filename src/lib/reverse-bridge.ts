@@ -79,6 +79,17 @@ export const broadcastSale = async (uid: string, signedHex: string, txid: string
   }
 }
 
+// The tokens sent to a Cashbridge Router order's sale contract. Only a definite refusal with the coins still in the
+// wallet ends the operation; an unknown outcome is sent again by the tracker.
+export const broadcastRouterSend = async (uid: string, signedHex: string, txid: string, update: Update) => {
+  try {
+    await broadcastBchTransaction(signedHex, txid)
+  } catch (error) {
+    if (error instanceof BroadcastRejected && (await rejectedFundingIntact(uid, signedHex, txid).catch(() => false)))
+      update(uid, op => (op.reverse?.router?.sendTxid === txid ? { stage: 'failed', error: `The transfer was rejected: ${error.message}. Nothing was sent.` } : {}))
+  }
+}
+
 export const broadcastDeposit = async (uid: string, signedHex: string, txid: string, update: Update) => {
   try {
     await broadcastBchTransaction(signedHex, txid)
