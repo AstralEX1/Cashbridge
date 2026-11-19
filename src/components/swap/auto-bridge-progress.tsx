@@ -27,6 +27,7 @@ import {
   WaitingButton
 } from '@/components/swap/pusd-swap'
 import { useAutomaticHydrated } from '@/hooks/use-automatic-bridge'
+import { nearExplorerUrl } from '@/lib/near-intents'
 import { useAssets } from '@/hooks/use-assets'
 import { useRates } from '@/hooks/use-rates'
 import { formatAmount, formatMinutes, PUSD_LEG_SECONDS } from '@/lib/bridge-summary'
@@ -144,7 +145,7 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
         ? tb('progress.seconds', { seconds: label.value })
         : tb('progress.elapsedTime', { time: label.value })
   }
-  const bridgeHref = sourceHash ? thorchainTxUrl(sourceHash) : undefined
+  const bridgeHref = order?.nearDepositAddress ? nearExplorerUrl(order.nearDepositAddress) : sourceHash ? thorchainTxUrl(sourceHash) : undefined
   const payoutHref = order?.settlement?.seen ? chainTxUrl(Chain.BitcoinCash, order.settlement.txid) : undefined
   const firstBar: FlowBar = firstDone
     ? { fill: 1, done: true, href: bridgeHref }
@@ -211,7 +212,8 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
   ].filter(item => !dismissed.includes(item.id)).reverse()
 
   const close = () => onOpenChange(false)
-  const hashMissing = !!reference?.sourceAttempted && !order?.sourceHash && !order?.inboundHash && !receipt
+  // A NEAR Intents order is found by its deposit address, so it never needs the hash typed in.
+  const hashMissing = !!reference?.sourceAttempted && !order?.sourceHash && !order?.inboundHash && !order?.nearDepositAddress && !receipt
   // The service does the rest once the source hash is known; nothing more is asked of the user.
   const handsOff = !!order && !terminal && !draft && !hashMissing && !order.recoveryRequired
   const waiting = order && ['retrying', 'broadcasting', 'awaiting_confirmations'].includes(order.state)

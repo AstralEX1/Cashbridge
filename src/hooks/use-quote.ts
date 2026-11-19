@@ -54,9 +54,9 @@ export const useQuote = (): UseQuote => {
   const sellAsset = reverse ? BridgeConfig.buyAsset : assetFrom?.identifier
   const buyAsset = reverse ? assetFrom?.identifier : assetTo?.identifier
   const sellAmount = reverse && bchToken ? sale.bridgeAmount : valueFrom.eqValue(0) ? undefined : valueFrom.toSignificant()
-  // NEAR Intents carries manual transfers both ways; the Cashbridge Router stays on THORChain.
+  // NEAR Intents carries manual transfers both ways, and the Cashbridge Router's forward ones when switched on.
   const { automatic } = useAutomaticBridge()
-  const nearAllowed = BridgeConfig.nearIntents && !automatic && !isPrivateSwap
+  const nearAllowed = BridgeConfig.nearIntents && (!automatic || (BridgeConfig.routerNear && !reverse)) && !isPrivateSwap
   const choice = useSwapStore(state => state.routeChoice)
 
   const queryKey = [

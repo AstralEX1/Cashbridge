@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Chain, FeeOption, USwapNumber } from '@tcswap/core'
-import type { ProviderName } from '@tcswap/helpers'
+import { ProviderName } from '@tcswap/helpers'
 import type { QuoteResponseRoute } from '@tcswap/helpers/api'
 import { useTranslations } from 'next-intl'
 import { LoaderCircle } from 'lucide-react'
@@ -25,6 +25,7 @@ import { toBaseUnits } from '@/lib/bridge'
 import { firstLegSeconds } from '@/lib/bridge-summary'
 import { getQuotes, isBridgeRoute } from '@/lib/api'
 import { assertAutomaticSaved, createAutomaticOrder, orderRequest, RouterUnavailableError, startAutomaticSource } from '@/lib/auto-bridge-client'
+import { getNearQuote, isNearRoute, nearSlippageBps, submitNearDeposit } from '@/lib/near-intents'
 import { getUSwap } from '@/lib/wallets'
 import { resolvePriceImpact } from '@/lib/swap-helpers'
 import { autoBridgeStore, type SavedAutoOrder } from '@/store/auto-bridge-store'
@@ -66,25 +67,41 @@ export const prepareAutomatic = async ({
   if (token.category !== BridgeConfig.pusd.category) intent.category = token.category
   const reusable = autoBridgeStore
     .getState()
-    .orders.find(ref => !ref.sourceAttempted && sameIntent(ref.intent, intent) && (!ref.order || (ref.order.state === 'awaiting_deposit' && !ref.order.sourceHash)))
+    .orders.find(ref => !ref.sourceAttempted && sameIntent(ref.intent, intent) && (!ref.order || (ref.order.state === 'awaiting_deposit' && !ref.order.sourceHash && !ref.order.nearDepositAddress)))
   const ref: SavedAutoOrder = reusable ?? { id: crypto.randomUUID(), capability: (crypto.randomUUID() + crypto.randomUUID()).replaceAll('-', ''), createdAt: Date.now(), intent, token }
   autoBridgeStore.getState().save(ref)
   assertAutomaticSaved(ref)
   const order = ref.order ?? (await createAutomaticOrder(ref))
   if (order.apiVersion !== 2 || order.recoveryRequired) throw new Error(messages.serviceUpdate)
   autoBridgeStore.getState().patch(ref.id, { order })
-  const quotes = await getQuotes({
-    buyAsset: BridgeConfig.buyAsset,
-    sellAsset: source.asset,
-    sellAmount: source.amount,
-    sourceAddress: source.address,
-    destinationAddress: order.depositAddress,
-    refundAddress: source.address,
-    dry: false,
-    slippage: slippage ?? 99,
-    providers: AppConfig.providers
-  })
-  const route = quotes.find(q => q.providers[0] === provider) ?? quotes[0]
+  let route: QuoteResponseRoute | undefined
+  if (provider === ProviderName.NEAR) {
+    // 1Click pays the order's plain address; a contract order's 32-byte p… address stays on THORChain.
+    if (order.contract) throw new Error(messages.noRoute)
+    route = await getNearQuote({
+      sellAsset: source.asset,
+      buyAsset: BridgeConfig.buyAsset,
+      sellAmount: source.amount,
+      sourceAddress: source.address,
+      recipient: order.depositAddress,
+      refundTo: source.address,
+      dry: false,
+      slippageBps: nearSlippageBps(slippage)
+    })
+  } else {
+    const quotes = await getQuotes({
+      buyAsset: BridgeConfig.buyAsset,
+      sellAsset: source.asset,
+      sellAmount: source.amount,
+      sourceAddress: source.address,
+      destinationAddress: order.depositAddress,
+      refundAddress: source.address,
+      dry: false,
+      slippage: slippage ?? 99,
+      providers: AppConfig.providers
+    })
+    route = quotes.find(q => q.providers[0] === provider) ?? quotes[0]
+  }
   if (!route || !isBridgeRoute(route, { sellAsset: source.asset, destinationAddress: order.depositAddress }) || !new USwapNumber(route.sellAmount).eqValue(source.amount))
     throw new Error(messages.noRoute)
   return { reference: { ...ref, order }, route }
@@ -135,8 +152,15 @@ export const AutoBridgeDialog = ({ prepared, isOpen, onOpenChange }: Props) => {
       if (latest.apiVersion !== 2 || latest.recoveryRequired) throw new Error(t('serviceUpdate'))
       if (latest.minPusd !== order.minPusd || latest.depositAddress !== order.depositAddress) throw new Error(t('changed'))
       autoBridgeStore.getState().patch(reference.id, { order: latest, estimatedSeconds: firstLegSeconds(route.estimatedTime) })
+      // The Router learns the NEAR deposit address before the wallet sends, so it finds the payout even if this tab closes.
+      const near = isNearRoute(route) ? route.near.quote.depositAddress : undefined
+      if (near) {
+        const noted = await orderRequest(reference, 'POST', { nearDepositAddress: near })
+        if (noted.nearDepositAddress !== near) throw new Error(t('changed'))
+        autoBridgeStore.getState().patch(reference.id, { order: noted })
+      }
       const executable = from?.chain === Chain.Tron && route.expiration ? { ...route, expiration: undefined } : route
-      await startAutomaticSource(
+      const hash = await startAutomaticSource(
         reference,
         route,
         source.asset,
@@ -144,6 +168,7 @@ export const AutoBridgeDialog = ({ prepared, isOpen, onOpenChange }: Props) => {
         hash => orderRequest(reference, 'POST', { sourceHash: hash }),
         () => mounted.current
       )
+      if (near) void submitNearDeposit(near, hash)
       toast.success(tSwap('toast.transactionSubmitted'))
       setAmountFrom('')
       onOpenChange(false)
