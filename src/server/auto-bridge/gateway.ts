@@ -8,6 +8,7 @@ import { ONE_CLICK_URL, type NearStatusResponse } from '@/lib/near-intents'
 import type { Attempt } from '@/server/auto-bridge/types'
 import type { Gateway } from '@/server/auto-bridge/worker'
 import { readCredential } from '@/server/auto-bridge/config'
+import { BridgeConfig } from '@/config'
 import { sourceTransactionId } from '@/lib/source-transaction'
 
 class NodeError extends Error {
@@ -30,7 +31,7 @@ const INDEX_PROBE = 'f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831
 
 export class BchGateway implements Gateway {
   private readonly nodes: RpcNode[]
-  private readonly fulcrum: string
+  readonly fulcrums: string[]
   private readonly thornode: URL
   constructor() {
     try {
@@ -59,7 +60,8 @@ export class BchGateway implements Gateway {
     } catch {
       throw new Error('Invalid BCH RPC configuration or credential file')
     }
-    this.fulcrum = process.env.AUTO_BRIDGE_FULCRUM_URL ?? 'ws://127.0.0.1:50003'
+    // The configured Fulcrum servers (comma-separated) first, then the app's public ones, so one server down does not stall orders.
+    this.fulcrums = [...new Set([...(process.env.AUTO_BRIDGE_FULCRUM_URL ?? 'ws://127.0.0.1:50003').split(','), ...BridgeConfig.electrumUrls].map(url => url.trim()).filter(Boolean))]
     this.thornode = new URL(process.env.THORNODE_URL ?? 'https://gateway.liquify.com/chain/thorchain_api/')
   }
 
@@ -144,13 +146,19 @@ export class BchGateway implements Gateway {
   }
 
   private async electrum<T>(method: string, params: unknown[]): Promise<T> {
-    const rpc = new WsRpc(this.fulcrum)
-    try {
-      await rpc.open()
-      return await rpc.request<T>(method, params)
-    } finally {
-      rpc.close()
+    let lastError: unknown
+    for (const url of this.fulcrums) {
+      const rpc = new WsRpc(url)
+      try {
+        await rpc.open()
+        return await rpc.request<T>(method, params)
+      } catch (error) {
+        lastError = error
+      } finally {
+        rpc.close()
+      }
     }
+    throw lastError
   }
 
   async history(script: string) {

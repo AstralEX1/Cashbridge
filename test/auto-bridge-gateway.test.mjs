@@ -339,3 +339,14 @@ test('readiness refuses a synchronized node that cannot look up confirmed transa
     assert.deepEqual(calls, ['indexed.example getblockchaininfo', 'indexed.example getrawtransaction', 'indexed.example getblockchaininfo'])
   })
 })
+
+test('Fulcrum servers: the configured ones first, then the public ones, without repeats', () => {
+  const previous = process.env.AUTO_BRIDGE_FULCRUM_URL
+  process.env.AUTO_BRIDGE_FULCRUM_URL = 'wss://bch.imaginary.cash:50004, ws://127.0.0.1:50003'
+  try {
+    assert.deepEqual(new BchGateway().fulcrums, ['wss://bch.imaginary.cash:50004', 'ws://127.0.0.1:50003', 'wss://bch.loping.net:50004'])
+  } finally {
+    if (previous === undefined) delete process.env.AUTO_BRIDGE_FULCRUM_URL
+    else process.env.AUTO_BRIDGE_FULCRUM_URL = previous
+  }
+})

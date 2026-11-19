@@ -66,7 +66,7 @@ export const BridgeConfig = {
   // the second leg trades against. Empty turns the feed off and uses the indexer alone.
   rostrumUrls: (process.env.NEXT_PUBLIC_CAULDRON_ROSTRUM_URLS ?? 'wss://rostrum.riften.net:443,wss://rostrum.cauldron.quest:50004').split(',').map(u => u.trim()).filter(Boolean),
   // Fulcrum (Electrum protocol) servers used to verify BCH transactions and unspent outputs.
-  electrumUrls: (process.env.NEXT_PUBLIC_BCH_ELECTRUM_URLS || 'wss://bch.imaginary.cash:50004').split(',').map(u => u.trim()).filter(Boolean),
+  electrumUrls: (process.env.NEXT_PUBLIC_BCH_ELECTRUM_URLS || 'wss://bch.imaginary.cash:50004,wss://bch.loping.net:50004').split(',').map(u => u.trim()).filter(Boolean),
   // WalletConnect (Reown) project ID for BCH wallets that speak WalletConnect v2 (Paytaca, Cashonize).
   // Public by design (it ships in the page); the default is Cash Bridge's own project, which only
   // accepts cashbridge.space origins. An empty env value hides the option, leaving WizardConnect alone.
