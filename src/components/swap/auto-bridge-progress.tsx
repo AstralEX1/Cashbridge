@@ -44,10 +44,11 @@ export const AutomaticHistoryRow = ({ reference }: { reference: SavedAutoOrder }
   const t = useTranslations('automatic')
   const { openDialog } = useDialog()
   const order = reference.order
-  const receipt = order && automaticCompletion(order)
+  const token = reference.token ?? PUSD_TOKEN
+  const receipt = order && automaticCompletion(order, token)
   const draft = !reference.sourceAttempted && !order?.sourceHash && order?.state === 'awaiting_deposit'
   return <button type="button" className="bridge-auto-history" onClick={() => openDialog(AutomaticOrderDialog, { id: reference.id })}>
-    <span><strong>{t('automatic')} · PUSD</strong><small>{t(draft ? 'draft' : order ? `states.${order.state}` : 'restoring')}</small></span>
+    <span><strong>{t('automatic')} · {token.ticker}</strong><small>{t(draft ? 'draft' : order ? `states.${order.state}` : 'restoring')}</small></span>
     <span>{receipt ? `${receipt.amount} ${receipt.ticker}` : t('viewTransfer')}<ExternalLink size={14} aria-hidden="true" /></span>
   </button>
 }
@@ -94,6 +95,7 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
   const tb = useTranslations('bridge')
   const { openDialog } = useDialog()
   const reference = autoBridgeStore(state => state.orders.find(order => order.id === id))
+  const token = reference?.token ?? PUSD_TOKEN
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [hint, setHint] = useState('')
   const [dismissed, setDismissed] = useState<string[]>([])
   const [now, setNow] = useState(Date.now())
@@ -113,8 +115,8 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
   const receivedSats = order && /^[1-9]\d*$/.test(order.receivedSats) ? BigInt(order.receivedSats) : 0n
   const expectedSats = reference?.intent?.expectedBchSats ?? order?.expectedBchSats
   const bchSats = receivedSats > 0n ? receivedSats : expectedSats && /^\d+$/.test(expectedSats) ? BigInt(expectedSats) : undefined
-  const receipt = order && automaticCompletion(order)
-  const estimate = useTokenQuoteFor(bchSats !== undefined && !receipt ? formatBaseUnits(bchSats, 8) : undefined, PUSD_TOKEN)
+  const receipt = order && automaticCompletion(order, token)
+  const estimate = useTokenQuoteFor(bchSats !== undefined && !receipt ? formatBaseUnits(bchSats, 8) : undefined, token)
   const firstDone = !!order && (!!order.receivedAt || !!order.bchReceipts?.length) && !BCH_STAGES.includes(order.state)
   const terminal = !!order && isTerminal(order.state)
   const animateCollapse = useCollapseOnce(id, firstDone && !!order && order.state !== 'source_refunded')
@@ -167,7 +169,7 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
   const bchAmount = bchSats === undefined ? undefined : Number(bchSats) / 1e8
   const leg = estimate.quote
   const pusdUnits = order?.settlement?.seen && order.settlement.kind === 'swap' ? BigInt(order.settlement.pusdAmount || '0') : leg?.output
-  const pusdAmount = pusdUnits === undefined ? undefined : Number(pusdUnits) / 10 ** PUSD_TOKEN.decimals
+  const pusdAmount = pusdUnits === undefined ? undefined : Number(pusdUnits) / 10 ** token.decimals
   const ticker = asset?.ticker ?? source?.asset.split('.')[1]?.split('-')[0] ?? ''
   const sent: FlowToken = {
     amount: source?.amount ?? '—',
@@ -181,12 +183,12 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
     usd: usdText(bchAmount !== undefined && bchUsd ? bchAmount * bchUsd : undefined),
     icon: <BchMark size={30} />
   }
-  const pusdUsd = leg && bchUsd && leg.spotOutput > 0 ? ((Number(leg.sell) / 1e8) * bchUsd) / (leg.spotOutput / 10 ** PUSD_TOKEN.decimals) : undefined
+  const pusdUsd = leg && bchUsd && leg.spotOutput > 0 ? ((Number(leg.sell) / 1e8) * bchUsd) / (leg.spotOutput / 10 ** token.decimals) : undefined
   const final: FlowToken = {
     amount: pusdAmount === undefined ? '—' : `${receipt ? '' : '≈ '}${formatAmount(pusdAmount, 4)}`,
-    ticker: PUSD_TOKEN.ticker,
+    ticker: token.ticker,
     usd: usdText(pusdAmount !== undefined && pusdUsd ? pusdAmount * pusdUsd : undefined),
-    icon: <TokenMark token={PUSD_TOKEN} size={30} />
+    icon: <TokenMark token={token} size={30} />
   }
 
   const receiptTxids = [...new Set((order?.bchReceipts ?? []).map(item => item.txid))]
@@ -200,7 +202,7 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
           id: `payout:${order.settlement.txid}`,
           title: order.settlement.kind === 'refund'
             ? t('toastRefund', { confirmations: order.settlement.confirmations })
-            : tb('progress.toastPusdReceived', { ticker: PUSD_TOKEN.ticker, confirmations: order.settlement.confirmations }),
+            : tb('progress.toastPusdReceived', { ticker: token.ticker, confirmations: order.settlement.confirmations }),
           hash: order.settlement.txid,
           chain: Chain.BitcoinCash,
           icon: order.settlement.kind === 'refund' ? bch.icon : final.icon
@@ -232,7 +234,7 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
     ? <GenericButton className="bridge-flow-primary is-active w-full" onClick={close}>{tb('progress.done')}</GenericButton>
     : firstDone
       ? <WaitingButton>{tb('progress.swapping')}</WaitingButton>
-      : <WaitingButton>{tb('progress.swapAction', { ticker: PUSD_TOKEN.ticker })}</WaitingButton>
+      : <WaitingButton>{tb('progress.swapAction', { ticker: token.ticker })}</WaitingButton>
   const title = receipt ? tb('progress.completeTitle') : firstDone ? tb('progress.swapping') : tb('progress.processing')
 
   return <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -253,7 +255,7 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
         details={details}
         actions={actions}
         completion={receipt && order ? {
-          received: { amount: receipt.amount, ticker: receipt.ticker, icon: receipt.refund ? <BchMark size={48} /> : <TokenMark token={PUSD_TOKEN} size={48} /> },
+          received: { amount: receipt.amount, ticker: receipt.ticker, icon: receipt.refund ? <BchMark size={48} /> : <TokenMark token={token} size={48} /> },
           transactions: automaticTransactions(order),
           liquidityCategory: BridgeConfig.pusd.category,
           additionalReceived: receipt.change ? [{ amount: receipt.change, ticker: 'BCH', icon: <BchMark size={14} /> }] : undefined,

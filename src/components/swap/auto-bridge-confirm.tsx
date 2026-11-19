@@ -16,7 +16,7 @@ import { SwapAddressWarning } from '@/components/swap/swap-address-warning'
 import { useDialog } from '@/components/global-dialog'
 import { AutomaticOrderDialog } from '@/components/swap/auto-bridge-progress'
 import { chainLabel } from '@/components/connect-wallet/config'
-import { PUSD_TOKEN } from '@/lib/cauldron-tokens'
+import { PUSD_TOKEN, type CauldronToken } from '@/lib/cauldron-tokens'
 import { useAssetFrom, useSwap } from '@/hooks/use-swap'
 import { useSwapRates } from '@/hooks/use-rates'
 import { AppConfig, BridgeConfig } from '@/config'
@@ -36,7 +36,7 @@ export interface PreparedAutomatic {
 }
 
 const sameIntent = (a: OrderIntent | undefined, b: OrderIntent) =>
-  !!a && JSON.stringify(a.source) === JSON.stringify(b.source) && a.recipientAddress === b.recipientAddress && a.refundAddress === b.refundAddress
+  !!a && JSON.stringify(a.source) === JSON.stringify(b.source) && a.recipientAddress === b.recipientAddress && a.refundAddress === b.refundAddress && a.category === b.category
 
 // Runs behind the main button's "Preparing swap": saves the order reference (before any request, so a
 // lost answer is recoverable), creates the order and takes an executable quote to its deposit
@@ -44,6 +44,7 @@ const sameIntent = (a: OrderIntent | undefined, b: OrderIntent) =>
 // fallback is the recipient itself.
 export const prepareAutomatic = async ({
   source,
+  token,
   recipient,
   expectedBuyAmount,
   provider,
@@ -51,6 +52,8 @@ export const prepareAutomatic = async ({
   messages
 }: {
   source: AutomaticSource
+  // The Cauldron token the Router buys.
+  token: CauldronToken
   recipient: string
   expectedBuyAmount: string
   provider: ProviderName
@@ -59,10 +62,12 @@ export const prepareAutomatic = async ({
 }): Promise<PreparedAutomatic> => {
   if (bchAddressProblem(recipient, true)) throw new Error(messages.invalidAddress)
   const intent: OrderIntent = { recipientAddress: recipient, refundAddress: recipient, source, expectedBchSats: toBaseUnits(expectedBuyAmount, 8).toString() }
+  // PUSD orders leave the category out, so a Router that only knows PUSD still accepts them.
+  if (token.category !== BridgeConfig.pusd.category) intent.category = token.category
   const reusable = autoBridgeStore
     .getState()
     .orders.find(ref => !ref.sourceAttempted && sameIntent(ref.intent, intent) && (!ref.order || (ref.order.state === 'awaiting_deposit' && !ref.order.sourceHash)))
-  const ref: SavedAutoOrder = reusable ?? { id: crypto.randomUUID(), capability: (crypto.randomUUID() + crypto.randomUUID()).replaceAll('-', ''), createdAt: Date.now(), intent }
+  const ref: SavedAutoOrder = reusable ?? { id: crypto.randomUUID(), capability: (crypto.randomUUID() + crypto.randomUUID()).replaceAll('-', ''), createdAt: Date.now(), intent, token }
   autoBridgeStore.getState().save(ref)
   assertAutomaticSaved(ref)
   const order = ref.order ?? (await createAutomaticOrder(ref))
@@ -153,7 +158,7 @@ export const AutoBridgeDialog = ({ prepared, isOpen, onOpenChange }: Props) => {
   return (
     <Credenza open={isOpen} onOpenChange={onOpenChange}>
       <CredenzaContent className="bridge-confirm-dialog flex h-auto max-h-5/6 flex-col md:max-w-[620px]">
-        <BridgeConfirm quote={route} token={PUSD_TOKEN} bchAddress={order.recipientAddress} automatic={{ minPusd: order.minPusd, refundAddress: order.refundAddress, contract: !!order.contract }} />
+        <BridgeConfirm quote={route} token={reference.token ?? PUSD_TOKEN} bchAddress={order.recipientAddress} automatic={{ minPusd: order.minPusd, refundAddress: order.refundAddress, contract: !!order.contract }} />
         <div className="space-y-3 p-4 pt-2 md:px-7 md:pb-7">
           {needsLtc && <SwapAddressWarning checked={acceptedLtc} onCheckedChange={setAcceptedLtc} text={t('ltcWarning')} />}
           {needsImpact && <SwapAddressWarning checked={acceptedImpact} onCheckedChange={setAcceptedImpact} text={t('highImpact')} />}

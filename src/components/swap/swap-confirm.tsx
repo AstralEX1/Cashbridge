@@ -130,19 +130,19 @@ export const BridgeConfirm = ({ quote, token, bchAddress, automatic }: BridgeCon
               <div className="bridge-confirm-received">
                 <div className="bridge-confirm-amount">
                   <strong className={pusdPending ? 'bridge-muted animate-pulse' : undefined}>
-                    {automatic ? formatBaseUnits(automatic.minPusd, 2) : received === undefined ? '···' : `${pusd ? '≈ ' : ''}${formatAmount(received)}`}
+                    {automatic ? formatBaseUnits(automatic.minPusd, token?.decimals ?? 2) : received === undefined ? '···' : `${pusd ? '≈ ' : ''}${formatAmount(received)}`}
                   </strong>
                   {token ? <CauldronTokenMark token={token} /> : <BchMark />}
                 </div>
                 <span>
-                  {automatic ? tAuto('minimumLabel') : t('on', { ticker: receivedTicker, chain: 'Bitcoin Cash' })}
+                  {automatic ? tAuto('minimumLabel', { ticker: receivedTicker }) : t('on', { ticker: receivedTicker, chain: 'Bitcoin Cash' })}
                   {!automatic && !pusdPending && summary.receivedUsd !== undefined ? ` · ${usd(summary.receivedUsd)}` : ''}
                 </span>
               </div>
             </div>
             {pusdQuote.error && <p className="bridge-confirm-note">{t('pusdUnavailable', { ticker: receivedTicker })}</p>}
             {automatic && <div className="bridge-confirm-note">
-              <p>{tAuto(automatic.contract ? 'contractCustody' : 'custody')}</p>
+              <p>{tAuto(automatic.contract ? 'contractCustody' : 'custody', { ticker: receivedTicker })}</p>
               <p title={automatic.refundAddress}>{tAuto('fallback', { address: shortBridgeAddress(automatic.refundAddress) })}</p>
             </div>}
           </section>

@@ -1,12 +1,15 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import type { OrderIntent, PublicOrder } from '@/lib/auto-bridge-contract'
+import type { CauldronToken } from '@/lib/cauldron-tokens'
 
 export interface SavedAutoOrder {
   id: string
   capability: string
   createdAt?: number
   intent?: OrderIntent
+  // The token being bought, for display; the order itself has only its category.
+  token?: CauldronToken
   sourceAttempted?: boolean
   sourceHash?: string
   order?: PublicOrder

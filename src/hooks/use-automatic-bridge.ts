@@ -1,5 +1,4 @@
 import { useBchWallet } from '@/components/bch-wallet'
-import { BridgeConfig } from '@/config'
 import { automaticEligible } from '@/lib/auto-bridge-contract'
 import { bchAddressProblem, bindingFromAddress } from '@/lib/bch'
 import { automaticPreference } from '@/store/auto-bridge-store'
@@ -10,7 +9,7 @@ const noSubscribe = () => () => {}
 export const useAutomaticHydrated = () => useSyncExternalStore(noSubscribe, () => true, () => false)
 
 // The Cashbridge Router toggle covers the forward routes that need no BCH signature from the user:
-// PUSD (the service swaps it) and plain BCH (nothing to swap). Only PUSD changes how it executes.
+// a Cauldron token (the service buys it) and plain BCH (nothing to swap). Only a token changes how it executes.
 export const useAutomaticBridge = () => {
   const reverse = useSwapStore(state => state.reverse)
   const token = useSwapStore(state => state.bchToken)
@@ -18,14 +17,14 @@ export const useAutomaticBridge = () => {
   const address = automaticPreference(state => state.recipient)
   const wallet = useBchWallet()
   const hydrated = useAutomaticHydrated()
-  const eligible = automaticEligible(reverse, token?.category, BridgeConfig.pusd.category)
+  const eligible = automaticEligible(reverse, token?.category)
   const plainBch = !reverse && token === null
   const routerAvailable = eligible || plainBch
   const automatic = hydrated && eligible && mode === 'automatic'
   // Both routes can pay a pasted address instead of the connected wallet.
   const pasteAllowed = automatic || plainBch
   const pasted = pasteAllowed ? address.trim() : ''
-  // PUSD is a CashToken: on the router's PUSD route a pasted address has to be token-aware.
+  // On the Router's token route a pasted address has to be token-aware.
   const pastedProblem = pasted ? bchAddressProblem(pasted, automatic) : undefined
   return {
     eligible,
@@ -36,6 +35,7 @@ export const useAutomaticBridge = () => {
     pasteAllowed,
     pasted,
     pastedProblem,
+    token,
     recipient: pasted || wallet.binding?.tokenAddress || ''
   }
 }
