@@ -160,7 +160,7 @@ test('the public scanner feed lists paid orders from the worker without addresse
   }
 })
 
-test('a NEAR Intents deposit address is noted once, before the source hash, only when the Router takes NEAR orders', async () => {
+test('a NEAR Intents deposit address is noted once, before the source hash, only when the Router takes NEAR orders, contract ones too', async () => {
   const signer = new WorkerWallet(encodeHdPrivateKey({ network: 'mainnet', node: deriveHdPrivateNodeFromSeed(randomBytes(32)) }).hdPrivateKey)
   const address = bindingFromPubkey(pubkey, 0).cashAddress
   const near = `0x${'12'.repeat(20)}`
@@ -181,7 +181,9 @@ test('a NEAR Intents deposit address is noted once, before the source hash, only
   const on = open(true)
   try {
     assert.equal((await attachSource(request(off.cap, { nearDepositAddress: near }), off.id, off.service)).status, 400)
-    assert.equal((await attachSource(request(contract.cap, { nearDepositAddress: near }), contract.id, contract.service)).status, 409)
+    const onContract = await attachSource(request(contract.cap, { nearDepositAddress: near }), contract.id, contract.service)
+    assert.equal(onContract.status, 200)
+    assert.match((await onContract.json()).depositAddress, /^bitcoincash:p/)
     assert.equal((await attachSource(request(on.cap, { nearDepositAddress: 'not an address' }), on.id, on.service)).status, 400)
     const noted = await attachSource(request(on.cap, { nearDepositAddress: near }), on.id, on.service)
     assert.equal(noted.status, 200)

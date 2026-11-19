@@ -44,8 +44,9 @@ in the BCH VM on a real Cauldron trade.
 With `AUTO_BRIDGE_NEAR_ORDERS=true` on the Router and `NEXT_PUBLIC_ROUTER_NEAR=true` on the site, a forward Router transfer
 can take its first leg through NEAR Intents when that quotes better. The page asks 1Click for a quote that pays the order's
 own BCH address and refunds the source wallet, and gives the Router the quote's deposit address before the wallet sends,
-so the Router can follow the order even if the tab closes. Only plain-address orders take it (1Click pays q… and p…
-addresses; contract orders stay on THORChain), and the address is set once, before anything is paid.
+so the Router can follow the order even if the tab closes. 1Click pays q… and p… addresses, so contract orders take it
+too; sale orders stay on THORChain. The address is set once, before anything is paid, and a reused contract order takes
+NEAR only if its payout deadline and the Router's wait both end before the contract's refund time.
 
 The Router reads 1Click's status for that deposit address as a pointer only: the signed quote in it must pay native BCH to
 the order's address, each BCH payout it names is read from the Router's own node, and together they must pay at least the

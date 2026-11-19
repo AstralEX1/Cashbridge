@@ -741,9 +741,9 @@ test('without a source hint only an inbound from the order sender, chain and ass
 })
 
 // An order whose first leg goes through NEAR Intents: 1Click's status names the BCH payout, which pays the order address.
-const nearEnvironment = () => {
+const nearEnvironment = (contractOrders = false) => {
   const signer = wallet(),
-    store = new OrderStore(':memory:', signer.xpub, limits, undefined, undefined, false, false, true)
+    store = new OrderStore(':memory:', signer.xpub, limits, undefined, undefined, contractOrders, false, true)
   const order = store.create(randomUUID(), capability(), intent, '200', 100)
   const depositAddress = `0x${'12'.repeat(20)}`
   store.update(order.id, order.version, { nearDepositAddress: depositAddress })
@@ -848,5 +848,22 @@ test('a NEAR Intents quote paying elsewhere, a short payout or a refund never fu
     } finally {
       env.store.close()
     }
+  }
+})
+
+test('a NEAR Intents payout to a contract order is swapped to PUSD through the contract', async () => {
+  const env = nearEnvironment(true)
+  try {
+    assert.match(env.order.binding.cashAddress, /^bitcoincash:p/)
+    env.raw.set(env.payoutId, env.payout)
+    env.setNear(near => ({ ...near, status: 'SUCCESS', swapDetails: { destinationChainTxHashes: [{ hash: env.payoutId }] } }))
+    await env.run(1000)
+    const [attempt] = env.store.attempts(env.order.id)
+    assert.equal(env.state(), 'submitted')
+    assert.equal(attempt.kind, 'swap')
+    assert.ok(BigInt(attempt.pusdOut) >= 200n)
+    assert.ok(decodeTx(attempt.hex).inputs.some(input => binToHex(input.outpointTransactionHash) === env.payoutId))
+  } finally {
+    env.store.close()
   }
 })

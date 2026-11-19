@@ -168,8 +168,8 @@ export async function attachSource(req: NextRequest, id: string, service: Servic
       order = store.authorized(id, cap)
     if (near !== undefined && near !== order.nearDepositAddress) {
       if (!store.nearOrders) throw new OrderError(400, 'NEAR Intents is not available through the Cashbridge Router')
-      // Set once, on a plain-address order nothing has paid yet (1Click pays only q… and p… addresses).
-      if (order.nearDepositAddress || order.contract || order.sale || order.state !== 'awaiting_deposit' || order.sourceHash || order.inboundHash)
+      // Set once, on a forward order nothing has paid yet. 1Click pays q… and p… addresses, the contract's P2SH20 one too.
+      if (order.nearDepositAddress || order.sale || order.state !== 'awaiting_deposit' || order.sourceHash || order.inboundHash)
         throw new OrderError(409, 'Order already has a source route')
     }
     if (sourceHash) {
