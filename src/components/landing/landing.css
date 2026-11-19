@@ -1,6 +1,6 @@
 /* Cash Bridge landing page. Motion follows the house rules: custom ease-out curves, one entrance for the
-   hero, an explanatory loop only while the diagram is on screen, and no motion beyond opacity under
-   reduced motion. Only transform and opacity animate. */
+   hero, loops (logo strips, the route diagram, the token orbit) only while on screen, and no motion beyond
+   opacity under reduced motion. Components after Magic UI are ported to CSS; see each component's note. */
 .landing {
   --green: #0ac18e;
   --green-text: #3fe0b4;
@@ -30,17 +30,6 @@
 }
 .landing img {
   display: block;
-}
-.landing .sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
 }
 
 .landing-banner {
@@ -127,71 +116,56 @@
     border-color: #ffffff2e;
     background: var(--panel-strong);
   }
+  .landing-chain:hover img {
+    transform: scale(1.12);
+  }
+  .landing-more:hover svg {
+    transform: translateX(3px);
+  }
+  .landing-integrations a:hover .landing-mark {
+    transform: scale(1.06);
+  }
+  .beam-switch button:not([aria-pressed='true']):hover {
+    color: var(--text);
+  }
   .landing-video-toggle:hover {
     opacity: 1;
-  }
-  .landing a.landing-inline:hover,
-  .landing-note a:hover {
-    text-decoration-color: currentColor;
   }
 }
 
 /* Hero */
 .landing-hero {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: center;
-  gap: 56px;
+  gap: 48px;
   max-width: 1240px;
   margin: 0 auto;
-  padding: 48px 24px 24px;
+  padding: 32px 24px 0;
 }
 .landing-hero h1 {
-  font-size: clamp(42px, 5.4vw, 72px);
-  line-height: 1.02;
-  letter-spacing: -0.035em;
+  font-size: clamp(44px, 6vw, 82px);
+  line-height: 1;
+  letter-spacing: -0.04em;
 }
 .landing-hero h1 em {
   color: var(--green-text);
   font-style: normal;
 }
 .landing-lead {
-  max-width: 34em;
-  margin-top: 20px;
+  margin-top: 22px;
   color: var(--muted);
-  font-size: 18px;
-  line-height: 1.55;
+  font-size: 20px;
+  line-height: 1.5;
 }
 .landing-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
-  margin-top: 32px;
-}
-.landing-facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 20px;
-  margin-top: 28px;
-  color: var(--muted);
-  font-size: 14px;
-}
-.landing-facts li {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.landing-facts li::before {
-  content: '';
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #0ac18e26
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M4 7.2l2 2 4-4.4' fill='none' stroke='%233fe0b4' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
-    center / 14px no-repeat;
+  margin-top: 36px;
 }
 
-/* The hero's one entrance: the copy rises in a short, uneven stagger, then the video settles in. */
+/* The hero's one entrance: the copy rises in a short stagger, then the product settles in. */
 @keyframes landing-rise {
   from {
     opacity: 0;
@@ -208,60 +182,54 @@
   animation: landing-rise 600ms var(--ease-out) both;
 }
 .landing-hero-copy > :nth-child(2) {
-  animation-delay: 80ms;
+  animation-delay: 90ms;
 }
 .landing-hero-copy > :nth-child(3) {
   animation-delay: 200ms;
-}
-.landing-hero-copy > :nth-child(4) {
-  animation-delay: 320ms;
-}
-.landing-hero-copy > :nth-child(5) {
-  animation-delay: 420ms;
 }
 .landing-hero-video {
   animation: landing-settle 700ms var(--ease-out) 240ms both;
 }
 
-/* Video frames — crop zooms the product UI to fill the frame (footage stays factual). */
+/* Product loops: the interface alone, its edges fading into the page, with a soft glow behind. */
 .landing-video {
   position: relative;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 22px;
-  background: #0b1418;
-  box-shadow:
-    0 30px 80px -30px #000000cc,
-    0 0 0 1px #00000040;
+  isolation: isolate;
+  width: 100%;
+  max-width: 520px;
+  justify-self: center;
+}
+.landing-video::before {
+  content: '';
+  position: absolute;
+  inset: 12%;
+  z-index: -1;
+  border-radius: 50%;
+  background: #0ac18e;
+  opacity: 0.16;
+  filter: blur(70px);
 }
 .landing-video video {
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 16 / 9;
-  object-fit: cover;
+  -webkit-mask-image:
+    linear-gradient(180deg, transparent, #000 5%, #000 88%, transparent), linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(180deg, transparent, #000 5%, #000 88%, transparent), linear-gradient(90deg, transparent, #000 5%, #000 95%, transparent);
+  mask-composite: intersect;
 }
-.landing-video-crop {
-  aspect-ratio: 4 / 3;
+.landing-hero-video video {
+  aspect-ratio: 720 / 810;
 }
-.landing-video-crop video {
-  width: 100%;
-  height: 100%;
-  aspect-ratio: auto;
-  object-fit: cover;
-  object-position: center 48%;
-  transform: scale(1.82);
-  transform-origin: center 42%;
-}
-.landing-video-crop-router video {
-  object-position: center 38%;
-  transform: scale(1.72);
-  transform-origin: center 30%;
+.landing-router-video video {
+  aspect-ratio: 592 / 576;
 }
 .landing-video-toggle {
   position: absolute;
-  right: 12px;
-  bottom: 12px;
+  right: 8%;
+  bottom: 8%;
   display: grid;
   place-items: center;
   width: 34px;
@@ -275,160 +243,91 @@
     opacity 160ms var(--ease-out),
     transform 160ms var(--ease-out);
 }
+.landing-router-video .landing-video-toggle {
+  right: 3%;
+  bottom: 0;
+}
 .landing-video-toggle:active {
   transform: scale(0.94);
 }
 
-/* Chains — moving carousel (linear marquee; explanation, not UI chrome) */
-.landing-chains {
-  max-width: 1240px;
-  margin: 0 auto;
-  padding: 56px 24px 0;
-  text-align: center;
-}
-.landing-carousel {
-  position: relative;
-  margin-top: 22px;
-}
-.landing-carousel-mask {
-  width: 100%;
-  overflow: hidden;
-  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
-}
-.landing-carousel-motion {
+/* Logo strips, after Magic UI's Marquee */
+.marquee {
+  --gap: 48px;
   display: flex;
-  width: max-content;
+  gap: var(--gap);
+  overflow: hidden;
+  padding: 10px 0;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
 }
-.landing-carousel-track {
+.marquee-track {
   display: flex;
   flex: none;
-  gap: 10px;
-  padding-right: 10px;
-  width: max-content;
-}
-.landing-carousel-track li {
-  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--panel);
-  color: #d2dee2;
-  font-size: 14px;
-  font-weight: 500;
-  white-space: nowrap;
+  justify-content: space-around;
+  gap: var(--gap);
 }
-.landing-carousel-track img {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
+.marquee-frame {
+  position: relative;
 }
-.landing-carousel-toggle {
+.marquee-toggle {
   position: absolute;
-  z-index: 2;
   top: 50%;
-  right: 8px;
+  right: 0;
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  margin-top: -16px;
+  width: 28px;
+  height: 28px;
+  margin-top: -14px;
   border: 1px solid var(--line);
   border-radius: 50%;
-  background: #020707e6;
-  color: var(--text);
-  cursor: pointer;
-  opacity: 0.9;
+  background: #020707b8;
+  color: var(--muted);
+  opacity: 0;
   transition:
     opacity 160ms var(--ease-out),
     transform 160ms var(--ease-out);
 }
-.landing-carousel-toggle:active {
+.marquee-toggle:focus-visible,
+.marquee-frame:hover .marquee-toggle {
+  opacity: 1;
+}
+.marquee-toggle:active {
   transform: scale(0.94);
 }
-.landing-carousel-pause {
-  position: absolute;
-  inset: 0;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-.landing-carousel-toggle-label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-.landing-carousel-icon-play,
-.landing-carousel:has(.landing-carousel-pause:checked) .landing-carousel-icon-pause,
-.landing-carousel:has(.landing-carousel-pause:checked) .landing-carousel-label-pause {
-  display: none;
-}
-.landing-carousel:has(.landing-carousel-pause:checked) .landing-carousel-icon-play,
-.landing-carousel:has(.landing-carousel-pause:checked) .landing-carousel-label-play {
-  display: block;
-}
-.landing-carousel:not(:has(.landing-carousel-pause:checked)) .landing-carousel-label-play {
-  display: none;
-}
-@keyframes landing-carousel {
-  from {
-    transform: translateX(0);
+@media (hover: none) {
+  .marquee-toggle {
+    opacity: 0.8;
   }
+}
+@keyframes marquee {
   to {
-    transform: translateX(-50%);
+    transform: translateX(calc(-100% - var(--gap)));
   }
 }
-@media (prefers-reduced-motion: no-preference) {
-  .landing-carousel-motion {
-    animation: landing-carousel 36s linear infinite;
-  }
-  .landing-carousel:has(.landing-carousel-pause:checked) .landing-carousel-motion {
-    animation-play-state: paused;
-  }
+
+/* Send from */
+.landing-chains {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 72px 24px 0;
+  text-align: center;
 }
-@media (hover: hover) and (pointer: fine) {
-  .landing-carousel-toggle:hover {
-    opacity: 1;
-  }
+.landing h2.landing-kicker {
+  max-width: none;
+  margin-top: 0;
+  font-size: 13px;
+  line-height: inherit;
+  letter-spacing: 0.08em;
 }
-@media (prefers-reduced-motion: reduce) {
-  .landing-carousel-mask {
-    mask-image: none;
-    -webkit-mask-image: none;
-  }
-  .landing-carousel-motion {
-    display: block;
-    width: auto;
-  }
-  .landing-carousel-motion .landing-carousel-track:last-child {
-    display: none;
-  }
-  .landing-carousel-track {
-    flex-wrap: wrap;
-    justify-content: center;
-    width: auto;
-    padding-right: 0;
-  }
-  .landing-carousel-toggle {
-    display: none;
-  }
-}
-.landing-chains-to {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+.landing-chains .marquee {
   margin-top: 18px;
-  color: var(--green-text);
-  font-size: 15px;
-  font-weight: 600;
+}
+.landing-chain img {
+  width: 44px;
+  height: 44px;
+  transition: transform 200ms var(--ease-out);
 }
 
 /* Sections */
@@ -448,444 +347,446 @@
 .landing-section h2 {
   max-width: 22em;
   margin-top: 12px;
-  font-size: clamp(30px, 3.6vw, 46px);
-  line-height: 1.08;
+  font-size: clamp(32px, 3.8vw, 50px);
+  line-height: 1.06;
   letter-spacing: -0.03em;
 }
-.landing-sub {
-  max-width: 40em;
-  margin-top: 16px;
-  color: var(--muted);
-  font-size: 17px;
-  line-height: 1.6;
+#how-title {
+  margin: 0 auto;
+  text-align: center;
 }
 .landing-section-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 24px;
 }
+.landing-section-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 0;
+}
+.landing-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 64px;
+}
 
-/* How it works: the flow diagram */
-.flow {
+/* Short lines, each led by its icon */
+.landing-points {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px 36px;
+  margin-top: 28px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.landing-points li {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.landing-points svg {
+  flex: none;
+  color: var(--green-text);
+}
+.landing-points-stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  margin-top: 32px;
+  color: var(--text);
+  font-size: 17px;
+}
+.landing-points-stacked li {
+  gap: 14px;
+}
+.landing-points-stacked svg {
+  box-sizing: content-box;
+  padding: 10px;
+  border-radius: 12px;
+  background: #0ac18e1a;
+}
+.landing-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  margin-top: 32px;
+}
+.landing-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--green-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+.landing-more svg {
+  transition: transform 200ms var(--ease-out);
+}
+
+/* How it works: the route diagram, after Magic UI's Animated Beam */
+.beam {
+  position: relative;
   margin-top: 40px;
-  padding: 28px;
+  padding: 60px 32px 44px;
   border: 1px solid var(--line);
   border-radius: 28px;
-  background: #ffffff08;
+  background: radial-gradient(ellipse 45% 60% at 50% 50%, #0ac18e14, transparent 70%), var(--panel);
 }
-.flow-modes {
+.beam-switch {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 2;
   display: inline-flex;
-  padding: 4px;
+  padding: 3px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: #00000033;
 }
-.flow-modes button {
-  padding: 8px 16px;
+.beam-switch button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 30px;
   border-radius: 999px;
   color: var(--muted);
-  font-size: 14px;
-  font-weight: 600;
   transition:
     background-color 200ms var(--ease-out),
     color 200ms var(--ease-out),
     transform 160ms var(--ease-out);
 }
-.flow-modes button:active {
-  transform: scale(0.97);
+.beam-switch button:active {
+  transform: scale(0.95);
 }
-.flow-modes button[aria-pressed='true'] {
+.beam-switch button[aria-pressed='true'] {
   background: var(--green);
   color: #0f1820;
 }
-.flow-track {
-  display: flex;
-  align-items: stretch;
-  margin-top: 28px;
-}
-.flow-node {
-  position: relative;
-  display: flex;
-  flex: 1 1 0;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-  padding: 18px 16px;
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  background: #0b1418cc;
-}
-.flow-node::after {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border: 1px solid var(--green);
-  border-radius: inherit;
-  box-shadow:
-    0 0 28px #0ac18e2e,
-    inset 0 0 18px #0ac18e14;
-  opacity: 0;
-  pointer-events: none;
-}
-.flow-node strong {
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.3;
-}
-.flow-icons {
-  display: flex;
-  min-height: 32px;
-  align-items: center;
-}
-.flow-icons .flow-logo {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px #0b1418;
-}
-.flow-icons > .flow-logo + .flow-logo {
-  margin-left: -8px;
-}
-.flow-routes {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-height: 32px;
-  justify-content: center;
-}
-.flow-route {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 600;
-}
-.flow-routes .flow-logo {
-  border-radius: 50%;
-}
-.flow-note {
-  flex-grow: 1;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
-}
-.flow-link {
-  position: relative;
-  flex: 0 0 52px;
-  overflow: hidden;
-}
-.flow-link::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  right: 4px;
-  left: 4px;
-  height: 2px;
-  margin-top: -1px;
-  background: repeating-linear-gradient(90deg, #ffffff38 0 4px, transparent 4px 8px);
-}
-.flow-packet {
-  position: absolute;
-  inset: 0;
-}
-.flow-packet::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: -26px;
-  width: 10px;
-  height: 10px;
-  margin-top: -5px;
-  border-radius: 50%;
-  background: var(--green-text);
-  box-shadow: 0 0 12px var(--green);
-}
-.flow-caption {
-  margin-top: 22px;
-  color: var(--muted);
-  font-size: 15px;
-  line-height: 1.5;
-}
-
-/* Text that changes with the mode crossfades in place: both versions share one grid cell. */
-.flow-swap {
-  display: inline-grid;
-}
-.flow-swap > * {
-  grid-area: 1 / 1;
-  transition:
-    opacity 220ms var(--ease-out),
-    visibility 0s;
-}
-.flow[data-mode='manual'] .flow-swap > [data-for='router'],
-.flow[data-mode='router'] .flow-swap > [data-for='manual'] {
-  opacity: 0;
-  visibility: hidden;
-  transition:
-    opacity 220ms var(--ease-out),
-    visibility 0s linear 220ms;
-}
-
-/* The loop: a packet leaves each stop 1.4 s after the last, and each stop lights as it arrives. 7 s per run. */
-@keyframes flow-packet-x {
-  0% {
-    transform: translateX(0);
-    animation-timing-function: var(--ease-in-out);
-  }
-  17%,
-  100% {
-    transform: translateX(calc(100% + 52px));
-  }
-}
-@keyframes flow-packet-y {
-  0% {
-    transform: translateY(0);
-    animation-timing-function: var(--ease-in-out);
-  }
-  17%,
-  100% {
-    transform: translateY(calc(100% + 52px));
-  }
-}
-@keyframes flow-land {
-  0% {
-    opacity: 0;
-    animation-timing-function: var(--ease-out);
-  }
-  3% {
-    opacity: 1;
-  }
-  20%,
-  100% {
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: no-preference) {
-  .flow[data-play='true'] .flow-packet {
-    animation: flow-packet-x 7s calc(var(--n) * 1.4s + 0.1s) infinite;
-  }
-  .flow[data-play='true'] .flow-node::after {
-    animation: flow-land 7s calc(var(--n) * 1.4s - 0.15s) infinite;
-  }
-}
-
-.landing-note a {
-  color: var(--green-text);
-  font-weight: 500;
-  text-decoration: underline;
-  text-decoration-color: #3fe0b466;
-  text-underline-offset: 3px;
-}
-
-/* Tokens */
-.landing-tokens {
-  display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
-  align-items: center;
-  gap: 56px;
-}
-.landing-token-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-.landing-token-grid li {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  padding: 18px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: var(--panel);
-}
-.landing-token-grid strong {
-  margin-top: 10px;
-  font-size: 17px;
-}
-.landing-token-grid li > span:last-child {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.landing-token-any {
-  border-style: dashed !important;
-  background: transparent !important;
-}
-.landing-token-any > span:last-child {
-  white-space: normal !important;
-}
-.landing-token-any code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-}
-/* Round icon with the ticker's initial behind it, for tokens whose image is missing or still loading. */
-:is(.landing-token-icon, .landing-integration-logo, .landing-wallet-icon) {
+.beam-grid {
   position: relative;
   display: grid;
-  place-items: center;
-  flex: none;
-  overflow: hidden;
-  border-radius: 50%;
-  background: var(--panel-strong);
-  color: var(--muted);
-  font-weight: 600;
+  grid-template-columns: 0.8fr 1.25fr 1fr 1.1fr 0.8fr;
+  align-items: center;
+  min-height: 340px;
 }
-:is(.landing-token-icon, .landing-integration-logo, .landing-wallet-icon)::before {
-  content: attr(data-initial);
-}
-:is(.landing-token-icon, .landing-integration-logo, .landing-wallet-icon) img {
+.beam-svg {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  overflow: visible;
+  pointer-events: none;
 }
-.landing-token-icon {
-  width: 40px;
-  height: 40px;
-  font-size: 16px;
+.beam-base,
+.beam-light {
+  fill: none;
 }
-
-/* Cashbridge Router */
-.landing-split {
-  display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-  align-items: center;
-  gap: 56px;
+.beam-base {
+  stroke: #ffffff1c;
+  stroke-width: 1.5;
 }
-.landing-checks {
-  display: grid;
-  gap: 14px;
-  margin-top: 24px;
+.beam-light {
+  stroke: var(--green-text);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 0.24 1;
+  stroke-dashoffset: 0.24;
+  opacity: 0;
+  filter: drop-shadow(0 0 4px #0ac18e);
 }
-.landing-checks li {
+.beam-col {
   position: relative;
-  padding-left: 30px;
-  color: #d2dee2;
-  font-size: 16px;
-  line-height: 1.5;
-}
-.landing-checks li::before {
-  content: '';
-  position: absolute;
-  top: 3px;
-  left: 0;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #0ac18e26
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M4 7.2l2 2 4-4.4' fill='none' stroke='%233fe0b4' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
-    center / 18px no-repeat;
-}
-.landing-note {
-  margin-top: 24px;
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--panel);
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.55;
-}
-
-/* Integrations */
-.landing-integrations {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 12px;
-  margin-top: 36px;
-}
-.landing-integrations a {
+  z-index: 1;
   display: flex;
-  height: 100%;
   flex-direction: column;
-  gap: 6px;
-  padding: 20px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.beam-dot,
+.beam-hub,
+.beam-core {
   border: 1px solid var(--line);
-  border-radius: 18px;
-  background: var(--panel);
-  transition:
-    background-color 160ms var(--ease-out),
-    border-color 160ms var(--ease-out);
+  background: #0f1a1f;
+  box-shadow: 0 8px 24px -10px #000000b3;
 }
-.landing-integrations strong {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-  font-size: 17px;
+.beam-dot {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
 }
-.landing-integrations strong svg {
-  color: var(--muted);
+.beam-dot img {
+  border-radius: 50%;
 }
-.landing-integrations a > span:last-child {
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.55;
-}
-.landing-integration-logo {
-  width: 40px;
-  height: 40px;
-  font-size: 17px;
-}
-.landing-integration-logo img {
-  padding: 4px;
-  object-fit: contain;
-}
-.landing-wallets {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 20px;
-  margin-top: 28px;
-}
-.landing-wallets p {
+.beam-more {
   color: var(--muted);
   font-size: 14px;
   font-weight: 600;
 }
-.landing-wallets ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.landing-wallets li {
+.beam-hub {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px 6px 6px;
+  gap: 10px;
+  padding: 9px 16px 9px 9px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.beam-hub img {
+  border-radius: 50%;
+}
+/* Bitcoin Cash at the centre, with a ripple after Magic UI's Ripple. */
+.beam-core {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border-color: #0ac18e66;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 8px #0ac18e0f,
+    0 0 60px -12px #0ac18e;
+}
+.beam-core::before,
+.beam-core::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border: 1px solid #0ac18e99;
+  border-radius: 50%;
+  opacity: 0;
+}
+@keyframes beam-in {
+  0% {
+    stroke-dashoffset: 0.24;
+    animation-timing-function: var(--ease-in-out);
+  }
+  36%,
+  100% {
+    stroke-dashoffset: -1;
+  }
+}
+@keyframes beam-out {
+  0% {
+    stroke-dashoffset: -1;
+    animation-timing-function: var(--ease-in-out);
+  }
+  36%,
+  100% {
+    stroke-dashoffset: 0.24;
+  }
+}
+@keyframes beam-ripple {
+  from {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.9);
+  }
+}
+
+/* Tokens: coins around BCH, after Magic UI's Orbiting Circles */
+.orbit {
+  position: relative;
+  container-type: inline-size;
+  width: min(480px, 100%);
+  aspect-ratio: 1;
+  margin: 0 auto;
+}
+.orbit-core {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 24cqw;
+  height: 24cqw;
+  border-radius: 50%;
+  background: #0f1a1f;
+  box-shadow:
+    0 0 0 1px #0ac18e55,
+    0 0 90px -8px #0ac18e99;
+  translate: -50% -50%;
+}
+.orbit-core img {
+  width: 66%;
+  height: 66%;
+}
+.orbit-ring {
+  position: absolute;
+  inset: 0;
+}
+.orbit-ring::before {
+  content: '';
+  position: absolute;
+  inset: calc(50cqw - var(--r));
+  border: 1px dashed #ffffff24;
+  border-radius: 50%;
+}
+.orbit-item {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: rotate(var(--a)) translateX(var(--r)) rotate(calc(-1 * var(--a)));
+}
+.orbit-coin {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 13cqw;
+  height: 13cqw;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #0f1a1f;
+  box-shadow: 0 10px 30px -12px #000;
+  color: var(--green-text);
+  font-size: 6cqw;
+  font-weight: 600;
+  translate: -50% -50%;
+}
+.orbit-coin::before {
+  content: attr(data-initial);
+}
+.orbit-coin img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+@keyframes orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Built on */
+.landing-integrations {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+.landing-integrations a {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 100%;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+  font-size: 16px;
+  font-weight: 600;
+  transition:
+    border-color 160ms var(--ease-out),
+    background-color 160ms var(--ease-out),
+    transform 160ms var(--ease-out);
+}
+.landing-integrations a:active {
+  transform: scale(0.98);
+}
+.landing-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #0ac18e40, #ffffff0d);
+  color: var(--green-text);
+  font-size: 17px;
+  font-weight: 700;
+  transition: transform 200ms var(--ease-out);
+}
+.landing-mark::before {
+  content: attr(data-initial);
+}
+.landing-mark img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 4px;
+  background: #0f1a1f;
+  object-fit: contain;
+}
+#integrations .marquee {
+  --gap: 12px;
+  margin-top: 16px;
+}
+.landing-wallet {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 16px 7px 7px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--panel);
-  color: #d2dee2;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
+  white-space: nowrap;
 }
-.landing-wallet-icon {
-  width: 22px;
-  height: 22px;
-  font-size: 11px;
+.landing-wallet .landing-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-size: 13px;
 }
 
-/* Scanner teaser */
+/* Live transfers */
 .landing-scan {
-  margin-top: 28px;
-  overflow-x: auto;
+  margin-top: 24px;
   border: 1px solid var(--line);
   border-radius: 20px;
   background: var(--panel);
+}
+.live-dot {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #6f848c;
+}
+.live-dot[data-live='true'] {
+  background: var(--green);
+}
+.live-dot[data-live='true']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--green);
+}
+@keyframes live-ping {
+  75%,
+  100% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
 }
 
 /* Closing call to action */
 .landing-final {
   max-width: 1192px;
   margin: 128px auto 0;
-  padding: 64px 24px;
+  padding: 72px 24px;
   border: 1px solid var(--line);
   border-radius: 32px;
   background: radial-gradient(ellipse 60% 90% at 50% 100%, #0ac18e26, transparent 70%), var(--panel);
@@ -938,51 +839,77 @@
   }
 }
 
-/* Under 1000 px the hero and the split sections stack, and the diagram runs top to bottom. */
+/* Loops run only while on screen ([data-play='true'] comes from InView) and never under reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .marquee[data-play='true'] .marquee-track {
+    animation: marquee 44s linear infinite;
+  }
+  .marquee[data-reverse][data-play='true'] .marquee-track {
+    animation-direction: reverse;
+  }
+  .beam[data-play='true'] .beam-light {
+    opacity: 1;
+    animation: beam-in 3.2s var(--delay) infinite;
+  }
+  .beam[data-play='true'][data-direction='out'] .beam-light {
+    animation-name: beam-out;
+  }
+  .beam[data-play='true'] .beam-core::before,
+  .beam[data-play='true'] .beam-core::after {
+    animation: beam-ripple 3.2s var(--ease-out) infinite;
+  }
+  .beam[data-play='true'] .beam-core::after {
+    animation-delay: 1.6s;
+  }
+  .orbit[data-play='true'] .orbit-ring {
+    animation: orbit 48s linear infinite;
+  }
+  .orbit[data-play='true'] .orbit-coin {
+    animation: orbit 48s linear infinite reverse;
+  }
+  .orbit[data-play='true'] .orbit-ring-outer {
+    animation-duration: 80s;
+    animation-direction: reverse;
+  }
+  .orbit[data-play='true'] .orbit-ring-outer .orbit-coin {
+    animation-duration: 80s;
+    animation-direction: normal;
+  }
+  .live-dot[data-live='true']::after {
+    animation: live-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .marquee[data-play='true']:hover .marquee-track {
+    animation-play-state: paused;
+  }
+}
+.marquee[data-paused] .marquee-track {
+  animation-play-state: paused;
+}
+
+/* Under 1000 px the hero and the split sections stack. */
 @media (max-width: 1000px) {
   .landing-hero,
-  .landing-tokens,
   .landing-split {
     grid-template-columns: minmax(0, 1fr);
     gap: 40px;
   }
   .landing-hero {
-    padding-top: 32px;
+    padding-top: 24px;
+  }
+  .landing-video {
+    max-width: 460px;
   }
   .landing-split > .landing-video {
     order: 1;
   }
-  .flow-track {
-    flex-direction: column;
-  }
-  .flow-node {
-    gap: 6px;
-  }
-  .flow-link {
-    flex-basis: 36px;
-  }
-  .flow-link::before {
-    top: 4px;
-    bottom: 4px;
-    right: auto;
-    left: 31px;
-    width: 2px;
-    height: auto;
-    margin: 0;
-    background: repeating-linear-gradient(180deg, #ffffff38 0 4px, transparent 4px 8px);
-  }
-  .flow-packet::before {
-    top: -26px;
-    left: 27px;
-    margin: 0;
-  }
-}
-@media (max-width: 1000px) and (prefers-reduced-motion: no-preference) {
-  .flow[data-play='true'] .flow-packet {
-    animation-name: flow-packet-y;
+  .landing-integrations {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
+/* Under 760 px the diagram runs top to bottom. */
 @media (max-width: 760px) {
   .landing-nav nav {
     display: none;
@@ -990,32 +917,53 @@
   .landing-nav .landing-button-small {
     margin-left: auto;
   }
-  .landing-hero h1 {
-    letter-spacing: -0.03em;
-  }
   .landing-lead {
-    font-size: 17px;
+    font-size: 18px;
   }
   .landing-section {
-    padding-top: 88px;
+    padding-top: 96px;
   }
-  .flow {
-    padding: 16px;
+  .beam {
+    padding: 60px 16px 32px;
     border-radius: 22px;
   }
-  .flow-modes {
-    display: flex;
+  .beam-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 48px;
+    min-height: 0;
   }
-  .flow-modes button {
-    flex: 1;
-    padding: 8px 10px;
+  .beam-col {
+    flex-flow: row wrap;
+    gap: 10px;
   }
-  .landing-token-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .beam-dot {
+    width: 40px;
+    height: 40px;
+  }
+  .beam-dot img {
+    width: 24px;
+    height: 24px;
+  }
+  .beam-hub {
+    gap: 8px;
+    padding: 7px 12px 7px 7px;
+    font-size: 14px;
+  }
+  .beam-hub img {
+    width: 22px;
+    height: 22px;
+  }
+  .beam-core {
+    width: 76px;
+    height: 76px;
+  }
+  .beam-core img {
+    width: 42px;
+    height: 42px;
   }
   .landing-final {
-    margin: 88px 16px 0;
-    padding: 48px 20px;
+    margin: 96px 16px 0;
+    padding: 52px 20px;
   }
 }
 
@@ -1031,16 +979,25 @@
   .landing-actions .landing-button {
     flex: 1 1 100%;
   }
-  .landing-carousel-track li {
-    padding: 6px 12px 6px 6px;
-    font-size: 13px;
+  .landing-chains .marquee {
+    --gap: 32px;
   }
-  .landing-video-crop video {
-    transform: scale(1.55);
+  .landing-chain img {
+    width: 38px;
+    height: 38px;
+  }
+  .landing-integrations a {
+    gap: 10px;
+    padding: 12px;
+    font-size: 14px;
+  }
+  .landing-mark {
+    width: 34px;
+    height: 34px;
   }
 }
 
-/* Reduced motion: the hero fades in without moving, and the diagram stays still. */
+/* Reduced motion: the hero fades in without moving, the strips wrap and stand still, nothing loops. */
 @media (prefers-reduced-motion: reduce) {
   @keyframes landing-rise {
     from {
@@ -1052,9 +1009,26 @@
       opacity: 0;
     }
   }
-  .flow-swap > *,
+  .marquee,
+  .marquee-track {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .marquee {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .marquee-track[aria-hidden] {
+    display: none;
+  }
+  .marquee-toggle {
+    display: none;
+  }
+  .marquee-track {
+    flex: 1 1 100%;
+  }
   .landing-button,
-  .flow-modes button {
-    transition-property: opacity, visibility, background-color, color;
+  .beam-switch button {
+    transition-property: background-color, color;
   }
 }
