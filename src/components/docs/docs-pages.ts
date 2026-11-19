@@ -8,7 +8,8 @@ export const DOCS_SECTIONS: DocsSection[] = [
     title: 'Overview',
     pages: [
       { href: '/docs', title: 'Introduction' },
-      { href: '/docs/how-it-works', title: 'How it works' }
+      { href: '/docs/how-it-works', title: 'How it works' },
+      { href: '/docs/mainnet', title: 'Proof on mainnet' }
     ]
   },
   {
