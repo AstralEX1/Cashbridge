@@ -17,6 +17,9 @@ export interface SaleIntent {
   memo: string
   vaultAddress: string
 }
+export const SALE_KEYS = ['category', 'tokenAmount', 'buyAsset', 'destination', 'memo', 'vaultAddress'] as const
+export const sameSale = (a?: SaleIntent, b?: SaleIntent) => (!a && !b) || (!!a && !!b && SALE_KEYS.every(key => a[key] === b[key]))
+
 export interface OrderIntent {
   // The customer's BCH address. For a sale it is also where unsold tokens or returned BCH go, equal to the refund address.
   recipientAddress: string
