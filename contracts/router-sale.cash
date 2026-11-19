@@ -1,0 +1,68 @@
+pragma cashscript ^0.14.0;
+
+// Escrow for one Cashbridge Router sale: CashTokens to an asset on another chain, through THORChain.
+//
+// The customer sends the tokens here. Nobody, the Router included, can move them anywhere but to THORChain's vault
+// with the customer's swap memo (as BCH, at least the quoted minimum) or back to the customer.
+contract RouterSale(
+    // The Router's public key for this order.
+    pubkey router,
+    // Locking bytecode of THORChain's BCH vault when the order was made.
+    bytes vaultLock,
+    // The OP_RETURN output carrying the order's THORChain swap memo.
+    bytes memoLock,
+    // Locking bytecode of the customer's address: whatever is not swapped goes back there.
+    bytes fallbackLock,
+    // The least BCH the sale must bring, which then goes to THORChain.
+    int minSats,
+    // Unix time after which anyone may send the coins back (compared with the chain's median time).
+    int refundTime
+) {
+    // Step 1: the Router sells all the coin's tokens on Cauldron, and the BCH comes back to this contract.
+    function sell(sig routerSig) {
+        require(checkSig(routerSig, router));
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == tx.inputs[i].lockingBytecode);
+        require(tx.outputs[i].tokenCategory == 0x);
+        require(tx.outputs[i].value >= minSats);
+    }
+
+    // Step 2: the BCH goes to the vault with the memo, alone in its transaction. THORChain takes the first input as
+    // the sender, so this contract is the sender and a THORChain refund comes back here.
+    function deposit(sig routerSig) {
+        require(checkSig(routerSig, router));
+        require(this.activeInputIndex == 0);
+        require(tx.inputs.length == 1);
+        require(tx.outputs.length == 2);
+        require(tx.inputs[0].tokenCategory == 0x);
+        require(tx.inputs[0].value >= minSats);
+        require(tx.outputs[0].lockingBytecode == vaultLock);
+        require(tx.outputs[0].tokenCategory == 0x);
+        require(tx.outputs[0].value + 2000 >= tx.inputs[0].value);
+        require(tx.outputs[1].lockingBytecode == memoLock);
+    }
+
+    // The Router gives up and returns the coin as it came (tokens, or BCH from a sale or a THORChain refund),
+    // keeping at most 2,000 sats for the miner.
+    function giveBack(sig routerSig) {
+        require(checkSig(routerSig, router));
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == fallbackLock);
+        require(tx.outputs[i].tokenCategory == tx.inputs[i].tokenCategory);
+        require(tx.outputs[i].tokenAmount == tx.inputs[i].tokenAmount);
+        require(tx.outputs[i].nftCommitment == tx.inputs[i].nftCommitment);
+        require(tx.outputs[i].value + 2000 >= tx.inputs[i].value);
+    }
+
+    // Once the refund time has passed, anyone can return the coin on the same terms, so a stopped Router
+    // cannot strand it.
+    function expire() {
+        require(tx.time >= refundTime);
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == fallbackLock);
+        require(tx.outputs[i].tokenCategory == tx.inputs[i].tokenCategory);
+        require(tx.outputs[i].tokenAmount == tx.inputs[i].tokenAmount);
+        require(tx.outputs[i].nftCommitment == tx.inputs[i].nftCommitment);
+        require(tx.outputs[i].value + 2000 >= tx.inputs[i].value);
+    }
+}
