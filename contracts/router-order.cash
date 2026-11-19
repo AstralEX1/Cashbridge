@@ -1,0 +1,49 @@
+pragma cashscript ^0.14.0;
+
+// Escrow for one Cashbridge Router order.
+//
+// The order's THORChain swap pays its BCH here. Nobody, the Router included, can move a coin anywhere but to
+// the customer: as PUSD (at least the quoted minimum) or back as BCH. Each check looks at the output with the
+// same index as the coin being spent, so one output can never settle two coins.
+contract RouterOrder(
+    // The Router's public key for this order.
+    pubkey router,
+    // Locking bytecode of the customer's PUSD address.
+    bytes payoutLock,
+    // Locking bytecode of the customer's BCH fallback address.
+    bytes fallbackLock,
+    // PUSD's token category, in the byte order the VM uses (explorers show it reversed).
+    bytes32 pusd,
+    // The quoted minimum, in PUSD base units.
+    int minPusd,
+    // Unix time after which anyone may send the BCH back (compared with the chain's median time).
+    int refundTime
+) {
+    // The Router sells the coin on Cauldron; the trade must pay the customer at least the quoted minimum.
+    function convert(sig routerSig) {
+        require(checkSig(routerSig, router));
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == payoutLock);
+        require(tx.outputs[i].tokenCategory == pusd);
+        require(tx.outputs[i].tokenAmount >= minPusd);
+    }
+
+    // The Router gives up on converting and returns the BCH, keeping at most 2,000 sats for the miner.
+    function giveBack(sig routerSig) {
+        require(checkSig(routerSig, router));
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == fallbackLock);
+        require(tx.outputs[i].tokenCategory == 0x);
+        require(tx.outputs[i].value + 2000 >= tx.inputs[i].value);
+    }
+
+    // Once the refund time has passed, anyone can return the BCH on the same terms, so a stopped Router
+    // cannot strand it.
+    function expire() {
+        require(tx.time >= refundTime);
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == fallbackLock);
+        require(tx.outputs[i].tokenCategory == 0x);
+        require(tx.outputs[i].value + 2000 >= tx.inputs[i].value);
+    }
+}
