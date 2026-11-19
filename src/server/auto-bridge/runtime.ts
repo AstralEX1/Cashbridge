@@ -39,8 +39,8 @@ export async function runWorker() {
       }
       try {
         await gateway.assertReady()
-      } catch {
-        console.warn('BCH node is not ready; delaying order processing')
+      } catch (error) {
+        console.warn(`BCH node is not ready; delaying order processing: ${reasonOf(error)}`)
         await new Promise<void>(resolve => setTimeout(resolve, config.pollMs))
         continue
       }

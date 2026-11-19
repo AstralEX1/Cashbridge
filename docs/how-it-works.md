@@ -13,6 +13,8 @@ Forward: source wallet → THORChain → BCH in the user's BCH wallet → option
 5. If no trade meeting the original minimum is available before the stored deadline, the worker returns verified BCH to the captured fallback minus miner fee. Network/recovery delays and acceptance-unknown payouts can delay a safe refund.
 6. Signed attempts are recorded before broadcast. Unknown replies reconcile/replay identical bytes. A mempool payout gives a provisional exact receipt; finality requires at least six confirmations. The UI can recover from local history in either execution mode.
 
+The Cashbridge Router's BCH nodes must keep a full transaction index (`txindex=1`, no pruning): it looks up confirmed deposits and payouts by id, and it holds order processing while any configured node fails that check.
+
 Automatic means fewer user signing steps; there are still several on-chain transactions and temporary service control of BCH. It does not make the bridge atomic or guarantee a token payout.
 
 ## Contract orders (Cashbridge Router without custody)

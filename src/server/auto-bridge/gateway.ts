@@ -15,7 +15,7 @@ class NodeError extends Error {
   }
 }
 
-type RpcNode = { url: URL; headers: Record<string, string>; minIntervalMs: number; nextRequestAt: number; queue: Promise<void>; downUntil: number }
+type RpcNode = { url: URL; headers: Record<string, string>; minIntervalMs: number; nextRequestAt: number; queue: Promise<void>; downUntil: number; indexed?: boolean }
 // Throws when a 200 answer is empty or wrong, so the call goes on to the next node instead of returning it.
 type Check<T> = (value: T) => void
 const present: Check<unknown> = value => {
@@ -23,6 +23,9 @@ const present: Check<unknown> = value => {
 }
 // A node that failed (not one that answered with an RPC error) is asked last for this long.
 const COOLDOWN_MS = 60_000
+// A confirmed transaction from block 170. Without a transaction index (txindex=1, no pruning) a node answers -5 for
+// it, as it would for any confirmed deposit or payout, and the worker could not tell those from transactions that do not exist.
+const INDEX_PROBE = 'f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16'
 
 export class BchGateway implements Gateway {
   private readonly nodes: RpcNode[]
@@ -181,6 +184,15 @@ export class BchGateway implements Gateway {
       )
         throw new Error('BCH mainnet RPC is not synchronized')
     })
+    // Once per node and process; a node that is down now is probed when it is back.
+    for (const node of this.nodes) {
+      if (node.indexed || node.downUntil > Date.now()) continue
+      try {
+        node.indexed = txidOf(await this.rpcAt<string>(node, 'getrawtransaction', [INDEX_PROBE, false])) === INDEX_PROBE
+      } catch (error) {
+        if (error instanceof NodeError && error.code === -5) throw new Error('A BCH RPC cannot look up confirmed transactions; it needs txindex=1 without pruning')
+      }
+    }
   }
   async coin(id: string, vout: number) {
     const { node, value: coin } = await this.rpcFrom<{

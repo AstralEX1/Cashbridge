@@ -259,7 +259,7 @@ test('a node answering 200 with an empty or lagging result is skipped and then a
   await withNodes(['first.example', 'second.example'], host => Response.json(host === 'first.example' ? empty : { result: synced }), async (gateway, calls) => {
     await gateway.assertReady()
     await gateway.assertReady()
-    assert.deepEqual(calls, ['first.example getblockchaininfo', 'second.example getblockchaininfo', 'second.example getblockchaininfo'])
+    assert.deepEqual(calls.filter(call => call.endsWith('getblockchaininfo')), ['first.example getblockchaininfo', 'second.example getblockchaininfo', 'second.example getblockchaininfo'])
   })
   await withNodes(['first.example', 'second.example'], host => Response.json({ result: host === 'first.example' ? { ...synced, blocks: 90 } : synced }), async gateway => {
     await gateway.assertReady()
@@ -316,4 +316,26 @@ test('up to eight RPC endpoints are accepted', () => {
     else process.env.BCHN_RPC_CONFIG_FILE = previous
     rmSync(directory, { recursive: true, force: true })
   }
+})
+
+// The first BCH (and Bitcoin) transfer, block 170: only an indexed node can return it.
+const indexProbe = { id: 'f4184fc596403b9d638783cf57adfe4c75c605f6356fbc91338530e9831e9e16', hex: '0100000001c997a5e56e104102fa209c6a852dd90660a20b2d9c352423edce25857fcd3704000000004847304402204e45e16932b8af514961a1d3a1a25fdf3f4f7732e9d624c6c61548ab5fb8cd410220181522ec8eca07de4860a4acdd12909d831cc56cbbac4622082221a8768d1d0901ffffffff0200ca9a3b00000000434104ae1a62fe09c5f51b13905f07f06b99a2f7159b2225f374cd378d71302fa28414e7aab37397f554a7df5f142c21c1b7303b8a0626f1baded5c72a704f7e6cd84cac00286bee0000000043410411db93e1dcdb8a016b49840f8c53bc1eb68a382e97b1482ecad7b148a6909a5cb2e0eaddfb84ccf9744464f82e160bfa9b8b64f9d4c03f999b8643f656b412a3ac00000000' }
+
+test('readiness refuses a synchronized node that cannot look up confirmed transactions, and probes an indexed one once', async () => {
+  const answer = indexed => (_host, { method, params }) => {
+    if (method === 'getblockchaininfo') return Response.json({ result: synced })
+    assert.equal(params[0], indexProbe.id)
+    return indexed ? Response.json({ result: indexProbe.hex }) : Response.json({ error: { code: -5 } }, { status: 500 })
+  }
+  await withNodes(['unindexed.example'], answer(false), async gateway => {
+    await assert.rejects(gateway.assertReady(), /txindex/)
+  })
+  await withNodes(['first.example', 'unindexed.example'], (host, payload) => answer(host === 'first.example')(host, payload), async gateway => {
+    await assert.rejects(gateway.assertReady(), /txindex/)
+  })
+  await withNodes(['indexed.example'], answer(true), async (gateway, calls) => {
+    await gateway.assertReady()
+    await gateway.assertReady()
+    assert.deepEqual(calls, ['indexed.example getblockchaininfo', 'indexed.example getrawtransaction', 'indexed.example getblockchaininfo'])
+  })
 })
