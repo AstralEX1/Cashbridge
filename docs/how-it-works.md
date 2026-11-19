@@ -3,6 +3,7 @@
 ## Manual (Cashbridge Router off, the default)
 
 Forward: source wallet → THORChain → BCH in the user's BCH wallet → optional Cauldron CashToken trade signed through WizardConnect. Native BCH skips the token trade. Reverse: BCH wallet sells the chosen token when needed, then signs the THORChain BCH deposit; the target chain proves payout. Existing manual 0-conf behavior and wallet sessions remain unchanged.
+NEAR Intents (1Click) quotes beside THORChain both ways; the form takes the better route. Its leg is a plain transfer to a one-use deposit address, and its payout is found on the paying chain like THORChain's.
 
 ## Automatic (Cashbridge Router on, forward to a Cauldron token)
 
@@ -37,6 +38,19 @@ cannot pay the BCH anywhere but the recipient and the fallback. An order that re
 If someone expires a coin before the Router acts, the order stops for review. `npm run contract:compile` rebuilds
 `contracts/router-order.json`; `src/lib/router-contract.ts` holds its bytecode, and `test/router-contract.test.mjs` runs it
 in the BCH VM on a real Cauldron trade.
+
+## NEAR Intents orders (Cashbridge Router forward)
+
+With `AUTO_BRIDGE_NEAR_ORDERS=true` on the Router and `NEXT_PUBLIC_ROUTER_NEAR=true` on the site, a forward Router transfer
+can take its first leg through NEAR Intents when that quotes better. The page asks 1Click for a quote that pays the order's
+own BCH address and refunds the source wallet, and gives the Router the quote's deposit address before the wallet sends,
+so the Router can follow the order even if the tab closes. Only plain-address orders take it (1Click pays q… and p…
+addresses; contract orders stay on THORChain), and the address is set once, before anything is paid.
+
+The Router reads 1Click's status for that deposit address as a pointer only: the signed quote in it must pay native BCH to
+the order's address, each BCH payout it names is read from the Router's own node, and together they must pay at least the
+quote's minimum. Then the order goes on as above (depth, Cauldron trade or BCH fallback). A quote paying elsewhere, a
+short payout or a failed swap stops the order for review; a 1Click refund ends it as refunded at the source.
 
 ## Sale orders (Cashbridge Router back from BCH)
 
