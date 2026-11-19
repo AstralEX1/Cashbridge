@@ -29,6 +29,7 @@ Rules:
 
 ## Docs
 
+- [The bridge](${site}/bridge): the web app, for what this server does not prepare
 - [Use Cash Bridge from an AI agent](${site}/docs/agents)
 - [How it works](${site}/docs/how-it-works)
 - [Fees and limits](${site}/docs/fees)

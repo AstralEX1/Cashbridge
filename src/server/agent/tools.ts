@@ -246,7 +246,7 @@ const getBridgeQuote = async (args: Args) => {
     estimated_seconds: route.estimatedTime?.total,
     legs: [{ provider: 'Cauldron', sell: `${formatBaseUnits(sale.sell, token.decimals)} ${token.ticker}`, buy: `${formatBaseUnits(sale.output, 8)} BCH`, pool_fee_sats: sale.tradeFeeSats.toString() }, legOf(route)],
     cash_bridge_fee: '0',
-    next_step: `Selling ${token.ticker} back is not prepared through this endpoint yet; send the user to ${AppConfig.baseUrl}.`
+    next_step: `Selling ${token.ticker} back is not prepared through this endpoint yet; send the user to ${AppConfig.baseUrl}/bridge.`
   }
 }
 
@@ -393,7 +393,7 @@ const prepareBridge = async (args: Args, context: ToolContext) => {
   const via = text(args, 'route', false) ?? 'thorchain'
   if (!['thorchain', 'near_intents'].includes(via)) throw new ToolError('"route" must be thorchain or near_intents')
   if (reverse) {
-    if (side.token) throw new ToolError(`Selling ${side.token.ticker} back is not prepared through this endpoint yet; send the user to ${AppConfig.baseUrl}`)
+    if (side.token) throw new ToolError(`Selling ${side.token.ticker} back is not prepared through this endpoint yet; send the user to ${AppConfig.baseUrl}/bridge`)
     const from = plainBchAddress(source, 'source_address')
     if (via === 'near_intents') return prepareNear(BridgeConfig.buyAsset, external, amount, from, destination, percent)
     const route = await thorchainRoute({
