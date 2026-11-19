@@ -2,6 +2,10 @@
 
 Bridge THORChain assets to Bitcoin Cash and Cauldron CashTokens, and back. Live at https://www.cashbridge.space.
 
+Two bridges carry the cross-chain leg: THORChain and [NEAR Intents](https://docs.near-intents.org) (its 1Click API). When both quote a transfer,
+the form shows what each would deliver and takes the better one. NEAR Intents is a plain transfer to a one-use deposit address; its payout is
+checked on the destination chain like THORChain's.
+
 By default the user signs every step in their own wallets. For forward transfers to a Cauldron token, the **Cashbridge Router** switch lets the user sign
 once in the source wallet: the service briefly takes custody of the BCH, buys the token on Cauldron and pays it straight to the recipient, with a
 fixed minimum and a BCH fallback. ERC-20 approval may still need a separate transaction. See the

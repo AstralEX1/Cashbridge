@@ -26,6 +26,13 @@ export default function Page() {
         </a>{' '}
         is a network of liquidity pools that swaps native assets across chains. You send USDC on Ethereum to a THORChain vault with a memo that says where the result should go, and THORChain pays out native BCH on Bitcoin Cash. If a swap cannot complete, for example because the price moved past your slippage limit, THORChain refunds the source asset to the address that sent it.
       </p>
+      <h3>NEAR Intents</h3>
+      <p>
+        <a href="https://docs.near-intents.org" target="_blank" rel="noopener noreferrer">
+          NEAR Intents
+        </a>{' '}
+        is the second route. Its 1Click service gives each transfer a one-use deposit address on the source chain; you send the asset there with a plain transfer, no memo, and market makers pay native BCH to your address. If the transfer cannot complete before its deadline, the deposit is refunded to the address you sent it from. When both routes quote, the form shows what each would deliver and takes the better one; you can pick the other. NEAR Intents carries manual transfers in both directions. The Cashbridge Router uses THORChain.
+      </p>
       <h3>Cauldron</h3>
       <p>
         <a href="https://cauldron.quest" target="_blank" rel="noopener noreferrer">
