@@ -260,7 +260,8 @@ export function Send({ isOpen, onOpenChange, initialToken, account }: SendDialog
   const handleSend = () => {
     if (!amount || numericAmount <= 0 || !recipient || !isValidRecipient) return
     if (isPrivate) return handlePrivateSend()
-    const assetValue = selectedToken.balance.set(numericAmount)
+    // The typed string, not its float: a Number rounds large or long amounts before the wallet signs them.
+    const assetValue = selectedToken.balance.set(amount)
     setSubmitting(true)
 
     const wallet = uSwap.getWallet(selectedAccount.provider, selectedToken.balance.chain)
