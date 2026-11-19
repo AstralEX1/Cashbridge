@@ -1,7 +1,8 @@
 import axios from 'axios'
 
-const thornode = axios.create({ baseURL: 'https://gateway.liquify.com/chain/thorchain_api' })
-const midgard = axios.create({ baseURL: 'https://gateway.liquify.com/chain/thorchain_midgard' })
+// A stalled provider would otherwise hold a poll open forever.
+const thornode = axios.create({ baseURL: 'https://gateway.liquify.com/chain/thorchain_api', timeout: 15_000 })
+const midgard = axios.create({ baseURL: 'https://gateway.liquify.com/chain/thorchain_midgard', timeout: 15_000 })
 
 export interface ThorNameAlias {
   chain: string

@@ -1,7 +1,7 @@
 import axios from 'axios'
 
-const mayanode = axios.create({ baseURL: 'https://mayanode.mayachain.info' })
-const mayaMidgard = axios.create({ baseURL: 'https://midgard.mayachain.info' })
+const mayanode = axios.create({ baseURL: 'https://mayanode.mayachain.info', timeout: 15_000 })
+const mayaMidgard = axios.create({ baseURL: 'https://midgard.mayachain.info', timeout: 15_000 })
 
 export interface MayaNameAlias {
   chain: string
