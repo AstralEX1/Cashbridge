@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Callout, DocsArticle, Shot, Step, Steps } from '@/components/docs/docs-ui'
+import { BridgeConfig } from '@/config'
 
 export const metadata: Metadata = {
   title: 'Use the Cashbridge Router',
@@ -22,7 +23,13 @@ export default function Page() {
       <ul>
         <li>The selector above the form has two options, <strong>Manual</strong> and <strong>Cashbridge Router</strong>. Manual is the default, and your choice is remembered in the browser.</li>
         <li>It covers transfers to <strong>any Cauldron token</strong>, such as PUSD, and to <strong>plain BCH</strong>. For plain BCH nothing changes in how the transfer runs, but you can pay a pasted address instead of connecting a wallet.</li>
-        <li>It is not available for other CashTokens or for bridging back from Bitcoin Cash. The Cashbridge Router option is greyed out and a tooltip says so; those routes are signed in your own wallets.</li>
+        {BridgeConfig.routerSales ? (
+          <li>
+            It also covers bridging a Cauldron token <strong>back from Bitcoin Cash</strong>. Your BCH wallet signs one transaction that sends the token to a contract made for this transfer. The contract lets the Router only sell the token on Cauldron for at least the quoted minimum BCH and deposit that BCH to THORChain for your destination, or return the token to your wallet. If the Router stops, anyone can return it after three hours.
+          </li>
+        ) : (
+          <li>It is not available for other CashTokens or for bridging back from Bitcoin Cash. The Cashbridge Router option is greyed out and a tooltip says so; those routes are signed in your own wallets.</li>
+        )}
       </ul>
 
       <h2 id="steps">Step by step</h2>
