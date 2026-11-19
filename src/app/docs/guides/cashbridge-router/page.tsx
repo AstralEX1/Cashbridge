@@ -12,16 +12,16 @@ export default function Page() {
     <DocsArticle
       href="/docs/guides/cashbridge-router"
       title="Use the Cashbridge Router"
-      lead="The Cashbridge Router turns a two-signature transfer into one. You approve a single transaction in your source wallet. Cash Bridge receives the BCH from THORChain, buys PUSD on Cauldron and sends it to you."
+      lead="The Cashbridge Router turns a two-signature transfer into one. You approve a single transaction in your source wallet. Cash Bridge receives the BCH from THORChain, buys the token you chose on Cauldron and sends it to you."
     >
       <Callout kind="warning" title="Temporary custody">
-        With the Cashbridge Router on, the service controls your BCH from the moment THORChain pays it until the PUSD payout, or a BCH refund, is sent. With it off, nobody but you ever holds your funds. If you are unsure, use manual mode, and always start with a small amount.
+        With the Cashbridge Router on, the service controls your BCH from the moment THORChain pays it until the token payout, or a BCH refund, is sent. With it off, nobody but you ever holds your funds. If you are unsure, use manual mode, and always start with a small amount.
       </Callout>
 
       <h2 id="what-it-does">What it does</h2>
       <ul>
         <li>The selector above the form has two options, <strong>Manual</strong> and <strong>Cashbridge Router</strong>. Manual is the default, and your choice is remembered in the browser.</li>
-        <li>It covers transfers to <strong>PUSD</strong> and to <strong>plain BCH</strong>. For plain BCH nothing changes in how the transfer runs, but you can pay a pasted address instead of connecting a wallet.</li>
+        <li>It covers transfers to <strong>any Cauldron token</strong>, such as PUSD, and to <strong>plain BCH</strong>. For plain BCH nothing changes in how the transfer runs, but you can pay a pasted address instead of connecting a wallet.</li>
         <li>It is not available for other CashTokens or for bridging back from Bitcoin Cash. The Cashbridge Router option is greyed out and a tooltip says so; those routes are signed in your own wallets.</li>
       </ul>
 
@@ -29,14 +29,14 @@ export default function Page() {
       <Steps>
         <Step title="Choose the Cashbridge Router">
           <p>
-            Pick <strong>Cashbridge Router</strong> in the selector. A line under it says that the bridge settles through the Router and that you do not need to sign a second transaction. Choose what to send and keep <strong>PUSD</strong> (or <strong>BCH</strong>) as what you receive.
+            Pick <strong>Cashbridge Router</strong> in the selector. A line under it says that the bridge settles through the Router and that you do not need to sign a second transaction. Choose what to send and pick the token (or <strong>BCH</strong>) you want to receive.
           </p>
           <Shot name="router-selector" alt="The Manual and Cashbridge Router selector with Cashbridge Router chosen and the hint that the bridge settles through the Router with no second transaction to sign" caption="With the Cashbridge Router chosen, a line under the selector says no second transaction is needed." />
         </Step>
 
-        <Step title="Say where the PUSD goes">
+        <Step title="Say where the token goes">
           <p>
-            Connect your BCH wallet as usual, or open the menu on the BCH button and choose <strong>Paste wallet address</strong>. A pasted PUSD address must be a token-aware one, which many wallets show separately and which starts with <code>bitcoincash:z</code>. A plain <code>bitcoincash:q</code> address is refused, and so is anything that is not a Bitcoin Cash address. Receiving needs no signature from that wallet, and the same address is the fallback if the PUSD cannot be bought.
+            Connect your BCH wallet as usual, or open the menu on the BCH button and choose <strong>Paste wallet address</strong>. A pasted token address must be a token-aware one, which many wallets show separately and which starts with <code>bitcoincash:z</code>. A plain <code>bitcoincash:q</code> address is refused, and so is anything that is not a Bitcoin Cash address. Receiving needs no signature from that wallet, and the same address is the fallback if the token cannot be bought.
           </p>
         </Step>
 
@@ -46,7 +46,7 @@ export default function Page() {
           </p>
           <ul>
             <li>
-              <strong>Minimum if converted</strong>: the least PUSD the service may pay you. It is fixed when the order is created.
+              <strong>Minimum if converted</strong>: the least of the token the service may pay you. It is fixed when the order is created.
             </li>
             <li>
               <strong>BCH fallback</strong>: the address that receives the BCH if the minimum cannot be met, less the miner fee.
@@ -94,8 +94,8 @@ export default function Page() {
             <td>The BCH is seen on Bitcoin Cash. The service is waiting for the depth it requires.</td>
           </tr>
           <tr>
-            <td>Preparing PUSD payout</td>
-            <td>The BCH is verified and the PUSD purchase is being built and signed.</td>
+            <td>Preparing the token payout</td>
+            <td>The BCH is verified and the token purchase is being built and signed.</td>
           </tr>
           <tr>
             <td>Waiting for a trade meeting your minimum</td>
@@ -103,11 +103,11 @@ export default function Page() {
           </tr>
           <tr>
             <td>Payout submitted · verifying the chain</td>
-            <td>The PUSD transaction is in the network. The receipt is provisional until it has six confirmations.</td>
+            <td>The token transaction is in the network. The receipt is provisional until it has six confirmations.</td>
           </tr>
           <tr>
-            <td>PUSD payout confirmed</td>
-            <td>Done. The PUSD is at your address.</td>
+            <td>Token payout confirmed</td>
+            <td>Done. The token is at your address.</td>
           </tr>
           <tr>
             <td>BCH fallback confirmed</td>
@@ -126,7 +126,7 @@ export default function Page() {
 
       <h2 id="limits">What to keep in mind</h2>
       <ul>
-        <li>One signature is not one transaction. There are still a THORChain transfer, a BCH deposit and a payout. The Cashbridge Router does not make the transfer atomic and does not guarantee a PUSD payout, only the fixed minimum or a BCH refund.</li>
+        <li>One signature is not one transaction. There are still a THORChain transfer, a BCH deposit and a payout. The Cashbridge Router does not make the transfer atomic and does not guarantee a token payout, only the fixed minimum or a BCH refund.</li>
         <li>The service limits how much BCH it holds for open orders. If an order is refused, use manual mode.</li>
         <li>
           Delays are possible. A node outage or a recovery pass can postpone a payout or a refund. The order page says when the service is catching up; do not send again.
