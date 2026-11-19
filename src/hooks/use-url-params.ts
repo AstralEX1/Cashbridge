@@ -5,8 +5,9 @@ import { useEffect, useRef, useState } from 'react'
 import { Asset } from '@/components/swap/asset'
 import { BridgeConfig } from '@/config'
 import { useModeAssets } from '@/hooks/use-assets'
+import { readTokenSlug, searchCauldronTokens, tokenSlug } from '@/lib/cauldron-tokens'
 import { useIsPrivateSwap, useSetIsPrivateSwap } from '@/store/private-swap-store'
-import { FIRST_VISIT_AMOUNT, useSwapStore } from '@/store/swap-store'
+import { FIRST_VISIT_AMOUNT, isReverseTargetAsset, useSwapStore } from '@/store/swap-store'
 
 const DEFAULT_SELL = 'BTC.BTC'
 // The bridge buys native BCH whatever the URL names (see BridgeConfig).
@@ -61,7 +62,7 @@ export const useUrlParams = () => {
   const searchParams = useSearchParams()
   const isWidget = pathname.startsWith('/widget')
   const { assets } = useModeAssets()
-  const { assetFrom, assetTo, hasHydrated, setAssetFrom, setAssetTo } = useSwapStore()
+  const { assetFrom, assetTo, bchToken, reverse, hasHydrated, setAssetFrom, setAssetTo } = useSwapStore()
   const isPrivateSwap = useIsPrivateSwap()
   const setIsPrivateSwap = useSetIsPrivateSwap()
   const isPrivateUrl = searchParams.get('private') === 'true'
@@ -80,11 +81,30 @@ export const useUrlParams = () => {
 
     // The address bar's source wins; without one a returning visitor gets the source saved from the last
     // visit, and a first visit (nothing saved) gets BTC with a sample amount.
-    const { sell } = readPair(pathname, searchParams)
-    const { assetFrom: savedFrom, amountFrom, setAmountFrom } = useSwapStore.getState()
+    // The BCH side (native BCH or a Cauldron token) on the buy side links a transfer to BCH, on the sell
+    // side a transfer back from it; the other side names the other chain's asset.
+    const { sell, buy } = readPair(pathname, searchParams)
+    const toBch = readTokenSlug(buy)
+    const fromBch = toBch ? undefined : readTokenSlug(sell)
+    const { assetFrom: savedFrom, amountFrom, setAmountFrom, setBchToken } = useSwapStore.getState()
     const saved = assets.find(a => a.identifier === savedFrom?.identifier)
-    const sellAsset = resolveAsset(assets, sell, saved?.identifier ?? DEFAULT_SELL)
-    if (!saved && sellAsset?.identifier === DEFAULT_SELL && !amountFrom) setAmountFrom(FIRST_VISIT_AMOUNT)
+    const sellAsset = resolveAsset(assets, fromBch ? buy : sell, saved?.identifier ?? DEFAULT_SELL)
+    const bchSide = fromBch && isReverseTargetAsset(sellAsset) ? fromBch : toBch
+    if (bchSide) {
+      useSwapStore.setState({ reverse: bchSide === fromBch })
+      if ('token' in bchSide) setBchToken(bchSide.token)
+      else {
+        // A token outside the pinned list is looked up by its category id; a pick made meanwhile wins.
+        const before = useSwapStore.getState().bchToken
+        searchCauldronTokens(bchSide.category)
+          .then(found => {
+            const token = found.find(t => t.category === bchSide.category)
+            if (token && useSwapStore.getState().bchToken === before) setBchToken(token)
+          })
+          .catch(() => {})
+      }
+    }
+    if (!saved && !useSwapStore.getState().reverse && sellAsset?.identifier === DEFAULT_SELL && !amountFrom) setAmountFrom(FIRST_VISIT_AMOUNT)
     // A crafted `-buy-` segment cannot pick another destination asset.
     const buyAsset = resolveAsset(assets, DEFAULT_BUY, DEFAULT_BUY)
 
@@ -115,7 +135,8 @@ export const useUrlParams = () => {
     // A same-asset pair exists only in the PRIVATE tab's Send mode, which the URL does not carry: opened
     // as a link it would land on Swap mode as an invalid pair, so the address keeps the last real pair.
     if (assetFrom.identifier === assetTo.identifier) return
-    const newPath = `/${SELL}${toSlug(assetFrom)}${BUY}${toSlug(assetTo)}`
+    const [sell, buy] = reverse ? [tokenSlug(bchToken), toSlug(assetFrom)] : [toSlug(assetFrom), tokenSlug(bchToken)]
+    const newPath = `/${SELL}${sell}${BUY}${buy}`
     const params = new URLSearchParams(window.location.search)
     params.delete('private')
     const search = params.toString()
@@ -123,7 +144,7 @@ export const useUrlParams = () => {
     if (window.location.pathname + window.location.search !== newUrl) {
       window.history.replaceState(window.history.state, '', newUrl)
     }
-  }, [assetFrom, assetTo, isPrivateSwap, isPrivateUrl, isWidget])
+  }, [assetFrom, assetTo, bchToken, reverse, isPrivateSwap, isPrivateUrl, isWidget])
 
   // The tab to render: the URL's until it is in the store, so the server and the first client
   // render already show it instead of switching after load

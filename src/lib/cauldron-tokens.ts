@@ -90,6 +90,20 @@ const fetchList = async (path: string, params: Record<string, string>) => {
   return (body as IndexedToken[]).filter(t => Number(t.tvl_sats) >= MIN_TVL_SATS).flatMap(t => parseIndexedToken(t) ?? [])
 }
 
+// The BCH side of a page link: `BCH` for native BCH, a pinned token's ticker, or any token's category id.
+export const tokenSlug = (token: CauldronToken | null) => (!token ? 'BCH' : FEATURED_TOKENS.some(t => sameToken(t, token)) ? token.ticker : token.category)
+
+// Reads a link segment back: a token or null (native BCH), a category id to look up, or undefined
+// when the segment names no BCH side. Tickers other than the pinned ones are not trusted.
+export const readTokenSlug = (slug: string | null): { token: CauldronToken | null } | { category: string } | undefined => {
+  const lower = slug?.toLowerCase()
+  if (!lower) return undefined
+  if (lower === 'bch' || lower === 'bch.bch') return { token: null }
+  const featured = FEATURED_TOKENS.find(t => t.ticker.toLowerCase() === lower || t.category === lower)
+  if (featured) return { token: featured }
+  return isCategory(lower) ? { category: lower } : undefined
+}
+
 export const withFeaturedFirst = (tokens: CauldronToken[]) => [...FEATURED_TOKENS, ...tokens.filter(t => !FEATURED_TOKENS.some(f => sameToken(f, t)))]
 
 // The bridge's token list: the featured tokens, then Cauldron's top tokens by score.

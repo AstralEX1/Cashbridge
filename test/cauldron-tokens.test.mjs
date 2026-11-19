@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { FEATURED_TOKENS, PUSD_TOKEN, parseIndexedToken, withFeaturedFirst } from '../src/lib/cauldron-tokens.ts'
+import { FEATURED_TOKENS, PUSD_TOKEN, parseIndexedToken, readTokenSlug, tokenSlug, withFeaturedFirst } from '../src/lib/cauldron-tokens.ts'
 
 const MUSD = 'b38a33f750f84c5c169a6f23cb873e6e79605021585d4f3408789689ed87f366'
 const MUSD_V0 = '4046913cba6b70b2214a048a3df92252849f481ffa1455ed7faf17243c36bf67'
@@ -23,4 +23,21 @@ test('a featured token keeps its checked decimals whatever the indexer says', ()
   const v0 = parseIndexedToken({ token_id: MUSD_V0, display_symbol: 'MUSDv0', bcmr: { token: { category: MUSD_V0, decimals: 2 } } })
   assert.equal(v0?.ticker, 'MUSDv0')
   assert.notEqual(v0?.category, MUSD)
+})
+
+test('a page link names the BCH side by ticker for pinned tokens and by category id otherwise', () => {
+  const other = { category: 'a'.repeat(64), ticker: 'MUSD', decimals: 0 }
+  assert.equal(tokenSlug(null), 'BCH')
+  assert.equal(tokenSlug(FEATURED_TOKENS[1]), 'MUSD')
+  assert.equal(tokenSlug(other), other.category)
+
+  assert.deepEqual(readTokenSlug('BCH'), { token: null })
+  assert.deepEqual(readTokenSlug('bch.bch'), { token: null })
+  assert.equal(readTokenSlug('musd').token, FEATURED_TOKENS[1])
+  assert.equal(readTokenSlug(MUSD).token, FEATURED_TOKENS[1])
+  assert.deepEqual(readTokenSlug(MUSD_V0), { category: MUSD_V0 })
+  // Only the pinned tickers are read as tokens; anything else is the other chain's asset.
+  assert.equal(readTokenSlug('MUSDv0'), undefined)
+  assert.equal(readTokenSlug('BSC.BNB'), undefined)
+  assert.equal(readTokenSlug(null), undefined)
 })
