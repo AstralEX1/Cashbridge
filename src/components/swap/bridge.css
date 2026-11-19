@@ -565,19 +565,6 @@
   user-select: all;
   overflow-wrap: anywhere;
 }
-.blaze-note,
-.blaze-panel p {
-  margin-top: 6px;
-  color: #a9bbc2;
-  font-size: 12px;
-}
-.blaze-note button {
-  white-space: nowrap;
-}
-.blaze-panel strong {
-  color: #d2dee2;
-  font-weight: 600;
-}
 
 
 @media (max-width: 480px) {
