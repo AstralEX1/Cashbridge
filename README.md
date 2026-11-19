@@ -11,6 +11,10 @@ once in the source wallet: the service briefly takes custody of the BCH, buys th
 fixed minimum and a BCH fallback. ERC-20 approval may still need a separate transaction. See the
 [transaction flows](docs/how-it-works.md).
 
+AI agents can use the bridge through its MCP server at `https://www.cashbridge.space/mcp`: quote, prepare a deposit for the user's wallet to
+sign, and track the transfer. The server holds no keys. Add it with `claude mcp add --transport http cash-bridge https://www.cashbridge.space/mcp`;
+see the [agent docs](https://www.cashbridge.space/docs/agents).
+
 Forked from the [swap.thorchain.org](https://github.com/thorchain/swap.thorchain) interface.
 
 ## Proof on mainnet
