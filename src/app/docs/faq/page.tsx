@@ -17,10 +17,13 @@ export default function Page() {
       <h2 id="basics">The basics</h2>
 
       <details>
-        <summary>What is PUSD, and what is a category id?</summary>
+        <summary>What are PUSD and MUSD, and what is a category id?</summary>
         <div>
           <p>
             PUSD is a dollar-pegged token on Bitcoin Cash. Tokens on Bitcoin Cash are called CashTokens, and each one is identified by a category id. The category id of PUSD is <code>2469acc5afa4b10cb5b5c04afb89c3a3ffd61c5da9c01e26d00951cae2a02544</code>. You can search the picker by ticker or by category id, and the same id tells you which token you are looking at when two tokens share a ticker.
+          </p>
+          <p>
+            MUSD (Moria USD) is the second dollar token you can bridge to and from. Its category id is <code>b38a33f750f84c5c169a6f23cb873e6e79605021585d4f3408789689ed87f366</code>; Cauldron also lists an older MUSDv0, which is a different token. The picker lists PUSD and MUSD first, then RES, OLA and LIFT, the most liquid other tokens on Cauldron, then the rest.
           </p>
         </div>
       </details>
