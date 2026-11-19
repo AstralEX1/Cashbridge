@@ -230,3 +230,22 @@ test('wrong order destination is refused and source callback failure does not er
   assert.equal(hash, 'ab'.repeat(32))
   assert.equal(autoBridgeStore.getState().orders.find(order => order.id === reference.id).sourceHash, hash)
 })
+
+test('a contract order is accepted only when its deposit is the contract of the order terms', async () => {
+  const { orderBinding } = await import('../src/lib/router-contract.ts')
+  const recipient = bindingFromPubkey(pubkey, 0), refund = bindingFromPubkey(otherPubkey, 0)
+  const intent = { recipientAddress: recipient.tokenAddress, refundAddress: refund.cashAddress, expectedBchSats: '1000000' }
+  const contract = { routerKey: bindingFromPubkey(otherPubkey, 1).pubkey, refundAfter: 1_800_000_000 }
+  const terms = { ...contract, recipientScript: recipient.lockingBytecode, refundScript: refund.lockingBytecode, minPusd: '123' }
+  const reference = { id: randomUUID(), capability: randomBytes(32).toString('hex'), intent }
+  const oldFetch = globalThis.fetch
+  let depositAddress = orderBinding(terms, 0).cashAddress
+  globalThis.fetch = async () => Response.json({ id: reference.id, ...intent, contract, depositAddress, minPusd: '123' })
+  try {
+    assert.equal((await restoreAutomaticOrder(reference)).depositAddress, depositAddress)
+    depositAddress = orderBinding({ ...terms, recipientScript: refund.lockingBytecode }, 0).cashAddress
+    await assert.rejects(restoreAutomaticOrder(reference), /not its contract/)
+    depositAddress = refund.cashAddress
+    await assert.rejects(restoreAutomaticOrder(reference), /not its contract/)
+  } finally { globalThis.fetch = oldFetch }
+})
