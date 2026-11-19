@@ -38,14 +38,25 @@ function warnIfUnconfigured() {
   )
 }
 
-// Every JSON-RPC method the toolbox needs is allowed -- pinning the list down
-// would break a swap the day the SDK reaches for one more -- but the shape is
-// checked so this cannot be used to POST arbitrary bodies at the upstream.
-function isJsonRpc(payload: unknown): boolean {
-  if (Array.isArray(payload)) return payload.length > 0 && payload.every(isJsonRpc)
-  if (!payload || typeof payload !== 'object') return false
+// web3.js does not batch; a few calls per request is plenty, and the limiter charges each one.
+const MAX_BATCH = 10
 
-  return typeof (payload as { method?: unknown }).method === 'string'
+// Whole-chain scans that no balance, swap or status check here makes; one of them can cost a paid
+// endpoint more than thousands of reads.
+const HEAVY_METHODS = new Set(['getProgramAccounts', 'getLargestAccounts', 'getSignaturesForAddress', 'getBlock', 'getBlocks', 'getBlocksWithLimit'])
+
+// Every other JSON-RPC method stays allowed -- pinning the list down would break a
+// swap the day the SDK reaches for one more -- but the shape is checked so this
+// cannot be used to POST arbitrary bodies at the upstream.
+const isCall = (payload: unknown) => {
+  const method = (payload as { method?: unknown } | null)?.method
+  return !!payload && typeof payload === 'object' && !Array.isArray(payload) && typeof method === 'string' && !HEAVY_METHODS.has(method)
+}
+
+// The number of upstream calls in a request, or 0 when it is not an allowed JSON-RPC request or flat batch.
+function callCount(payload: unknown): number {
+  if (!Array.isArray(payload)) return isCall(payload) ? 1 : 0
+  return payload.length > 0 && payload.length <= MAX_BATCH && payload.every(isCall) ? payload.length : 0
 }
 
 export async function POST(req: NextRequest) {
@@ -58,20 +69,27 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const retryAfter = rateLimit(req, 'solana', RATE_LIMIT)
+  const body = await readRequestBody(req, MAX_BODY_BYTES)
+  if (typeof body !== 'string') return body
+
+  let calls = 0
+  try {
+    calls = callCount(JSON.parse(body))
+  } catch {}
+  if (!calls) {
+    return apiError(
+      400,
+      'bad_request',
+      'Invalid JSON-RPC request',
+      `The body must be a JSON-RPC request object, or an array of at most ${MAX_BATCH}; whole-chain scans are not served.`
+    )
+  }
+
+  const retryAfter = rateLimit(req, 'solana', RATE_LIMIT, calls)
   if (retryAfter !== null) {
     return apiError(429, 'rate_limited', 'Too many requests', `Retry after ${retryAfter} seconds (see the Retry-After header).`, {
       'Retry-After': String(retryAfter)
     })
-  }
-
-  const body = await readRequestBody(req, MAX_BODY_BYTES)
-  if (typeof body !== 'string') return body
-
-  try {
-    if (!isJsonRpc(JSON.parse(body))) throw new Error('not a JSON-RPC request')
-  } catch {
-    return apiError(400, 'bad_request', 'Invalid JSON-RPC request', 'The body must be a JSON-RPC request object, or an array of them.')
   }
 
   warnIfUnconfigured()

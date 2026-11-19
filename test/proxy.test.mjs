@@ -200,3 +200,29 @@ test('Blockchair refuses cross-origin requests before reading their bodies', asy
   assert.equal((await POST(req, { params: Promise.resolve({ path: ['bitcoin', 'push', 'transaction'] }) })).status, 403)
   assert.equal(reads, 0)
 })
+
+test('the Solana proxy refuses big, nested or scanning batches and charges every call to the limiter', async t => {
+  const { POST } = await import('../src/app/api/solana/route.ts')
+  let forwarded = 0
+  t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    const payload = JSON.parse(options.body)
+    forwarded += Array.isArray(payload) ? payload.length : 1
+    return Response.json([])
+  })
+  t.mock.method(console, 'warn', () => {})
+  const send = (payload, ip = '198.51.100.201') =>
+    POST(new NextRequest('http://localhost/api/solana', { method: 'POST', body: JSON.stringify(payload), headers: { 'sec-fetch-site': 'same-origin', 'cf-connecting-ip': ip } }))
+  const call = (method, id = 1) => ({ jsonrpc: '2.0', id, method })
+  // The audit's amplification: hundreds of calls in one request.
+  assert.equal((await send(Array.from({ length: 900 }, (_, id) => call('getBalance', id)))).status, 400)
+  assert.equal((await send([[call('getBalance')]])).status, 400)
+  assert.equal((await send(call('getProgramAccounts'))).status, 400)
+  assert.equal((await send([call('getBalance'), call('getSignaturesForAddress', 2)])).status, 400)
+  assert.equal(forwarded, 0)
+  assert.equal((await send(call('getTransaction'))).status, 200)
+  // 600 units per window: 59 full batches leave room for 9 more calls, not 10.
+  for (let i = 0; i < 59; i++) assert.equal((await send(Array.from({ length: 10 }, (_, id) => call('getBalance', id)))).status, 200)
+  assert.equal((await send(Array.from({ length: 10 }, (_, id) => call('getBalance', id)))).status, 429)
+  assert.equal((await send(Array.from({ length: 9 }, (_, id) => call('getBalance', id)))).status, 200)
+  assert.equal(forwarded, 1 + 590 + 9)
+})
