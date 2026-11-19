@@ -3,10 +3,11 @@ import { address, networks, type Network } from 'bitcoinjs-lib'
 import { BCH_PREFIX, decodeTx, RpcError, txidOf, WsRpc } from '@/lib/bch'
 
 // Keyless public explorers behind the Blockchair-shaped routes the UTXO toolbox and this app call
-// (src/app/api/blockchair). Esplora (mempool.space and its forks) and Blockbook (Trezor's public
-// backends) cover most chains; Bitcoin Cash is read from Fulcrum (Electrum servers). Each chain lists its explorers in order; a call
-// moves to the next one when an explorer is unreachable, rate-limited or failing, and stops at the
-// first one that answers, including "not found" only once every explorer has said so.
+// (src/app/api/blockchair), in four HTTP dialects: Esplora (mempool.space and its forks), Bitcore,
+// BlockCypher and Blockbook (Trezor's public backends), plus Fulcrum (Electrum servers) for Bitcoin
+// Cash. Each chain lists its explorers in order; a call moves to the next one when an explorer is
+// unreachable, rate-limited or failing, and stops at the first one that answers, including "not
+// found" only once every explorer has said so.
 
 const TIMEOUT_MS = 5_000
 
@@ -141,6 +142,80 @@ function blockbook(base: string): Explorer {
   }
 }
 
+// Bitcore (BitPay's Insight API, https://api.bitcore.io), chain names like 'DOGE'. It has no raw
+// transaction endpoint, so raw lookups fall through to the next explorer.
+function bitcore(chain: string): Explorer {
+  const api = `https://api.bitcore.io/api/${chain}/mainnet`
+  const height = (h: unknown) => (typeof h === 'number' && h > 0 ? h : -1)
+  type Coin = { mintTxid: string; mintIndex: number; mintHeight: number; value: number; address?: string; script?: string; spentTxid?: string }
+  return {
+    name: api,
+    async balance(addr) {
+      const b = await askJson(`${api}/address/${encodeURIComponent(addr)}/balance`)
+      // Bitcore does not count an address's transactions; nothing here reads the count.
+      return { balance: Number(b.balance), txCount: 0 }
+    },
+    async coins(addr) {
+      // shortcut: the first 1000 coins only, raise the limit if a wallet ever holds more.
+      const list: Coin[] = (await askJson(`${api}/address/${encodeURIComponent(addr)}/?unspent=true&limit=1000`)) ?? []
+      return list.filter(c => !c.spentTxid).map(c => ({ hash: c.mintTxid, index: c.mintIndex, value: Number(c.value), blockId: height(c.mintHeight) }))
+    },
+    async tx(hash) {
+      const tx = await askJson(`${api}/tx/${hash}`)
+      if (!tx) return null
+      const coins = await askJson(`${api}/tx/${hash}/coins`)
+      const outputs: Coin[] = [...(coins?.outputs ?? [])].sort((a: Coin, b: Coin) => a.mintIndex - b.mintIndex)
+      if (outputs.length !== tx.outputCount) throw new Error(`${api} listed ${outputs.length} of ${tx.outputCount} outputs of ${hash}`)
+      return {
+        blockId: height(tx.blockHeight),
+        outputs: outputs.map(o => ({ recipient: o.address && o.address !== 'false' ? o.address : undefined, value: Number(o.value), scriptHex: o.script ?? '' }))
+      }
+    },
+    rawTx: () => Promise.reject(new Error(`${api} serves no raw transactions`)),
+    broadcast: async hex => {
+      const answer = await askJson(`${api}/tx/send`, { method: 'POST', body: JSON.stringify({ rawTx: hex }), headers: { 'content-type': 'application/json' } })
+      return txid(answer?.txid, api)
+    }
+  }
+}
+
+// BlockCypher (https://www.blockcypher.com/dev/bitcoin/), coins like 'doge'. Keyless use is rate-limited
+// per IP (a few hundred requests an hour), so it comes after an explorer without that limit.
+function blockCypher(coin: string): Explorer {
+  const api = `https://api.blockcypher.com/v1/${coin}/main`
+  const height = (h: unknown) => (typeof h === 'number' && h > 0 ? h : -1)
+  type Ref = { tx_hash: string; tx_output_n: number; value: number; block_height?: number; spent?: boolean; double_spend?: boolean }
+  // The outputs come in pages of `limit`; a transaction with more than this is read elsewhere.
+  const get = (hash: string) => askJson(`${api}/txs/${hash}?includeHex=true&limit=100`)
+  return {
+    name: api,
+    async balance(addr) {
+      const a = await askJson(`${api}/addrs/${encodeURIComponent(addr)}/balance`)
+      return { balance: Number(a.final_balance), txCount: Number(a.final_n_tx ?? 0) }
+    },
+    async coins(addr) {
+      const a = await askJson(`${api}/addrs/${encodeURIComponent(addr)}?unspentOnly=true&limit=2000`)
+      // An unconfirmed ref can also be an input of a pending spend (tx_output_n -1).
+      const refs: Ref[] = [...(a?.txrefs ?? []), ...(a?.unconfirmed_txrefs ?? [])].filter((r: Ref) => r.tx_output_n >= 0 && !r.spent && !r.double_spend)
+      return refs.map(r => ({ hash: r.tx_hash, index: r.tx_output_n, value: Number(r.value), blockId: height(r.block_height) }))
+    },
+    async tx(hash) {
+      const tx = await get(hash)
+      if (!tx) return null
+      if (tx.outputs.length !== tx.vout_sz) throw new Error(`${api} listed ${tx.outputs.length} of ${tx.vout_sz} outputs of ${hash}`)
+      return {
+        blockId: height(tx.block_height),
+        outputs: tx.outputs.map((o: { value: number; script: string; addresses?: string[] | null }) => ({ recipient: o.addresses?.[0], value: Number(o.value), scriptHex: o.script }))
+      }
+    },
+    rawTx: async hash => (await get(hash))?.hex ?? null,
+    broadcast: async hex => {
+      const answer = await askJson(`${api}/txs/push`, { method: 'POST', body: JSON.stringify({ tx: hex }), headers: { 'content-type': 'application/json' } })
+      return txid(answer?.tx?.hash, api)
+    }
+  }
+}
+
 // Fulcrum: the Electrum protocol over WebSocket, the server kind src/lib/bch.ts checks BCH with. No CDN
 // bot filter sits in front of it, unlike Trezor's Blockbook, which answers the deployed site with a
 // Cloudflare block page. Transactions only: Bitcoin Cash has no address lookups here (cashaddr scripts
@@ -227,14 +302,14 @@ export const UTXO_CHAINS: Record<string, { network?: Network; explorers: Explore
   },
   litecoin: {
     network: LITECOIN,
-    explorers: [esplora('https://litecoinspace.org/api'), blockbook('https://ltc1.trezor.io'), blockbook('https://ltc2.trezor.io')]
+    explorers: [esplora('https://litecoinspace.org/api'), bitcore('LTC'), blockCypher('ltc'), blockbook('https://ltc1.trezor.io'), blockbook('https://ltc2.trezor.io')]
   },
   dogecoin: {
     network: DOGECOIN,
-    explorers: [blockbook('https://doge1.trezor.io'), blockbook('https://doge2.trezor.io'), blockbook('https://doge3.trezor.io')]
+    explorers: [bitcore('DOGE'), blockCypher('doge'), blockbook('https://doge1.trezor.io'), blockbook('https://doge2.trezor.io'), blockbook('https://doge3.trezor.io')]
   },
   'bitcoin-cash': { explorers: [fulcrum('wss://bch.imaginary.cash:50004'), fulcrum('wss://bch.loping.net:50004'), blockbook('https://bch1.trezor.io')] },
-  dash: { explorers: [blockbook('https://dash1.trezor.io')] },
+  dash: { explorers: [blockCypher('dash'), blockbook('https://dash1.trezor.io')] },
   zcash: { explorers: [blockbook('https://zec1.trezor.io')] }
 }
 

@@ -34,6 +34,8 @@ const memoScript = `6a${(`OUT:${deposit.toUpperCase()}`.length).toString(16)}${h
 const MEMPOOL = 'https://mempool.space/api'
 const BLOCKSTREAM = 'https://blockstream.info/api'
 const DOGE1 = 'https://doge1.trezor.io/api/v2'
+const BITCORE = 'https://api.bitcore.io/api/DOGE/mainnet'
+const CYPHER = 'https://api.blockcypher.com/v1/doge/main'
 
 // Upstreams by exact URL: a Response, a function of the request, or an Error for an unreachable host.
 const calls = []
@@ -236,10 +238,72 @@ test('broadcasting returns the transaction hash from either dialect', async () =
   const esplora = await call(['bitcoin', 'push', 'transaction'], { method: 'POST', body: JSON.stringify({ data: '0200' }) })
   assert.deepEqual(esplora.body, { data: { transaction_hash: hashA }, context: { code: 200 } })
 
-  upstreams({ 'https://doge1.trezor.io/api/v2/sendtx/': init => json({ result: hashB.toUpperCase() }) })
+  upstreams({ 'https://doge1.trezor.io/api/v2/sendtx/': () => json({ result: hashB.toUpperCase() }) })
   const blockbook = await call(['dogecoin', 'push', 'transaction'], { method: 'POST', body: JSON.stringify({ data: '0200' }) })
   assert.equal(blockbook.body.data.transaction_hash, hashB)
-  assert.equal(calls[0].body, '0200')
+  assert.equal(calls.at(-1).body, '0200')
+
+  upstreams({ [`${BITCORE}/tx/send`]: init => json(JSON.parse(init.body).rawTx === '0200' ? { txid: hashA } : {}) })
+  assert.equal((await call(['dogecoin', 'push', 'transaction'], { method: 'POST', body: JSON.stringify({ data: '0200' }) })).body.data.transaction_hash, hashA)
+
+  upstreams({ [`${BITCORE}/tx/send`]: down(), [`${CYPHER}/txs/push`]: init => json(JSON.parse(init.body).tx === '0200' ? { tx: { hash: hashB } } : {}, 201) })
+  assert.equal((await call(['dogecoin', 'push', 'transaction'], { method: 'POST', body: JSON.stringify({ data: '0200' }) })).body.data.transaction_hash, hashB)
+})
+
+test('Dogecoin is read from Bitcore, with raw transactions from BlockCypher', async () => {
+  upstreams({
+    [`${BITCORE}/address/${doge}/balance`]: json({ confirmed: 1000, unconfirmed: -100, balance: 900 }),
+    [`${BITCORE}/address/${doge}/?unspent=true&limit=1000`]: json([
+      { mintTxid: hashA, mintIndex: 1, mintHeight: 5_000_000, value: 900, spentTxid: '' },
+      { mintTxid: hashB, mintIndex: 0, mintHeight: -1, value: 5, spentTxid: '' },
+      { mintTxid: 'cc'.repeat(32), mintIndex: 0, mintHeight: 4_000_000, value: 100, spentTxid: 'dd'.repeat(32) }
+    ]),
+    [`${BITCORE}/tx/${hashA}`]: json({ txid: hashA, blockHeight: -1, outputCount: 2 }),
+    [`${BITCORE}/tx/${hashA}/coins`]: json({
+      inputs: [],
+      outputs: [
+        { mintIndex: 1, address: 'false', script: memoScript, value: 0 },
+        { mintIndex: 0, address: doge, script: dogeScript, value: 150_000 }
+      ]
+    }),
+    [`${CYPHER}/txs/${hashA}?includeHex=true&limit=100`]: json({ hash: hashA, hex: 'deadbeef', block_height: -1, vout_sz: 0, outputs: [] })
+  })
+  const dashboard = await call(['dogecoin', 'dashboards', 'address', doge])
+  assert.deepEqual(dashboard.body.data[doge].address.balance, 900)
+  assert.deepEqual(dashboard.body.data[doge].utxo.map(u => [u.transaction_hash, u.block_id]), [[hashA, 5_000_000], [hashB, -1]], 'a spent coin is left out')
+
+  const transaction = await call(['dogecoin', 'dashboards', 'transaction', hashA])
+  assert.deepEqual(transaction.body.data[hashA].outputs[0], { recipient: doge, value: 150_000, script_hex: dogeScript })
+  assert.deepEqual(utxoPayout(transaction.body, hashA, { destination: doge, depositTxid: deposit, buyAsset: 'DOGE.DOGE' }), { hash: hashA, amount: '150000' })
+
+  assert.deepEqual((await call(['dogecoin', 'raw', 'transaction', hashA])).body.data, { [hashA]: { raw_transaction: 'deadbeef' } })
+})
+
+test('BlockCypher answers when Bitcore cannot, and a transaction it lists only in part is read elsewhere', async () => {
+  upstreams({
+    [`${BITCORE}/address/${doge}/balance`]: text('bad gateway', 502),
+    [`${BITCORE}/address/${doge}/?unspent=true&limit=1000`]: text('bad gateway', 502),
+    [`${CYPHER}/addrs/${doge}/balance`]: json({ final_balance: 905, final_n_tx: 6 }),
+    [`${CYPHER}/addrs/${doge}?unspentOnly=true&limit=2000`]: json({
+      txrefs: [{ tx_hash: hashA, tx_output_n: 1, value: 900, block_height: 5_000_000 }],
+      unconfirmed_txrefs: [
+        { tx_hash: hashB, tx_output_n: 0, value: 5, block_height: -1 },
+        { tx_hash: 'cc'.repeat(32), tx_output_n: -1, value: 50, block_height: -1 }
+      ]
+    })
+  })
+  const dashboard = await call(['dogecoin', 'dashboards', 'address', doge])
+  assert.deepEqual(dashboard.body.data[doge].address, { balance: 905, transaction_count: 6 })
+  assert.deepEqual(dashboard.body.data[doge].utxo.map(u => u.block_id), [5_000_000, -1], 'a pending spend’s input is not a coin')
+
+  upstreams({
+    [`${BITCORE}/tx/${hashA}`]: down(),
+    [`${CYPHER}/txs/${hashA}?includeHex=true&limit=100`]: json({ hash: hashA, block_height: 5_000_002, vout_sz: 101, outputs: [{ value: 1, script: dogeScript, addresses: [doge] }] }),
+    [`${DOGE1}/tx/${hashA}`]: json({ txid: hashA, blockHeight: 5_000_002, vout: [] })
+  })
+  const { status, body } = await call(['dogecoin', 'dashboards', 'transaction', hashA])
+  assert.equal(status, 200)
+  assert.deepEqual(body.data[hashA].outputs, [], 'Blockbook’s full answer, not BlockCypher’s first page')
 })
 
 test('the route serves only the toolbox endpoints, for configured chains, with checked input', async () => {
