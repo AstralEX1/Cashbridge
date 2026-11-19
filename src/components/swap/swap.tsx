@@ -19,6 +19,7 @@ import { SwapInputTo } from '@/components/swap/swap-input-to'
 import { SwapSettings } from '@/components/swap/swap-settings'
 import { RefreshButton } from '@/components/swap/refresh-button'
 import { RouterHint, RouterSelector } from '@/components/swap/automatic-bridge-controls'
+import { RouteCompare } from '@/components/swap/route-compare'
 import { AutomaticOrders } from '@/components/swap/auto-bridge-progress'
 import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
 import { isAssetInMode, useAssets } from '@/hooks/use-assets'
@@ -127,7 +128,7 @@ export const Swap = () => {
       </div>
       <RouterHint />
 
-      {/* Forward: THORChain swap to native BCH, then a separately signed Cauldron swap to the token.
+      {/* Forward: THORChain or NEAR Intents swap to native BCH, then a separately signed Cauldron swap to the token.
             Reverse: a Cauldron sale of the token for BCH, then a BCH deposit to THORChain. No limit,
             private or memoless entry points. */}
       <div className="bridge-card">
@@ -156,6 +157,7 @@ export const Swap = () => {
           <SwapInputTo selecting={picker === 'to'} onSelectOpenChange={open => setPicker(open ? 'to' : undefined)} />
         )}
       </div>
+      {!reverse && <RouteCompare />}
       {reverse ? (
         <ReverseSwapButton onShowBridge={() => setProgressId(activeBridge?.uid)} />
       ) : (

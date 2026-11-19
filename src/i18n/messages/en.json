@@ -989,6 +989,12 @@
       "signTimedOut": "{wallet} did not answer in time, so the request was withdrawn. Nothing was sent; try again.",
       "signUndelivered": "The request did not reach {wallet}. Open the wallet app, then try again.",
       "signSessionLost": "The connection to {wallet} has ended, so nothing was sent. Connect the wallet again, then try again."
+    },
+    "routes": {
+      "label": "Bridge route",
+      "best": "Best",
+      "minutes": "≈ {minutes} min",
+      "unavailable": "No quote for this amount"
     }
   },
   "automatic": {

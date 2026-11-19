@@ -2289,3 +2289,26 @@ button.bridge-flow-primary:disabled {
   opacity: 0.5;
   cursor: default;
 }
+
+/* THORChain and NEAR Intents quotes side by side under the form; the chosen one carries the accent ring. */
+.bridge-routes { display: grid; gap: 6px; margin-top: 12px; }
+.bridge-route {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 18px;
+  background: #ffffff0d;
+  box-shadow: inset 0 0 0 1px #ffffff1a;
+  color: #dce6e8;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.bridge-route[aria-checked='true'] { box-shadow: inset 0 0 0 2px #0ac18e; }
+.bridge-route:disabled { opacity: 0.5; cursor: default; }
+.bridge-route:focus-visible { outline: 2px solid #0ac18e; outline-offset: 3px; }
+.bridge-route-name { display: grid; flex: 1; min-width: 0; }
+.bridge-route-name span { color: #a9b9be; font-size: 12px; }
+.bridge-route-amount { display: flex; align-items: center; gap: 8px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bridge-route-best { padding: 2px 8px; border-radius: 999px; background: #0ac18e; color: #0f1820; font-size: 11px; font-weight: 700; }
