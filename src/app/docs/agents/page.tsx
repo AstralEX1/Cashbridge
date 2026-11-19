@@ -62,11 +62,11 @@ export default function Page() {
       <h2 id="flow">A transfer, step by step</h2>
       <Steps>
         <Step title="Quote">
-          <code>get_bridge_quote</code> returns what the user would receive. Into plain BCH it compares THORChain with NEAR Intents and names the better one. Into a CashToken it adds the Cauldron leg that the Cashbridge Router takes care of.
+          <code>get_bridge_quote</code> returns what the user would receive. To or from plain BCH it compares THORChain with NEAR Intents and names the better one. Into a CashToken it adds the Cauldron leg that the Cashbridge Router takes care of.
         </Step>
         <Step title="Ask the user">The agent shows the amounts, the route and the destination address, and goes on only when the user agrees.</Step>
         <Step title="Prepare">
-          <code>prepare_bridge</code> returns, for an EVM chain, the unsigned transactions to sign: the token approval when one is needed, then the deposit. For other chains it returns the deposit address, the amount and the memo. For a CashToken it also opens a Cashbridge Router order and returns its id and order token.
+          <code>prepare_bridge</code> returns, for an EVM chain, the unsigned transactions to sign: the token approval when one is needed, then the deposit. For other chains it returns the deposit address, the amount and, for THORChain, the memo. For a CashToken it also opens a Cashbridge Router order and returns its id and order token.
         </Step>
         <Step title="Sign and send">The user signs in their own wallet. The agent never sees a private key or a seed phrase.</Step>
         <Step title="Track">
