@@ -143,6 +143,16 @@ export async function getOrder(req: NextRequest, id: string, service: Service) {
   }
 }
 
+// The newest orders for the public scanner; the same chain facts anyone can read, so no order capability.
+export async function listOrders(req: NextRequest, service: Service) {
+  try {
+    guard(req, false)
+    return reply({ orders: service.store.feed() })
+  } catch (error) {
+    return errorReply(error)
+  }
+}
+
 export async function attachSource(req: NextRequest, id: string, service: Service) {
   try {
     guard(req, true)

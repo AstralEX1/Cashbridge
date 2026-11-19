@@ -74,6 +74,58 @@ export interface PublicOrder extends OrderIntent {
   error?: string
   attempts: { txid: string; kind: 'swap' | 'refund' | 'deposit'; pusdOut: string; status: 'signed' | 'unknown' | 'rejected' | 'accepted' }[]
 }
+// One order as the public scanner lists it: what the chains show anyway. No addresses, order id or capability.
+export interface FeedOrder {
+  // A short hash of the order id, stable across reads.
+  ref: string
+  kind: 'forward' | 'sale'
+  state: OrderState
+  createdAt: number
+  updatedAt: number
+  contract: boolean
+  // The token bought (forward) or sold (sale).
+  category: string
+  expectedBchSats: string
+  source?: { chain: string; asset: string; amount: string }
+  sale?: { tokenAmount: string; buyAsset: string }
+  sourceHash?: string
+  bchReceipts: { txid: string; amountSats: string }[]
+  settlement?: { kind: 'swap' | 'refund' | 'deposit'; txid: string; tokenAmount: string; bchAmount: string }
+}
+const HEX64 = /^(0x)?[0-9a-fA-F]{64}$/
+const STATES: OrderState[] = [
+  'awaiting_deposit',
+  'streaming',
+  'awaiting_confirmations',
+  'ready',
+  'retrying',
+  'broadcasting',
+  'submitted',
+  'completed',
+  'refunded',
+  'source_refunded',
+  'manual_review'
+]
+// The worker is ours, but its answer still crosses the network: the scanner builds explorer links from these hashes.
+export const isFeedOrder = (value: unknown): value is FeedOrder => {
+  const o = value as FeedOrder
+  return (
+    !!o &&
+    typeof o.ref === 'string' &&
+    ['forward', 'sale'].includes(o.kind) &&
+    STATES.includes(o.state) &&
+    Number.isFinite(o.createdAt) &&
+    /^[0-9a-f]{64}$/.test(o.category) &&
+    /^\d+$/.test(o.expectedBchSats) &&
+    Array.isArray(o.bchReceipts) &&
+    o.bchReceipts.every(r => HEX64.test(r?.txid) && /^\d+$/.test(r.amountSats)) &&
+    (o.sourceHash === undefined || /^[0-9a-zA-Z-]{64,88}$/.test(o.sourceHash)) &&
+    (o.settlement === undefined ||
+      (HEX64.test(o.settlement.txid) && /^\d+$/.test(o.settlement.tokenAmount) && /^\d+$/.test(o.settlement.bchAmount))) &&
+    (o.source === undefined || ['chain', 'asset', 'amount'].every(key => typeof o.source![key as 'chain'] === 'string')) &&
+    (o.sale === undefined || (/^\d+$/.test(o.sale.tokenAmount) && typeof o.sale.buyAsset === 'string'))
+  )
+}
 export const isTerminal = (state: OrderState) => ['completed', 'refunded', 'source_refunded', 'manual_review'].includes(state)
 // The Router buys any Cauldron token on a forward transfer, and sells one on a transfer back when sales are on.
 export const automaticEligible = (reverse: boolean, category: string | undefined, sales = false) => !!category && (!reverse || sales)

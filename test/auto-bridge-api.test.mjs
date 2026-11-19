@@ -14,6 +14,8 @@ import { pubkey } from './fixtures/bridge-fixtures.mjs'
 import { startOrderServer } from '../src/server/auto-bridge/http.ts'
 import { POST as publicCreate } from '../src/app/api/auto-bridge/orders/route.ts'
 import { GET as publicStatus } from '../src/app/api/auto-bridge/orders/[id]/route.ts'
+import { GET as scannerFeed } from '../src/app/api/scanner/route.ts'
+import { isFeedOrder } from '../src/lib/auto-bridge-contract.ts'
 
 test('order API fixes the minimum before signing, authenticates status and rejects altered recipients', async () => {
   const signer = new WorkerWallet(encodeHdPrivateKey({ network: 'mainnet', node: deriveHdPrivateNodeFromSeed(randomBytes(32)) }).hdPrivateKey)
@@ -109,6 +111,46 @@ test('public Next routes reach the private worker socket and cannot mutate order
       startOrderServer(store, async () => ({ output: 1n }), path),
       /already active/
     )
+  } finally {
+    await new Promise(resolve => server.close(resolve))
+    store.close()
+    rmSync(directory, { recursive: true, force: true })
+    if (previous === undefined) delete process.env.AUTO_BRIDGE_SOCKET
+    else process.env.AUTO_BRIDGE_SOCKET = previous
+  }
+})
+
+test('the public scanner feed lists paid orders from the worker without addresses, ids or capabilities', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cashbridge-feed-')),
+    path = join(directory, 'worker.sock')
+  const previous = process.env.AUTO_BRIDGE_SOCKET
+  process.env.AUTO_BRIDGE_SOCKET = path
+  const signer = new WorkerWallet(encodeHdPrivateKey({ network: 'mainnet', node: deriveHdPrivateNodeFromSeed(randomBytes(32)) }).hdPrivateKey)
+  const store = new OrderStore(':memory:', signer.xpub, { maxOrderSats: 100000000n, maxPendingSats: 1000000000n, maxOpenOrders: 20 })
+  const server = await startOrderServer(store, async () => ({ output: 1000n }), path)
+  const address = bindingFromPubkey(pubkey, 0).cashAddress
+  const intent = { recipientAddress: address, refundAddress: address, expectedBchSats: '1000000' }
+  const capability = randomBytes(32).toString('hex')
+  try {
+    const paid = store.create(randomUUID(), capability, intent, '980')
+    store.create(randomUUID(), randomBytes(32).toString('hex'), intent, '980')
+    store.update(paid.id, paid.version, {
+      sourceHash: 'ab'.repeat(32),
+      funding: [
+        { txid: 'cd'.repeat(32), vout: 0, value: '600000', confirmations: 1, unspent: true },
+        { txid: 'cd'.repeat(32), vout: 1, value: '400000', confirmations: 1, unspent: true }
+      ]
+    })
+    const response = await scannerFeed()
+    assert.equal(response.status, 200)
+    const text = await response.text()
+    const { orders } = JSON.parse(text)
+    assert.equal(orders.length, 1, 'an order nobody paid into stays out of the feed')
+    assert.equal(orders[0].sourceHash, 'ab'.repeat(32))
+    assert.deepEqual(orders[0].bchReceipts, [{ txid: 'cd'.repeat(32), amountSats: '1000000' }])
+    for (const secret of [address, address.split(':')[1], paid.id, capability, paid.binding.cashAddress]) assert.equal(text.includes(secret), false)
+    assert.equal(isFeedOrder({ ...orders[0], sourceHash: 'javascript:alert(1)' }), false)
+    assert.equal(isFeedOrder({ ...orders[0], bchReceipts: [{ txid: 'zz', amountSats: '1' }] }), false)
   } finally {
     await new Promise(resolve => server.close(resolve))
     store.close()

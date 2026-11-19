@@ -4,7 +4,7 @@ import { createConnection } from 'node:net'
 import { dirname, isAbsolute } from 'node:path'
 import { timingSafeEqual } from 'node:crypto'
 import { NextRequest } from 'next/server'
-import { attachSource, createOrder, getOrder } from '@/server/auto-bridge/api'
+import { attachSource, createOrder, getOrder, listOrders } from '@/server/auto-bridge/api'
 import type { OrderStore } from '@/server/auto-bridge/store'
 import type { InboundAddress } from '@/lib/thorchain-deposit'
 
@@ -53,7 +53,7 @@ export async function startOrderServer(
       const method = incoming.method,
         path = incoming.url ?? ''
       const match = path.match(/^\/orders(?:\/([a-f0-9-]{36}))?$/)
-      if (!match || !['GET', 'POST'].includes(method ?? '') || (method === 'GET' && !match[1])) {
+      if (!match || !['GET', 'POST'].includes(method ?? '')) {
         outgoing.writeHead(404).end()
         return
       }
@@ -77,7 +77,9 @@ export async function startOrderServer(
         ? method === 'GET'
           ? await getOrder(req, match[1], service)
           : await attachSource(req, match[1], service)
-        : await createOrder(req, service)
+        : method === 'GET'
+          ? await listOrders(req, service)
+          : await createOrder(req, service)
       outgoing.writeHead(response.status, Object.fromEntries(response.headers))
       outgoing.end(Buffer.from(await response.arrayBuffer()))
     } catch {

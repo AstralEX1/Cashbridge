@@ -9,6 +9,7 @@ import { REFUND_AFTER_SECONDS } from '@/lib/router-contract'
 import { sourceTransactionId } from '@/lib/source-transaction'
 import { PublicWallet } from '@/server/auto-bridge/wallet'
 import { OrderError, orderCategory, positiveAmount, type Attempt, type Limits, type Order, type OrderIntent, type PublicOrder } from '@/server/auto-bridge/types'
+import type { FeedOrder } from '@/lib/auto-bridge-contract'
 
 const hash = (text: string) => createHash('sha256').update(text).digest('hex')
 const capabilityHash = (capability: string) => {
@@ -328,10 +329,69 @@ export class OrderStore {
     })
   }
 
+  // What the order's payout transaction paid: the token to the recipient, and BCH to the refund script or, for a sale, THORChain's vault.
+  private payout(order: Order) {
+    const winner = order.payoutTxid ? this.attempts(order.id).find(attempt => attempt.txid === order.payoutTxid) : undefined
+    if (!winner) return undefined
+    const outputs = decodeTx(winner.hex).outputs
+    return {
+      winner,
+      tokenAmount: outputs
+        .filter(
+          out =>
+            out.token &&
+            !out.token.nft &&
+            binToHex(out.token.category) === (order.sale?.category ?? orderCategory(order)) &&
+            binToHex(out.lockingBytecode) === order.recipientScript
+        )
+        .reduce((sum, out) => sum + out.token!.amount, 0n)
+        .toString(),
+      bchAmount: (winner.kind === 'deposit'
+        ? [outputs[0]]
+        : outputs.filter(out => !out.token && binToHex(out.lockingBytecode) === order.refundScript)
+      )
+        .reduce((sum, out) => sum + out.valueSatoshis, 0n)
+        .toString()
+    }
+  }
+
+  // The newest orders that reached a chain, for the public scanner. Orders nobody paid into are left out.
+  feed(limit = 40): FeedOrder[] {
+    return (this.db.prepare('SELECT payload FROM orders ORDER BY address_index DESC LIMIT ?').all(limit * 5) as { payload: string }[])
+      .map(row => JSON.parse(row.payload) as Order)
+      .filter(order => order.sourceHash || order.inboundHash || order.funding.length || order.payoutTxid)
+      .slice(0, limit)
+      .map((order): FeedOrder => {
+        const paid = this.payout(order)
+        const source = sourceTransactionId(order.sourceHash) ?? order.inboundHash
+        return {
+          ref: hash(order.id).slice(0, 12),
+          kind: order.sale ? 'sale' : 'forward',
+          state: order.state,
+          createdAt: order.createdAt,
+          updatedAt: order.updatedAt,
+          contract: !!order.contract,
+          category: order.sale?.category ?? orderCategory(order),
+          expectedBchSats: order.expectedBchSats,
+          ...(order.source && { source: { chain: order.source.chain, asset: order.source.asset, amount: order.source.amount } }),
+          ...(order.sale && { sale: { tokenAmount: order.sale.tokenAmount, buyAsset: order.sale.buyAsset } }),
+          ...(source && { sourceHash: source }),
+          bchReceipts: [...new Map(order.funding.map(coin => [coin.txid, coin.txid])).keys()].map(txid => ({
+            txid,
+            amountSats: order.funding
+              .filter(coin => coin.txid === txid)
+              .reduce((sum, coin) => sum + BigInt(coin.value), 0n)
+              .toString()
+          })),
+          ...(paid && { settlement: { kind: paid.winner.kind, txid: paid.winner.txid, tokenAmount: paid.tokenAmount, bchAmount: paid.bchAmount } })
+        }
+      })
+  }
+
   public(id: string, capability: string): PublicOrder {
     const order = this.authorized(id, capability)
-    const winner = order.payoutTxid && this.attempts(id).find(attempt => attempt.txid === order.payoutTxid)
-    const outputs = winner ? decodeTx(winner.hex).outputs : []
+    const paid = this.payout(order)
+    const winner = paid?.winner
     const seen = !!order.observation && order.observation.txid === order.payoutTxid && order.observation.seen
     const receipts = new Map<string, { txid: string; amountSats: string; confirmations: number }>()
     for (const coin of order.funding) {
@@ -367,15 +427,19 @@ export class OrderStore {
       recoverySats: (order.observedFunding ?? []).filter(coin => terminal.has(order.state) || !order.funding.some(f => f.txid === coin.txid && f.vout === coin.vout))
         .reduce((sum, coin) => sum + BigInt(coin.value), 0n).toString(),
       sourceRefunds: order.sourceRefunds,
-      settlement: winner ? {
-        kind: winner.kind, txid: winner.txid, seen: !!seen,
-        confirmations: seen ? order.observation!.confirmations : 0,
-        pusdAmount: outputs.filter(out => out.token && !out.token.nft && binToHex(out.token.category) === (order.sale?.category ?? orderCategory(order)) && binToHex(out.lockingBytecode) === order.recipientScript)
-          .reduce((sum, out) => sum + out.token!.amount, 0n).toString(),
-        bchAmount: (winner.kind === 'deposit' ? [outputs[0]] : outputs.filter(out => !out.token && binToHex(out.lockingBytecode) === order.refundScript))
-          .reduce((sum, out) => sum + out.valueSatoshis, 0n).toString(),
-        recipientAddress: order.recipientAddress, refundAddress: order.refundAddress
-      } : undefined,
+      settlement:
+        paid && winner
+          ? {
+              kind: winner.kind,
+              txid: winner.txid,
+              seen: !!seen,
+              confirmations: seen ? order.observation!.confirmations : 0,
+              pusdAmount: paid.tokenAmount,
+              bchAmount: paid.bchAmount,
+              recipientAddress: order.recipientAddress,
+              refundAddress: order.refundAddress
+            }
+          : undefined,
       attempts: this.attempts(id)
         .slice(-20)
         .map(({ hex: _hex, ...attempt }) => attempt)

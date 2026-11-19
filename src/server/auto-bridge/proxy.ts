@@ -3,6 +3,7 @@ import { request as secureRequest } from 'node:https'
 import { NextRequest, NextResponse } from 'next/server'
 import { clientIp, rateLimit } from '@/lib/rate-limit'
 import { isSameOrigin } from '@/lib/same-origin'
+import { isFeedOrder, type FeedOrder } from '@/lib/auto-bridge-contract'
 
 // Under the browser's 15 s request timeout, so the page gets this answer rather than giving up first.
 const UPSTREAM_DEADLINE_MS = 12000
@@ -39,48 +40,62 @@ export async function forwardOrder(req: NextRequest, id?: string) {
       'sec-fetch-site': 'same-origin'
     }
     if (ip) upstreamHeaders['cf-connecting-ip'] = ip
-    const path = `/orders${id ? `/${id}` : ''}`
-    const upstream = process.env.AUTO_BRIDGE_UPSTREAM ? new URL(process.env.AUTO_BRIDGE_UPSTREAM) : undefined
-    if (upstream && (upstream.protocol !== 'https:' || upstream.username || upstream.password || upstream.search || upstream.hash))
-      return failure(503, 'Automatic bridge transport is not configured')
-    const serviceToken = process.env.AUTO_BRIDGE_SERVICE_TOKEN
-    if ((upstream && !serviceToken) || (serviceToken && !/^[A-Za-z0-9_-]{32,128}$/.test(serviceToken)))
-      return failure(503, 'Automatic bridge transport is not configured')
-    if (serviceToken) {
-      upstreamHeaders['x-cashbridge-service-auth'] = serviceToken
-    }
-    if (upstream) {
-      upstream.pathname = upstream.pathname.replace(/\/$/, '') + path
-    }
-    const response = await new Promise<{ status: number; body: Buffer }>((resolve, reject) => {
-      const options = {
-          ...(upstream ? { protocol: upstream.protocol, hostname: upstream.hostname, port: upstream.port || undefined, path: upstream.pathname } : {
-          socketPath: process.env.AUTO_BRIDGE_SOCKET ?? '/run/cashbridge/worker.sock',
-          path
-          }),
-          method: req.method,
-          headers: upstreamHeaders,
-          // A hard deadline, not an idle timeout: a worker that trickles or never answers still ends in a JSON 503.
-          signal: AbortSignal.timeout(UPSTREAM_DEADLINE_MS)
-        }
-      const call = (upstream ? secureRequest : request)(options,
-        incoming => {
-          const result: Buffer[] = []
-          let length = 0
-          incoming.on('data', (chunk: Buffer) => {
-            length += chunk.length
-            if (length > 65536) call.destroy(new Error('Order response exceeded limit'))
-            else result.push(chunk)
-          })
-          incoming.on('end', () => resolve({ status: incoming.statusCode ?? 503, body: Buffer.concat(result) }))
-          incoming.on('error', reject)
-        }
-      )
-      call.on('error', reject)
-      call.end(body)
-    })
+    const response = await callWorker(req.method, `/orders${id ? `/${id}` : ''}`, upstreamHeaders, body)
+    if (!response) return failure(503, 'Automatic bridge transport is not configured')
     return new NextResponse(response.body.toString('utf8'), { status: response.status, headers })
   } catch {
     return failure(503, 'Cashbridge Router is unavailable')
+  }
+}
+
+// One request to the worker: over HTTPS to AUTO_BRIDGE_UPSTREAM with the service token, or over its local socket.
+// Undefined when the transport is misconfigured.
+async function callWorker(method: string, path: string, headers: Record<string, string>, body?: Buffer) {
+  const upstream = process.env.AUTO_BRIDGE_UPSTREAM ? new URL(process.env.AUTO_BRIDGE_UPSTREAM) : undefined
+  if (upstream && (upstream.protocol !== 'https:' || upstream.username || upstream.password || upstream.search || upstream.hash)) return undefined
+  const serviceToken = process.env.AUTO_BRIDGE_SERVICE_TOKEN
+  if ((upstream && !serviceToken) || (serviceToken && !/^[A-Za-z0-9_-]{32,128}$/.test(serviceToken))) return undefined
+  const upstreamHeaders = { ...headers, ...(serviceToken ? { 'x-cashbridge-service-auth': serviceToken } : {}) }
+  if (upstream) {
+    upstream.pathname = upstream.pathname.replace(/\/$/, '') + path
+  }
+  return new Promise<{ status: number; body: Buffer }>((resolve, reject) => {
+    const options = {
+      ...(upstream
+        ? { protocol: upstream.protocol, hostname: upstream.hostname, port: upstream.port || undefined, path: upstream.pathname }
+        : {
+            socketPath: process.env.AUTO_BRIDGE_SOCKET ?? '/run/cashbridge/worker.sock',
+            path
+          }),
+      method,
+      headers: upstreamHeaders,
+      // A hard deadline, not an idle timeout: a worker that trickles or never answers still ends in a JSON 503.
+      signal: AbortSignal.timeout(UPSTREAM_DEADLINE_MS)
+    }
+    const call = (upstream ? secureRequest : request)(options, incoming => {
+      const result: Buffer[] = []
+      let length = 0
+      incoming.on('data', (chunk: Buffer) => {
+        length += chunk.length
+        if (length > 65536) call.destroy(new Error('Order response exceeded limit'))
+        else result.push(chunk)
+      })
+      incoming.on('end', () => resolve({ status: incoming.statusCode ?? 503, body: Buffer.concat(result) }))
+      incoming.on('error', reject)
+    })
+    call.on('error', reject)
+    call.end(body)
+  })
+}
+
+// The Router's newest orders for the public scanner, or undefined when the worker cannot be read (or predates the feed).
+export async function readOrderFeed(): Promise<FeedOrder[] | undefined> {
+  try {
+    const response = await callWorker('GET', '/orders', { 'sec-fetch-site': 'same-origin' })
+    if (response?.status !== 200) return undefined
+    const orders: unknown = JSON.parse(response.body.toString('utf8'))?.orders
+    return Array.isArray(orders) ? orders.filter(isFeedOrder) : undefined
+  } catch {
+    return undefined
   }
 }
