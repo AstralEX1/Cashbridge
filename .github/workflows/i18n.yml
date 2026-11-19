@@ -48,7 +48,12 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: npm run i18n:translate
+        run: |
+          if [ -z "$I18N_API_KEY$ANTHROPIC_API_KEY$OPENAI_API_KEY$GEMINI_API_KEY" ]; then
+            echo "::warning::No translation API key secret is set, so new strings stay untranslated."
+            exit 0
+          fi
+          npm run i18n:translate
 
       - name: Summarise translations awaiting review
         if: always()
