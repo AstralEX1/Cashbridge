@@ -99,8 +99,10 @@ test('native vs contract identity stays exact; dashed tickers and malformed cata
 
   const malformed = [
     null,
+    undefined,
     { assetId: '', decimals: 6, blockchain: 'eth', symbol: 'X', price: 1 },
     { assetId: 'x', decimals: NaN, blockchain: 'eth', symbol: 'X', price: 1 },
+    { assetId: 'x', decimals: 6.5, blockchain: 'eth', symbol: 'FRAC', price: 1, contractAddress: '0x1111111111111111111111111111111111111111' },
     { assetId: 'x', decimals: 6, blockchain: 'eth', symbol: '', price: 1 },
     { assetId: 'x', decimals: 6, blockchain: 'eth', symbol: 'BAD', price: 1, contractAddress: '   ' },
     { assetId: 'x', decimals: 6, blockchain: 'xrp', symbol: 'XRP', price: 1 },
@@ -108,10 +110,52 @@ test('native vs contract identity stays exact; dashed tickers and malformed cata
     { assetId: 'dup2', decimals: 8, blockchain: 'base', symbol: 'USDC', price: 1, contractAddress: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' }
   ]
   const cleaned = assetsFromNearTokens(malformed)
-  assert.equal(cleaned.length, 1, 'blank contract rejected; duplicates collapse to first')
+  assert.equal(cleaned.length, 1, 'null/fractional decimals/blank contract rejected; EVM duplicates collapse to first')
   assert.equal(cleaned[0].decimals, 6)
   assert.equal(cleaned[0].providers.includes(ProviderName.THORCHAIN), false)
   assert.deepEqual(assetsFromNearTokens(undefined), [])
+})
+
+test('Solana mint identity is case-sensitive: distinct rows, exact lookup, unambiguous legacy only', () => {
+  const mintA = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
+  const mintB = 'ePjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
+  const a = { assetId: 'a', decimals: 6, blockchain: 'sol', symbol: 'A', price: 1, contractAddress: mintA }
+  const b = { assetId: 'b', decimals: 6, blockchain: 'sol', symbol: 'A', price: 1, contractAddress: mintB }
+  const rows = assetsFromNearTokens([a, b])
+  assert.equal(rows.length, 2, 'case-distinct Solana mints stay two picker rows')
+  assert.deepEqual(rows.map(r => r.address).sort(), [mintA, mintB].sort())
+  assert.equal(findNearToken([a, b], `SOL.A-${mintB}`)?.assetId, 'b', 'exact mint wins over case-folded twin')
+  assert.equal(findNearToken([a, b], `SOL.A-${mintA}`)?.assetId, 'a')
+  assert.equal(findNearToken([a, b], `SOL.A-${mintA.toUpperCase()}`), undefined, 'ambiguous uppercase aggregator match fails closed')
+  assert.equal(findNearToken([a], `SOL.A-${mintA.toUpperCase()}`)?.assetId, 'a', 'legacy uppercase ok when only one mint matches')
+
+  const map = new Map()
+  mergeNearAssets(map, [a, b])
+  assert.equal(map.size, 2, 'merge keeps both canonical mints')
+  const thorUpper = {
+    address: mintA.toUpperCase(),
+    chain: Chain.Solana,
+    chainId: 'solana',
+    decimals: 6,
+    identifier: `SOL.A-${mintA.toUpperCase()}`,
+    name: 'A',
+    providers: [ProviderName.THORCHAIN],
+    ticker: 'A'
+  }
+  const withThor = new Map([[`${thorUpper.chain}-${thorUpper.identifier}`.toLowerCase(), { ...thorUpper, providers: [...thorUpper.providers] }]])
+  mergeNearAssets(withThor, [a, b])
+  const restored = [...withThor.values()].find(asset => asset.providers.includes(ProviderName.THORCHAIN))
+  assert.equal(restored.address, mintA.toUpperCase(), 'ambiguous THOR identity is not rewritten to the first catalog mint')
+  assert.deepEqual(restored.providers, [ProviderName.THORCHAIN], 'ambiguous legacy identity must not gain NEAR authority')
+  assert.equal(withThor.size, 3, 'both exact NEAR mints stay separate from unresolved THOR identity')
+  assert.equal([...withThor.values()].some(asset => asset.address === mintB), true, 'other case-sensitive mint not overwritten')
+})
+
+test('token lookup skips malformed rows and does not normalize an unknown mixed-case mint', () => {
+  const token = TOKENS[3]
+  assert.equal(findNearToken([null, token], `SOL.USDC-${token.contractAddress}`)?.assetId, token.assetId)
+  const unknown = token.contractAddress.replace('Auf', 'auF')
+  assert.equal(findNearToken([token], `SOL.USDC-${unknown}`), undefined)
 })
 
 test('mergeNearAssets tags overlap with NEAR, restores Solana case, and leaves THOR alone on catalog failure', () => {

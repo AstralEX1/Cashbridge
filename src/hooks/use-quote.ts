@@ -54,9 +54,9 @@ export const useQuote = (): UseQuote => {
   const bchToken = useSwapStore(state => state.bchToken)
   const sale = useTokenSale(reverse ? bchToken : null, valueFrom.toSignificant())
   const sellAsset = reverse ? BridgeConfig.buyAsset : assetFrom?.identifier
-  // Forward first leg is always native BCH — a CashToken (bchToken) is bought afterwards on Cauldron.
-  // NEAR Intents only settles BCH.BCH, so it must quote that first leg even when the form destination is a token.
-  const buyAsset = reverse ? assetFrom?.identifier : BridgeConfig.buyAsset
+  // Forward Cashbridge leg settles native BCH (CashToken bought afterwards on Cauldron). Private product keeps
+  // the form destination. NEAR Intents only settles BCH.BCH and is off on the private tab.
+  const buyAsset = reverse ? assetFrom?.identifier : isPrivateSwap ? assetTo?.identifier : BridgeConfig.buyAsset
   const sellAmount = reverse && bchToken ? sale.bridgeAmount : valueFrom.eqValue(0) ? undefined : valueFrom.toSignificant()
   // NEAR Intents carries manual transfers both ways, and the Cashbridge Router's forward ones when switched on.
   const { automatic } = useAutomaticBridge()

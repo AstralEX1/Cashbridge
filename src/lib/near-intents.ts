@@ -75,6 +75,9 @@ const catalogContract = (token: OneClickToken): string | undefined | false => {
   return trimmed || false
 }
 
+const isCaseSensitiveChain = (blockchain?: string) => blockchain === 'sol' || blockchain === 'tron'
+const isCaseSensitiveAssetChain = (chain: Chain) => chain === Chain.Solana || chain === Chain.Tron
+
 // Skip retired rows, unmapped chains, and rows the wallet send cannot fund or identify.
 const isSelectableNearToken = (token: OneClickToken) =>
   !!token &&
@@ -82,7 +85,7 @@ const isSelectableNearToken = (token: OneClickToken) =>
   !!token.assetId &&
   typeof token.symbol === 'string' &&
   !!token.symbol.trim() &&
-  Number.isFinite(token.decimals) &&
+  Number.isInteger(token.decimals) &&
   token.decimals >= 0 &&
   token.decimals <= 24 &&
   !!chainPrefix(token.blockchain) &&
@@ -96,13 +99,17 @@ export const nearAssetIdentifier = (token: OneClickToken): string | undefined =>
   const contract = catalogContract(token)
   if (contract === false) return undefined
   if (!contract) return `${prefix}.${token.symbol.trim()}`
-  const encoded = token.blockchain === 'sol' || token.blockchain === 'tron' ? contract : contract.toUpperCase()
+  const encoded = isCaseSensitiveChain(token.blockchain) ? contract : contract.toUpperCase()
   return `${prefix}.${token.symbol.trim()}-${encoded}`
 }
 
+// Map key: Solana/TRON keep contract case so distinct mints stay distinct; EVM folds case like Midgard.
+const nearAssetKey = (chain: Chain, identifier: string) =>
+  isCaseSensitiveAssetChain(chain) ? `${chain}-${identifier}` : `${chain}-${identifier}`.toLowerCase()
+
 // Picker rows for 1Click tokens on chains Cashbridge already maps. Tagged NEAR only — never THORCHAIN —
 // so a Midgard-missing asset cannot be deposited into an unsupported THORChain vault by provider stamp.
-// Malformed / duplicate catalog rows are dropped (first valid wins).
+// Malformed / duplicate catalog rows are dropped (first valid wins; Solana/TRON duplicates are exact-contract).
 export const assetsFromNearTokens = (tokens: OneClickToken[]): Asset[] => {
   const assets = new Map<string, Asset>()
   if (!Array.isArray(tokens)) return []
@@ -110,7 +117,7 @@ export const assetsFromNearTokens = (tokens: OneClickToken[]): Asset[] => {
     const identifier = nearAssetIdentifier(token)
     const chain = BLOCKCHAIN_TO_CHAIN[token?.blockchain]
     if (!identifier || !chain || !getChainConfig(chain).chain) continue
-    const key = `${chain}-${identifier}`.toLowerCase()
+    const key = nearAssetKey(chain, identifier)
     if (assets.has(key)) continue
     const contract = catalogContract(token)
     if (contract === false) continue
@@ -131,22 +138,48 @@ export const assetsFromNearTokens = (tokens: OneClickToken[]): Asset[] => {
   return Array.from(assets.values())
 }
 
+// Same-chain map entry that overlaps this NEAR row: exact Solana/TRON mint first, else one unambiguous
+// all-uppercase aggregator mint (THOR). Mixed-case catalog rows that differ only by case stay distinct.
+const findMergeTarget = (assets: Map<string, Asset>, nearAsset: Asset, nearAssets: Asset[]): [string, Asset] | undefined => {
+  if (isCaseSensitiveAssetChain(nearAsset.chain) && nearAsset.address) {
+    const sameChain = [...assets.entries()].filter(([, asset]) => asset.chain === nearAsset.chain && !!asset.address)
+    const exact = sameChain.find(([, asset]) => asset.address === nearAsset.address)
+    if (exact) return exact
+    if (nearAssets.some(asset => asset.chain === nearAsset.chain && asset.address !== nearAsset.address && asset.address?.toUpperCase() === nearAsset.address!.toUpperCase())) return undefined
+    const legacy = sameChain.filter(
+      ([, asset]) => asset.address === asset.address!.toUpperCase() && asset.address!.toUpperCase() === nearAsset.address!.toUpperCase()
+    )
+    return legacy.length === 1 ? legacy[0] : undefined
+  }
+  const key = `${nearAsset.chain}-${nearAsset.identifier}`.toLowerCase()
+  const existing = assets.get(key)
+  return existing ? [key, existing] : undefined
+}
+
 // Fold validated 1Click rows into the THOR-built map. Overlap keeps THOR providers/metadata and adds NEAR;
-// Solana/TRON overlap adopts the catalog's case-exact contract for wallet send. Catalog failure is the
-// caller's empty list — the THOR map is left unchanged.
+// Solana/TRON overlap adopts the catalog's case-exact contract for wallet send when the mint is unambiguous.
+// Distinct case-sensitive mints stay separate. Catalog failure is the caller's empty list — THOR map unchanged.
 export const mergeNearAssets = (assets: Map<string, Asset>, nearList: OneClickToken[]) => {
-  for (const nearAsset of assetsFromNearTokens(nearList)) {
-    const key = `${nearAsset.chain}-${nearAsset.identifier}`.toLowerCase()
-    const existing = assets.get(key)
-    if (existing) {
+  const nearAssets = assetsFromNearTokens(nearList)
+  for (const nearAsset of nearAssets) {
+    const match = findMergeTarget(assets, nearAsset, nearAssets)
+    if (match) {
+      const [, existing] = match
       if (!existing.providers.includes(ProviderName.NEAR)) existing.providers.push(ProviderName.NEAR)
-      if (nearAsset.address && (nearAsset.chain === Chain.Solana || nearAsset.chain === Chain.Tron)) {
+      if (
+        nearAsset.address &&
+        isCaseSensitiveAssetChain(nearAsset.chain) &&
+        existing.address &&
+        existing.address === existing.address.toUpperCase() &&
+        existing.address.toUpperCase() === nearAsset.address.toUpperCase()
+      ) {
+        // Restore catalog casing onto a THOR-uppercased mint; never replace another canonical mint.
         existing.address = nearAsset.address
         existing.identifier = nearAsset.identifier
       }
       continue
     }
-    assets.set(key, nearAsset)
+    assets.set(nearAssetKey(nearAsset.chain, nearAsset.identifier), nearAsset)
   }
   return assets
 }
@@ -254,20 +287,32 @@ export const getNearTokens = () => {
 }
 
 // The 1Click token for a THORChain-style identifier (`BASE.USDC-0X8335…`, `ETH.ETH`, `BCH.BCH`): same chain, and the
-// same contract or, for a chain's own coin, no contract and its ticker. Contracts compare without case because
-// THORChain upper-cases them, base58 ones too (`TRON.USDT-TR7NHQ…`). When a ticker itself contains `-`
-// (`SOL.kV-gtSOLb-5EB…`), match by chain + contract suffix rather than the first dash.
+// same contract or, for a chain's own coin, no contract and its ticker. Solana/TRON prefer an exact contract suffix
+// match; uppercase aggregator ids are accepted only when that match is unambiguous. EVM stays case-insensitive.
+// When a ticker itself contains `-` (`SOL.kV-gtSOLb-5EB…`), match by chain + contract suffix rather than the first dash.
 export const findNearToken = (list: OneClickToken[], identifier: string) => {
   const dot = identifier.indexOf('.')
   const blockchain = CHAINS[identifier.slice(0, dot).toUpperCase()]
   if (dot < 0 || !blockchain) return undefined
+  const sameChain = Array.isArray(list) ? list.filter(t => isSelectableNearToken(t) && t.blockchain === blockchain && catalogContract(t) !== false) : []
   const rest = identifier.slice(dot + 1)
   if (rest.includes('-')) {
+    const withContract = sameChain.filter(t => typeof t.contractAddress === 'string' && !!t.contractAddress)
+    if (isCaseSensitiveChain(blockchain)) {
+      const exact = withContract.filter(t => identifier.endsWith(`-${t.contractAddress}`))
+      if (exact.length === 1) return exact[0]
+      if (exact.length > 1) return undefined
+      const contract = rest.slice(rest.lastIndexOf('-') + 1)
+      if (contract !== contract.toUpperCase()) return undefined
+      const upper = identifier.toUpperCase()
+      const folded = withContract.filter(t => upper.endsWith(`-${t.contractAddress!.toUpperCase()}`))
+      return folded.length === 1 ? folded[0] : undefined
+    }
     const upper = identifier.toUpperCase()
-    return list.find(t => t.blockchain === blockchain && !!t.contractAddress && upper.endsWith(`-${t.contractAddress.toUpperCase()}`))
+    return withContract.find(t => upper.endsWith(`-${t.contractAddress!.toUpperCase()}`))
   }
   const ticker = rest.toUpperCase()
-  return list.find(t => t.blockchain === blockchain && !t.contractAddress && t.symbol.toUpperCase() === ticker)
+  return sameChain.find(t => !t.contractAddress && t.symbol.toUpperCase() === ticker)
 }
 
 export interface NearQuoteRequest {
