@@ -373,6 +373,7 @@ export class OrderStore {
           createdAt: order.createdAt,
           updatedAt: order.updatedAt,
           contract: !!order.contract,
+          ...(order.nearDepositAddress && { near: true }),
           category: order.sale?.category ?? orderCategory(order),
           expectedBchSats: order.expectedBchSats,
           ...(order.source && { source: { chain: order.source.chain, asset: order.source.asset, amount: order.source.amount } }),

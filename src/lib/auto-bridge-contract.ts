@@ -85,6 +85,8 @@ export interface FeedOrder {
   createdAt: number
   updatedAt: number
   contract: boolean
+  // The first leg went through NEAR Intents rather than THORChain.
+  near?: boolean
   // The token bought (forward) or sold (sale).
   category: string
   expectedBchSats: string
@@ -122,6 +124,7 @@ export const isFeedOrder = (value: unknown): value is FeedOrder => {
     Array.isArray(o.bchReceipts) &&
     o.bchReceipts.every(r => HEX64.test(r?.txid) && /^\d+$/.test(r.amountSats)) &&
     (o.sourceHash === undefined || /^[0-9a-zA-Z-]{64,88}$/.test(o.sourceHash)) &&
+    (o.near === undefined || typeof o.near === 'boolean') &&
     (o.settlement === undefined ||
       (HEX64.test(o.settlement.txid) && /^\d+$/.test(o.settlement.tokenAmount) && /^\d+$/.test(o.settlement.bchAmount))) &&
     (o.source === undefined || ['chain', 'asset', 'amount'].every(key => typeof o.source![key as 'chain'] === 'string')) &&
