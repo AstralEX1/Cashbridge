@@ -55,7 +55,7 @@ export default function Page() {
           <tr>
             <th>Wallets</th>
             <td>
-              EVM and other browser wallets for the source side. Selene (WizardConnect), Paytaca and Cashonize (WalletConnect) for Bitcoin Cash. See <Link href="/docs/wallets">Wallets</Link>.
+              EVM and other browser wallets, or any wallet app over WalletConnect, for the source side. Selene (WizardConnect), Paytaca and Cashonize (WalletConnect) for Bitcoin Cash. See <Link href="/docs/wallets">Wallets</Link>.
             </td>
           </tr>
           <tr>

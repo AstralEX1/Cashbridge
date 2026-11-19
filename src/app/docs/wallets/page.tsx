@@ -25,8 +25,8 @@ export default function Page() {
         <tbody>
           <tr>
             <td>Source or destination chain</td>
-            <td>MetaMask, Rabby, Brave Wallet, OKX, Phantom, Trust Wallet, Exodus, Keplr, Vultisig, TronLink, Ledger, Trezor</td>
-            <td>Browser extension or hardware wallet</td>
+            <td>MetaMask, Rabby, Brave Wallet, OKX, Phantom, Trust Wallet, Exodus, Keplr, Vultisig, TronLink, Ledger, Trezor, and any wallet app over WalletConnect</td>
+            <td>Browser extension, hardware wallet, or WalletConnect with a QR code or a link</td>
           </tr>
           <tr>
             <td>Bitcoin Cash</td>
@@ -50,6 +50,9 @@ export default function Page() {
       <ul>
         <li>
           <strong>Hardware wallets.</strong> Unlock the device and open the matching app on it first, such as Ethereum for an Ethereum account. Trezor also asks you to confirm in its Connect popup.
+        </li>
+        <li>
+          <strong>Any wallet app, over WalletConnect.</strong> Choose <strong>WalletConnect</strong>, right after the detected wallets. On a computer, scan the QR code with your wallet app. On a phone, pick your wallet from the list and it opens to approve. Cash Bridge reconnects it on later visits for as long as the wallet keeps the session.
         </li>
         <li>
           <strong>On a phone.</strong> MetaMask is not detected in a normal mobile browser. The row then reads <strong>Open app</strong> and opens Cash Bridge inside the MetaMask app, where it can connect.

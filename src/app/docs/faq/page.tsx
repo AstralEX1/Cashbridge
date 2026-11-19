@@ -240,7 +240,7 @@ export default function Page() {
         <summary>Can I use Cash Bridge on a phone?</summary>
         <div>
           <p>
-            Yes. In a normal mobile browser, MetaMask shows <strong>Open app</strong> and opens the site inside the MetaMask app. For a Bitcoin Cash wallet, press <strong>Open wallet</strong> in the WalletConnect dialog, or copy the link into the wallet. The side menu of the docs collapses into a <strong>Menu</strong> button.
+            Yes. In a normal mobile browser, MetaMask shows <strong>Open app</strong> and opens the site inside the MetaMask app, and <strong>WalletConnect</strong> connects any other wallet app on the source side. For a Bitcoin Cash wallet, press <strong>Open wallet</strong> in the WalletConnect dialog, or copy the link into the wallet. The side menu of the docs collapses into a <strong>Menu</strong> button.
           </p>
         </div>
       </details>
