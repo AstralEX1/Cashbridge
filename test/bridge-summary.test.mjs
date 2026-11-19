@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { NextIntlClientProvider } from 'next-intl'
 import { bridgeSummary, formatPercent, valueImpact } from '../src/lib/bridge-summary.ts'
 import { BridgePriceImpact } from '../src/components/swap/price-impact.tsx'
+import { torPoolPrices } from '../src/lib/thorchain-api.ts'
 
 const messages = JSON.parse(readFileSync(new URL('../src/i18n/messages/en.json', import.meta.url), 'utf8'))
 const renderImpact = percent => renderToStaticMarkup(createElement(NextIntlClientProvider, { locale: 'en', timeZone: 'UTC', messages }, createElement(BridgePriceImpact, { percent })))
@@ -64,4 +65,24 @@ test('the form uses the same signed formatting as Confirm for gains, zero and lo
   assert.match(renderImpact(1), />\+1\.00%</)
   assert.match(renderImpact(-15), /text-jacob/)
   assert.match(renderImpact(-30), /text-lucian/)
+})
+
+test('USD prices come from THORNode TOR prices, not drifted Midgard depths', () => {
+  // Live 2026-11-19: Midgard priced ETH.USDT at $0.8513, so 100 USDT → 0.481373 BCH showed +18.4%.
+  const pools = [
+    { asset: 'ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7', asset_tor_price: '99988586' },
+    { asset: 'BCH.BCH', asset_tor_price: '20621423703' },
+    { asset: 'BNB.BNB', asset_tor_price: '0' }
+  ]
+  const tor = torPoolPrices(pools, { rune_price_in_tor: '52956868' })
+  const price = asset => Number(tor.pools.find(pool => pool.asset === asset).assetPriceUSD)
+  assert.equal(price('ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7'), 0.99988586)
+  assert.equal(tor.pools.length, 2)
+  assert.equal(tor.runePrice, 0.52956868)
+  const { impactPercent } = bridgeSummary({ sent: 100, sentUsd: 100 * 0.99988586, bch: 0.481373, bchUsd: price('BCH.BCH') })
+  assert.ok(impactPercent < 0 && impactPercent > -1, `impact ${impactPercent}`)
+
+  assert.equal(torPoolPrices(undefined), undefined)
+  assert.equal(torPoolPrices([{ asset: 'BCH.BCH', asset_tor_price: '0' }]), undefined)
+  assert.ok(Number.isNaN(torPoolPrices(pools).runePrice))
 })

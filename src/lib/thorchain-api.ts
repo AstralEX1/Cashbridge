@@ -59,6 +59,7 @@ export const getThorNamesOwned = async (address: string): Promise<string[]> => {
 export interface ThorNetwork {
   tns_register_fee_rune?: string
   tns_fee_per_block_rune?: string
+  rune_price_in_tor?: string
 }
 
 export const getThorNetwork = async (): Promise<ThorNetwork> => {
@@ -82,6 +83,17 @@ export interface ThorPool {
 
 export const getThorPools = async (): Promise<ThorPool[]> => {
   return thornode.get('/thorchain/pools').then(res => res.data)
+}
+
+// USD prices from THORNode's TOR prices (1e8 = $1), the protocol's own valuation of each pool. Undefined when
+// no pool has a TOR price, so the caller can fall back to Midgard.
+export const torPoolPrices = (pools?: ThorPool[], network?: ThorNetwork) => {
+  const priced = (pools ?? []).filter(pool => Number(pool.asset_tor_price) > 0)
+  if (!priced.length) return undefined
+  return {
+    pools: priced.map(pool => ({ asset: pool.asset, assetPriceUSD: String(Number(pool.asset_tor_price) / 1e8) })),
+    runePrice: Number(network?.rune_price_in_tor) / 1e8
+  }
 }
 
 // A single LP position from Midgard's member view. All numeric fields are

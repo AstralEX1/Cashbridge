@@ -7,7 +7,7 @@ import { useQuote } from '@/hooks/use-quote'
 import { useAssetFrom, useAssetTo } from '@/hooks/use-swap'
 import { getDexScreenerTokens, getMayaMidgardCacaoPrice, getMayaMidgardPools, getMidgardPools, getMidgardRunePrice } from '@/lib/api'
 import { isHoudiniProvider } from '@/lib/swap-helpers'
-import { getThorPools } from '@/lib/thorchain-api'
+import { getThorNetwork, getThorPools, torPoolPrices } from '@/lib/thorchain-api'
 
 export type AssetRateMap = Record<string, USwapNumber>
 export type AssetLogoMap = Record<string, string>
@@ -22,18 +22,18 @@ export const useRates = (identifiers: string[], provider?: ProviderName): { rate
   const { data: midgardData, isLoading: midgardLoading } = useQuery({
     queryKey: ['thorchain-pool-prices'],
     queryFn: async () => {
-      const [midgardPools, runePrice, mayaPools, cacaoPrice] = await Promise.all([
-        getMidgardPools().catch(() => undefined),
-        getMidgardRunePrice().catch(() => NaN),
+      const [thorPools, network, mayaPools, cacaoPrice] = await Promise.all([
+        getThorPools().catch(() => undefined),
+        getThorNetwork().catch(() => undefined),
         getMayaMidgardPools().catch(() => []),
         getMayaMidgardCacaoPrice().catch(() => NaN)
       ])
 
-      // Midgard's gateway answers an occasional 5xx; THORNode's own pool prices (TOR, 1e8 = $1) are
-      // the same pools' USD prices from a different endpoint. Only when both fail is there no price.
-      const pools =
-        midgardPools ??
-        (await getThorPools()).map(pool => ({ asset: pool.asset, assetPriceUSD: String(Number(pool.asset_tor_price) / 1e8) }))
+      // THORNode's TOR prices first: Midgard's assetPriceUSD follows its indexed depths, which drift
+      // (on 2026-11-19 it priced ETH.USDT at $0.85 and BSC.USDT at $0.58). Midgard only when THORNode fails.
+      const tor = torPoolPrices(thorPools, network)
+      const pools = tor?.pools ?? (await getMidgardPools())
+      const runePrice = tor && tor.runePrice > 0 ? tor.runePrice : await getMidgardRunePrice().catch(() => NaN)
 
       const thor: AssetRateMap = {}
       const maya: AssetRateMap = {}
