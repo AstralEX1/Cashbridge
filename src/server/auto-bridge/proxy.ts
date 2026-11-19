@@ -48,9 +48,10 @@ export async function forwardOrder(req: NextRequest, id?: string) {
   }
 }
 
-// One request to the worker: over HTTPS to AUTO_BRIDGE_UPSTREAM with the service token, or over its local socket.
+// One request to the worker, for the order proxy, the scanner feed and the agent endpoint: over HTTPS to
+// AUTO_BRIDGE_UPSTREAM with the service token, or over its local socket.
 // Undefined when the transport is misconfigured.
-async function callWorker(method: string, path: string, headers: Record<string, string>, body?: Buffer) {
+export async function callWorker(method: string, path: string, headers: Record<string, string>, body?: Buffer) {
   const upstream = process.env.AUTO_BRIDGE_UPSTREAM ? new URL(process.env.AUTO_BRIDGE_UPSTREAM) : undefined
   if (upstream && (upstream.protocol !== 'https:' || upstream.username || upstream.password || upstream.search || upstream.hash)) return undefined
   const serviceToken = process.env.AUTO_BRIDGE_SERVICE_TOKEN
