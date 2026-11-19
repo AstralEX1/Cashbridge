@@ -305,6 +305,8 @@ export interface BuildIntent {
   minOutput: bigint
   // Both destinations are explicit when the funding wallet differs from the customer.
   payout?: { tokenScript: string; changeScript: string }
+  // Size of each funding input's unlocking script once signed, when it is not P2PKH (a contract's).
+  ownUnlockBytes?: number
 }
 
 // The shape of a router tx.build answer, which reviewBuild checks; the local build produces it too.
@@ -390,7 +392,8 @@ export const tradeTransaction = (trade: TradeResult, intent: BuildIntent): Build
           ]
         : [{ type: PayoutAmountRuleType.CHANGE, locking_bytecode: ownScript, allow_mixing_native_and_token_when_bch_change_is_dust: true }],
       null,
-      TX_FEE_PER_BYTE
+      // cashlab sizes the fee by a P2PKH unlock; a contract's is about 3x that, which twice the rate covers at any trade size.
+      (intent.ownUnlockBytes ?? 0) > P2PKH_UNLOCK_BYTES ? 2n * TX_FEE_PER_BYTE : TX_FEE_PER_BYTE
     )
   } catch (error) {
     if (error instanceof InsufficientFunds) throw new CauldronError('insufficient_funds', error.message)
@@ -424,7 +427,7 @@ export const tradeTransaction = (trade: TradeResult, intent: BuildIntent): Build
 const MIN_FEE_RATE = 1n
 const MAX_FEE_RATE = 5n
 // A P2PKH unlocking script (push of a ~65-byte Schnorr signature and a 33-byte key) plus its length byte.
-const P2PKH_UNLOCK_BYTES = 100n
+const P2PKH_UNLOCK_BYTES = 100
 
 export interface ReviewedSwap {
   side: TradeSide
@@ -564,7 +567,7 @@ export const reviewBuild = (build: BuildResult, intent: BuildIntent): ReviewedSw
   const ownIn = ownIndexes.reduce((sum, i) => sum + sources[i].valueSatoshis, 0n)
   const ownTokensIn = ownIndexes.reduce((sum, i) => sum + (sources[i].token?.amount ?? 0n), 0n)
 
-  const signedSize = BigInt(hexToBin(build.unsigned_tx_hex).length) + P2PKH_UNLOCK_BYTES * BigInt(ownIndexes.length)
+  const signedSize = BigInt(hexToBin(build.unsigned_tx_hex).length) + BigInt(intent.ownUnlockBytes ?? P2PKH_UNLOCK_BYTES) * BigInt(ownIndexes.length)
   if (minerFeeSats < signedSize * MIN_FEE_RATE) fail('The miner fee is too low to relay')
   if (minerFeeSats > signedSize * MAX_FEE_RATE) fail('The miner fee is excessive')
 
@@ -689,7 +692,14 @@ export const parseP2pkhUnlock = (bytecode: Uint8Array) => {
   return { hashType: signature[signature.length - 1], pubkey }
 }
 
-export const checkSigned = (unsignedHex: string, signedHex: string, ownIndexes: number[], sources: Output[], ownPubkey: string) => {
+export const checkSigned = (
+  unsignedHex: string,
+  signedHex: string,
+  ownIndexes: number[],
+  sources: Output[],
+  ownPubkey: string,
+  parseUnlock: (bytecode: Uint8Array) => { hashType: number; pubkey: Uint8Array } | undefined = parseP2pkhUnlock
+) => {
   const fail = (reason: string): never => {
     throw new CauldronError('rejected_signature', reason)
   }
@@ -712,7 +722,7 @@ export const checkSigned = (unsignedHex: string, signedHex: string, ownIndexes: 
       fail('The wallet changed the inputs')
     }
     if (ownIndexes.includes(i)) {
-      const unlock = parseP2pkhUnlock(input.unlockingBytecode)
+      const unlock = parseUnlock(input.unlockingBytecode)
       if (!unlock) fail('The wallet left an input unsigned or signed it unexpectedly')
       if (binToHex(unlock!.pubkey) !== ownPubkey.toLowerCase()) fail('An input was signed by a different key than the bound address')
       if (!ALLOWED_SIGHASH.includes(unlock!.hashType)) fail('An input was signed without committing to the whole transaction')
