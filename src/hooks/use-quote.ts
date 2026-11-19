@@ -2,14 +2,14 @@ import { RefetchOptions, useQuery } from '@tanstack/react-query'
 import { USwapNumber } from '@tcswap/core'
 import { ProviderName, USwapError } from '@tcswap/helpers'
 import { QuoteResponseRoute } from '@tcswap/helpers/api'
-import { AppConfig } from '@/config'
+import { AppConfig, BridgeConfig } from '@/config'
+import { isNearOnlyAsset } from '@/hooks/use-assets'
 import { useAssetFrom, useAssetTo, useCustomInterval, useCustomQuantity, useSlippage, useSwap } from '@/hooks/use-swap'
 import { getQuotes, QuoteTimeoutError } from '@/lib/api'
 import { BelowMinimumError, resolveQuoteError } from '@/lib/errors'
 import { isHoudiniProvider } from '@/lib/swap-helpers'
 import { useIsPrivateSend, useIsPrivateSwap } from '@/store/private-swap-store'
 import { useTokenSale } from '@/hooks/use-token-sale'
-import { BridgeConfig } from '@/config'
 import { useSwapStore } from '@/store/swap-store'
 import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
 import { getNearQuote, nearSlippageBps, type NearRoute } from '@/lib/near-intents'
@@ -27,6 +27,8 @@ type UseQuote = {
   quote?: QuoteResponseRoute
   routes?: BridgeRoutes
   best?: 'thorchain' | 'near'
+  // True when NEAR Intents is quoted beside THORChain for this mode (drives the route compare UI).
+  nearAllowed: boolean
   // The quote to price the pair by: `quote`, or while it refetches, the previous one for the same pair.
   pricingQuote?: QuoteResponseRoute
   error: Error | null
@@ -52,11 +54,15 @@ export const useQuote = (): UseQuote => {
   const bchToken = useSwapStore(state => state.bchToken)
   const sale = useTokenSale(reverse ? bchToken : null, valueFrom.toSignificant())
   const sellAsset = reverse ? BridgeConfig.buyAsset : assetFrom?.identifier
-  const buyAsset = reverse ? assetFrom?.identifier : assetTo?.identifier
+  // Forward first leg is always native BCH — a CashToken (bchToken) is bought afterwards on Cauldron.
+  // NEAR Intents only settles BCH.BCH, so it must quote that first leg even when the form destination is a token.
+  const buyAsset = reverse ? assetFrom?.identifier : BridgeConfig.buyAsset
   const sellAmount = reverse && bchToken ? sale.bridgeAmount : valueFrom.eqValue(0) ? undefined : valueFrom.toSignificant()
   // NEAR Intents carries manual transfers both ways, and the Cashbridge Router's forward ones when switched on.
   const { automatic } = useAutomaticBridge()
   const nearAllowed = BridgeConfig.nearIntents && (!automatic || (BridgeConfig.routerNear && !reverse)) && !isPrivateSwap
+  // `assetFrom` is always the non-BCH side; NEAR-only rows must never ask THORChain for a deposit address.
+  const nearOnly = isNearOnlyAsset(assetFrom)
   const choice = useSwapStore(state => state.routeChoice)
 
   const queryKey = [
@@ -64,14 +70,15 @@ export const useQuote = (): UseQuote => {
     reverse,
     sellAmount,
     assetFrom?.identifier,
-    assetTo?.identifier,
+    buyAsset,
     assetFrom?.chain,
     assetTo?.chain,
     slippage,
     customInterval,
     customQuantity,
     isPrivateSwap,
-    nearAllowed
+    nearAllowed,
+    nearOnly
   ]
 
   const {
@@ -89,37 +96,50 @@ export const useQuote = (): UseQuote => {
 
       // THORChain on the aggregator's own streaming policy, and NEAR Intents' 1Click beside it. Either one
       // quoting is enough; with neither, THORChain's error (a minimum, a halt) is the one shown.
+      // NEAR-only assets skip THOR entirely so they cannot land on an unsupported vault deposit.
+      // NEAR always asks for BCH.BCH on the BCH side (CashTokens are a separate Cauldron leg).
       const near = nearAllowed
-        ? getNearQuote({ sellAsset, buyAsset, sellAmount, dry: true, slippageBps: nearSlippageBps(slippage) }, signal).catch(error => {
+        ? getNearQuote(
+            {
+              sellAsset,
+              buyAsset: reverse ? buyAsset : BridgeConfig.buyAsset,
+              sellAmount,
+              dry: true,
+              slippageBps: nearSlippageBps(slippage)
+            },
+            signal
+          ).catch(error => {
             console.warn('NEAR Intents quote failed', error)
             return undefined
           })
         : undefined
-      const thorchain = getQuotes(
-        {
-          buyAsset,
-          sellAsset,
-          sellAmount,
-          slippage: slippage ?? 99,
-          providers: AppConfig.providers
-        },
-        createAbortController(signal)
-      ).then(quotes => {
-        if (quotes.length === 0) throw new Error(reverse ? 'No THORChain route from BCH for this amount' : 'No THORChain route to BCH for this amount')
+      const thorchain = nearOnly
+        ? Promise.resolve(undefined)
+        : getQuotes(
+            {
+              buyAsset,
+              sellAsset,
+              sellAmount,
+              slippage: slippage ?? 99,
+              providers: AppConfig.providers
+            },
+            createAbortController(signal)
+          ).then(quotes => {
+            if (quotes.length === 0) throw new Error(reverse ? 'No THORChain route from BCH for this amount' : 'No THORChain route to BCH for this amount')
 
-        if (AppConfig.id === 'thorchain' && !isPrivateSwap) {
-          const thorchainQuote =
-            quotes.find(q => q.providers[0] === ProviderName.THORCHAIN_STREAMING) || quotes.find(q => q.providers[0] === ProviderName.THORCHAIN)
+            if (AppConfig.id === 'thorchain' && !isPrivateSwap) {
+              const thorchainQuote =
+                quotes.find(q => q.providers[0] === ProviderName.THORCHAIN_STREAMING) || quotes.find(q => q.providers[0] === ProviderName.THORCHAIN)
 
-          if (thorchainQuote) {
-            return thorchainQuote
-          }
-        }
+              if (thorchainQuote) {
+                return thorchainQuote
+              }
+            }
 
-        return quotes.reduce((best, current) =>
-          new USwapNumber(current.expectedBuyAmount).gt(new USwapNumber(best.expectedBuyAmount)) ? current : best
-        )
-      })
+            return quotes.reduce((best, current) =>
+              new USwapNumber(current.expectedBuyAmount).gt(new USwapNumber(best.expectedBuyAmount)) ? current : best
+            )
+          })
       const [thor, nearRoute] = await Promise.allSettled([thorchain, near])
       const result = { thorchain: thor.status === 'fulfilled' ? thor.value : undefined, near: nearRoute.status === 'fulfilled' ? nearRoute.value : undefined }
       if (!result.thorchain && !result.near) throw thor.status === 'rejected' ? thor.reason : new Error('No route for this amount')
@@ -129,7 +149,7 @@ export const useQuote = (): UseQuote => {
       const sample = previous?.thorchain ?? previous?.near
       return sample && isQuoteFor(sample, sellAsset, buyAsset) && isHoudiniProvider(sample.providers[0]) === isPrivateSwap ? previous : undefined
     },
-    enabled: !!(sellAmount && sellAsset && buyAsset && (reverse || (assetTo?.identifier && pairMatchesMode))),
+    enabled: !!(sellAmount && sellAsset && buyAsset && (reverse || pairMatchesMode)),
     // A THORChain timeout is transient: asked again a few seconds later, quietly.
     retry: (count, error) => error instanceof QuoteTimeoutError && count < 2,
     retryDelay: 3_000,
@@ -140,13 +160,26 @@ export const useQuote = (): UseQuote => {
 
   const saleError = reverse && bchToken ? sale.error : null
   const best = bestRoute(routes)
-  const quote = routes && (choice === 'near' ? (routes.near ?? routes.thorchain) : choice === 'thorchain' ? (routes.thorchain ?? routes.near) : best && routes[best])
+  // NEAR-only legs have no THORChain route to fall back to (and must not deposit into one).
+  const quote =
+    routes &&
+    (nearOnly
+      ? routes.near
+      : choice === 'near'
+        ? (routes.near ?? routes.thorchain)
+        : choice === 'thorchain'
+          ? (routes.thorchain ?? routes.near)
+          : best && routes[best])
+  // First paint only: keep last routes/quote on screen through refetches and Cauldron sale reloads.
+  const waiting = isLoading && !isPlaceholderData && !routes
+  const saleLoading = reverse && !!bchToken && sale.isLoading
   return {
-    isLoading: isLoading || isRefetching || (reverse && !!bchToken && sale.isLoading),
+    isLoading: waiting || isRefetching || saleLoading,
     refetch,
-    quote: isLoading || isRefetching || isPlaceholderData || error ? undefined : quote,
-    routes: isLoading || isRefetching || isPlaceholderData || error ? undefined : routes,
-    best,
+    quote: error || waiting ? undefined : quote,
+    routes: error ? undefined : routes,
+    best: nearOnly ? (routes?.near ? 'near' : undefined) : best,
+    nearAllowed,
     pricingQuote: error ? undefined : quote,
     error: saleError ?? newError,
     minimum: error instanceof BelowMinimumError ? error.minimum : undefined

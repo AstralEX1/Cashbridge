@@ -8,7 +8,7 @@ export function SiteHeader() {
   return (
     <header className="landing-nav">
       <Link href="/" className="landing-brand">
-        <Image src={AppConfig.logo} alt="" width={30} height={30} priority />
+        <Image src={AppConfig.logo} alt="" width={30} height={30} priority sizes="30px" />
         {AppConfig.appName}
       </Link>
       <nav aria-label="Main">
@@ -29,7 +29,7 @@ export function SiteFooter() {
   return (
     <footer className="landing-footer">
       <Link href="/" className="landing-brand">
-        <Image src={AppConfig.logo} alt="" width={26} height={26} />
+        <Image src={AppConfig.logo} alt="" width={26} height={26} sizes="26px" />
         {AppConfig.appName}
       </Link>
       <nav aria-label="Footer">
@@ -42,6 +42,7 @@ export function SiteFooter() {
         <div>
           <p>Learn</p>
           <Link href="/docs/how-it-works">How it works</Link>
+          <Link href="/docs/agents">AI agents</Link>
           <Link href="/docs/security">Security and custody</Link>
           <Link href="/docs/fees">Fees</Link>
           <Link href="/docs/mainnet">Proof on mainnet</Link>

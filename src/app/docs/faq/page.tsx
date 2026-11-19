@@ -32,7 +32,16 @@ export default function Page() {
         <summary>How long does a transfer take?</summary>
         <div>
           <p>
-            Usually a few minutes. Most of the time is the THORChain swap. The Bitcoin Cash steps are quick, because Cash Bridge counts a transaction as done once it is in the network&apos;s mempool. Routes from slower chains, such as Litecoin, take longer. The confirmation screen shows an estimate.
+            Usually a few minutes. Most of the time is the cross-chain bridge (THORChain or NEAR Intents). The Bitcoin Cash steps are quick, because Cash Bridge can count a transaction as done once it is in the network&apos;s mempool. Routes from slower chains, such as Litecoin, take longer. The confirmation screen shows an estimate.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>What is the difference between THORChain and NEAR Intents?</summary>
+        <div>
+          <p>
+            Both move value across chains into or out of native BCH. THORChain uses a vault deposit with a memo. NEAR Intents uses a plain one-use deposit address with no memo and no Cashbridge contract on that leg. When both quote, the form shows both outputs and defaults to the better one. See <Link href="/docs/how-it-works">How it works</Link>.
           </p>
         </div>
       </details>
@@ -205,7 +214,16 @@ export default function Page() {
         <summary>The Cashbridge Router option is greyed out</summary>
         <div>
           <p>
-            It works for transfers to any Cauldron token and to plain Bitcoin Cash. Every transfer back from Bitcoin Cash is signed in your own wallets.
+            Forward, it covers Cauldron tokens and plain BCH when the service accepts the order. Reverse CashToken sales through a sale covenant are offered only when Router sales are enabled; otherwise reverse stays Manual. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.
+          </p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Does the Cashbridge Router hold my BCH?</summary>
+        <div>
+          <p>
+            When the service returns a contract order (<code>apiVersion=2</code>), BCH sits in a per-order P2SH covenant that can only pay your token minimum or refund your fallback. Legacy P2PKH orders used temporary service custody — that is what the published Router proof row shows, not the newer covenants. Details in <Link href="/docs/security">Security and custody</Link>.
           </p>
         </div>
       </details>

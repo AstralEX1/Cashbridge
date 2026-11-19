@@ -31,10 +31,10 @@ const IPFS_GATEWAY = 'https://ipfs.io/ipfs/'
 export const FEATURED_TOKENS: readonly CauldronToken[] = [
   PUSD_TOKEN,
   // Moria USD v1; Cauldron also lists the older MUSDv0 (4046913c…), which this is not.
-  { category: 'b38a33f750f84c5c169a6f23cb873e6e79605021585d4f3408789689ed87f366', ticker: 'MUSD', name: 'Moria USD', decimals: 2, icon: 'https://meta.moria.money/m1.png' },
-  { category: '5e4a058f6593be30090ce6e03282ab0a85ad393275f246c2fb34fae15da017da', ticker: 'RES', name: 'RES', decimals: 6, icon: 'https://bcmr.res.cash/.well-known/res.svg' },
-  { category: '7fa887fd4eac015478b95392c4984721fbe3060223c30b342d43cc06817f07f6', ticker: 'OLA', name: 'olando', decimals: 2, icon: `${IPFS_GATEWAY}bafybeidlal7oyr7pf3nshvqqydnrl3nlugv4jwy25fjglouh7yxuwqfype/7fa887fd4eac015478b95392c4984721fbe3060223c30b342d43cc06817f07f6.png` },
-  { category: '5932b2fd4915d6a75d3ec53282cd49118149a2176ee67ed68b1111ff0786f7fc', ticker: 'LIFT', name: 'Paytaca LIFT Token', decimals: 2, icon: `${IPFS_GATEWAY}bafybeictwoxb4ma2ywxl545dhuvqqufiwyhacvauygcj43u2orq3zm2c4e/5932b2fd4915d6a75d3ec53282cd49118149a2176ee67ed68b1111ff0786f7fc.png` }
+  { category: 'b38a33f750f84c5c169a6f23cb873e6e79605021585d4f3408789689ed87f366', ticker: 'MUSD', name: 'Moria USD', decimals: 2, icon: '/tokens/musd.svg' },
+  { category: '5e4a058f6593be30090ce6e03282ab0a85ad393275f246c2fb34fae15da017da', ticker: 'RES', name: 'RES', decimals: 6, icon: '/tokens/res.svg' },
+  { category: '7fa887fd4eac015478b95392c4984721fbe3060223c30b342d43cc06817f07f6', ticker: 'OLA', name: 'olando', decimals: 2, icon: '/tokens/ola.svg' },
+  { category: '5932b2fd4915d6a75d3ec53282cd49118149a2176ee67ed68b1111ff0786f7fc', ticker: 'LIFT', name: 'Paytaca LIFT Token', decimals: 2, icon: '/tokens/lift.svg' }
 ]
 
 // Tokens with less BCH than this in their pools are left out: a trade of a few dollars would move them.

@@ -1,40 +1,28 @@
 # Cash Bridge
 
-Bridge THORChain assets to Bitcoin Cash and Cauldron CashTokens, and back. Live at https://www.cashbridge.space.
+Bridge assets to Bitcoin Cash and Cauldron CashTokens, and back. Live at https://www.cashbridge.space.
 
-Two bridges carry the cross-chain leg: THORChain and [NEAR Intents](https://docs.near-intents.org) (its 1Click API). When both quote a transfer,
-the form shows what each would deliver and takes the better one. NEAR Intents is a plain transfer to a one-use deposit address; its payout is
-checked on the destination chain like THORChain's.
+Two bridges carry the cross-chain leg: [THORChain](https://thorchain.org) and [NEAR Intents](https://docs.near-intents.org) (1Click). When both quote a transfer, the form shows what each would deliver and takes the better one. NEAR Intents is a plain transfer to a one-use deposit address — there is no Cashbridge contract on that leg; its payout is checked on the destination chain like THORChain’s.
 
-By default the user signs every step in their own wallets. For forward transfers to a Cauldron token, the **Cashbridge Router** lets the user sign
-the deposit in the source wallet and have the service buy and pay out the token, with a fixed minimum and a BCH fallback. Contract orders restrict
-spending the BCH to those terms and allow anyone to return it to the fallback after the refund time; legacy orders use temporary service custody.
-The mode depends on the order returned by the service. ERC-20 approval may still need a separate transaction. See the
-[transaction flows](docs/how-it-works.md) and [security and custody](https://www.cashbridge.space/docs/security).
+By default (**Manual**) the user signs every step in their own wallets. For transfers that settle a Cauldron token (and for plain BCH when you prefer), the **Cashbridge Router** lets the user sign once in the source wallet while the service finishes settlement under the order’s terms. When the service returns a contract order (`apiVersion=2`), the deposit is a per-order P2SH purchase or sale covenant: spending is limited to paying the quoted minimum (or the fixed THORChain deposit on a sale) or returning funds to the fallback; after `refundAfter` (set about three hours from order creation; Bitcoin Cash median time runs about an hour behind wall clock) anyone may return them on those terms. Legacy orders used temporary P2PKH custody — the published Router proof row is that model, not covenant settlement. ERC-20 approval may still need a separate transaction. See the [docs](https://www.cashbridge.space/docs), [transaction flows](docs/how-it-works.md) and [security and custody](https://www.cashbridge.space/docs/security).
 
-AI agents can use the bridge through its MCP server at `https://www.cashbridge.space/mcp`: quote, prepare a deposit for the user's wallet to
-sign, and track the transfer. The server holds no keys. Add it with `claude mcp add --transport http cash-bridge https://www.cashbridge.space/mcp`;
-see the [agent docs](https://www.cashbridge.space/docs/agents).
+Promo film on the landing page: [`/landing/cashbridge-promo.mp4`](https://www.cashbridge.space/).
+
+AI agents use the MCP server at `https://www.cashbridge.space/mcp`: list assets, quote, prepare an unsigned deposit for the user’s wallet, report the source tx, and read status. The server holds no keys; it does not prepare sale orders today, and NEAR→CashToken prepare stays on THORChain via the Router. Add it with `claude mcp add --transport http cash-bridge https://www.cashbridge.space/mcp`; see the [agent docs](https://www.cashbridge.space/docs/agents).
 
 Forked from the [swap.thorchain.org](https://github.com/thorchain/swap.thorchain) interface.
 
 ## Use Cash Bridge
 
 1. Open the [bridge](https://www.cashbridge.space/bridge), choose the source asset and receive BCH, PUSD, MUSD or another Cauldron token.
-2. Enter an amount, connect the source wallet and choose the BCH recipient. In manual mode, connect your BCH wallet to sign the token purchase;
-   with the Cashbridge Router, you can paste a receiving address.
-3. Review the route, minimum, fees and fallback before signing. Follow the transfer in History, with links to its transactions.
+2. Enter an amount, connect the source wallet and choose the BCH recipient. In Manual mode, connect your BCH wallet to sign the token purchase; with the Cashbridge Router, you can paste a receiving address.
+3. Review the route (THORChain vs NEAR Intents when both quote), minimum, fees and fallback before signing. Follow the transfer in History, with links to its transactions.
 
-To bridge back, reverse the form. Manual mode sells the CashToken to BCH and then asks your BCH wallet to sign the bridge deposit. When available,
-Router sales let your wallet send the token to a sale contract; the service sells it and deposits BCH to THORChain with the agreed destination memo,
-or returns the funds. These are several on-chain steps, not an atomic swap. See [bridging back](https://www.cashbridge.space/docs/guides/bridge-from-bch).
+To bridge back, reverse the form. Manual mode sells the CashToken to BCH and then asks your BCH wallet to sign the bridge deposit. When available, Router sales let your wallet send the token to a sale contract; the service sells it and deposits BCH to THORChain with the agreed destination memo, or returns the funds. These are several on-chain steps, not an atomic swap. See [bridging back](https://www.cashbridge.space/docs/guides/bridge-from-bch).
 
-The [wallet guide](https://www.cashbridge.space/docs/wallets) covers WizardConnect and WalletConnect on BCH, and browser, mobile and hardware wallets
-on the other chains. Availability depends on the wallet and network. Cash Bridge adds no application fee; network, bridge and Cauldron pool fees
-still apply, and liquidity and provider limits affect each quote. See [fees and limits](https://www.cashbridge.space/docs/fees).
+The [wallet guide](https://www.cashbridge.space/docs/wallets) covers WizardConnect and WalletConnect on BCH, and browser, mobile and hardware wallets on the other chains. Availability depends on the wallet and network. Cash Bridge adds no application fee; network, bridge and Cauldron pool fees still apply, and liquidity and provider limits affect each quote. See [fees and limits](https://www.cashbridge.space/docs/fees).
 
-History is stored in your browser. The Router service continues an order after the tab closes; manual steps still need your wallet. If a wallet
-answer is lost, check the transaction or use **Already paid?** before sending again. See [tracking and recovery](https://www.cashbridge.space/docs/guides/track-a-transfer).
+History is stored in your browser. The Router service continues an order after the tab closes; Manual steps still need your wallet. If a wallet answer is lost, check the transaction or use **Already paid?** before sending again. See [tracking and recovery](https://www.cashbridge.space/docs/guides/track-a-transfer).
 
 ## Proof on mainnet
 
@@ -53,7 +41,8 @@ explorer; the **THORChain swap** link opens the cross-chain leg on [thorchain.ne
 | 17 Nov 2026 | Manual | PUSD → BCH → AVAX | 1.51 PUSD → 0.00722206 BCH → 0.17553838 AVAX | [PUSD sale](https://blockchair.com/bitcoin-cash/transaction/318e55dc4b912fc4c774d436a57d1d22fdfaa65dab92bf82a88e43bf35302d9c) · [BCH deposit](https://blockchair.com/bitcoin-cash/transaction/02c3d7eb5e199f49f7f55362e1e0f2664e83634439a719c158246ed99a06a210) · [THORChain swap](https://thorchain.net/tx/02c3d7eb5e199f49f7f55362e1e0f2664e83634439a719c158246ed99a06a210) · [AVAX payout](https://snowscan.xyz/tx/0xD8A8C83CCA712EDC8C805C331D9F66614B48BE637A2545AC3612525D091C87E5) |
 
 **Manual**: the user signs each step in their own wallets. **Cashbridge Router**: the user signs once in the source wallet, and the
-Cashbridge Router buys the token on Cauldron and pays it out. Every THORChain swap above finished without a refund, and its payout is the
+Cashbridge Router buys the token on Cauldron and pays it out. The Router row above used legacy P2PKH order funding, not a
+purchase covenant. Every THORChain swap above finished without a refund, and its payout is the
 transaction listed next to it. The runs used small amounts, $1 to $3 per leg. The Cashbridge Router delivered 1.51 PUSD 5.7 minutes
 after the single BNB signature (quote 1.50, minimum 1.48), and every payout arrived at or above the minimum shown on the Confirm screen.
 

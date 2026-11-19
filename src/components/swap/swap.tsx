@@ -166,7 +166,7 @@ export const Swap = () => {
       {(!automatic || reverse) && <BchWalletStatus />}
 
       <BridgeOperationPanel uid={progressId} onClose={() => setProgressId(undefined)} />
-      <BackgroundBridges onOpen={setProgressId} />
+      <BackgroundBridges onOpen={setProgressId} openUid={progressId} />
       <AutomaticOrders />
       {flowPreview && <BridgeFlowPreview stage={flowPreview} />}
 

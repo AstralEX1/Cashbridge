@@ -53,6 +53,7 @@ export const BridgeWalletBadge = ({ kind }: { kind: 'other' | 'bch' }) => {
           }
         }}
       >
+        <img className="bridge-wallet-chain" src={`/networks/${chain.toLowerCase()}.svg`} width={18} height={18} alt="" />
         {connecting && !bch.reconnectStalled ? <LoaderCircle size={14} className="animate-spin" /> : <Wallet size={14} />}
         {t(connecting && !bch.reconnectStalled ? 'connecting' : side === 'from' ? 'connectSource' : 'connectDestination')}
       </button>
@@ -64,6 +65,7 @@ export const BridgeWalletBadge = ({ kind }: { kind: 'other' | 'bch' }) => {
       address={address}
       chain={chain}
       label={t(side === 'from' ? (reverse ? 'payout' : 'source') : 'destination')}
+      showChainIcon
       onDisconnect={() => {
         if (side === 'from' && account) disconnectSource(account.provider)
         else if (side === 'to') void bch.disconnect()

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { DocsDemoMcp } from '@/components/docs/docs-demo-mcp'
 import { AppConfig } from '@/config'
 import { Callout, DocsArticle, Step, Steps } from '@/components/docs/docs-ui'
 import { REQUEST_LIMIT, WRITE_LIMIT } from '@/server/agent/mcp'
@@ -21,11 +22,13 @@ export default function Page() {
     <DocsArticle
       href="/docs/agents"
       title="Use Cash Bridge from an AI agent"
-      lead="Cash Bridge runs an MCP server, so an AI assistant or agent can quote a transfer to Bitcoin Cash or a CashToken, prepare it, and follow it to the end. The agent never gets a key: the user signs in their own wallet, as on the site."
+      lead="Cash Bridge runs an MCP server so an assistant can quote a transfer, prepare an unsigned deposit for the user to sign, and follow status. The server holds no keys."
     >
+      <DocsDemoMcp />
+
       <h2 id="connect">Connect</h2>
       <p>
-        The server is at <code>{endpoint}</code>. It speaks MCP over Streamable HTTP, answers every request with one JSON response, and needs no account or API key.
+        The server is at <code>{endpoint}</code>. It speaks MCP over Streamable HTTP, answers with one JSON response per request, and needs no account or API key.
       </p>
       <p>In Claude Code:</p>
       <pre>
@@ -56,50 +59,55 @@ export default function Page() {
         </tbody>
       </table>
       <p>
-        Assets use THORChain&apos;s names, such as <code>ETH.ETH</code> or <code>BASE.USDC-0X8335…</code>. The Bitcoin Cash side is <code>BCH.BCH</code>, a token&apos;s ticker such as <code>PUSD</code>, or its category id. Amounts are decimal strings in the asset&apos;s own units.
+        Assets use THORChain-style names (<code>ETH.ETH</code>, <code>BASE.USDC-0X8335…</code>). The Bitcoin Cash side is <code>BCH.BCH</code>, a ticker such as <code>PUSD</code>, or a category id. Amounts are decimal strings in the asset&apos;s units.
       </p>
 
       <h2 id="flow">A transfer, step by step</h2>
       <Steps>
         <Step title="Quote">
-          <code>get_bridge_quote</code> returns what the user would receive. To or from plain BCH it compares THORChain with NEAR Intents and names the better one. Into a CashToken it adds the Cauldron leg that the Cashbridge Router takes care of.
+          <code>get_bridge_quote</code> returns what the user would receive. To or from plain BCH it compares THORChain with NEAR Intents. Into a CashToken it prices THORChain then Cauldron through the Cashbridge Router.
         </Step>
-        <Step title="Ask the user">The agent shows the amounts, the route and the destination address, and goes on only when the user agrees.</Step>
+        <Step title="Ask the user">Show amounts, route and destination; continue only when the user agrees.</Step>
         <Step title="Prepare">
-          <code>prepare_bridge</code> returns, for an EVM chain, the unsigned transactions to sign: the token approval when one is needed, then the deposit. For other chains it returns the deposit address, the amount and, for THORChain, the memo. For a CashToken it also opens a Cashbridge Router order and returns its id and order token.
+          <code>prepare_bridge</code> returns unsigned EVM transactions (approval + deposit) or deposit instructions (THORChain vault + memo, or a NEAR Intents deposit address). For a CashToken it opens a Cashbridge Router order and returns id + order token. It never signs or broadcasts.
         </Step>
-        <Step title="Sign and send">The user signs in their own wallet. The agent never sees a private key or a seed phrase.</Step>
+        <Step title="Sign and send">The user signs in their own wallet.</Step>
         <Step title="Track">
-          With a Router order, <code>report_source_transaction</code> tells the Cashbridge Router which transaction paid it. <code>get_bridge_status</code> then shows where the transfer is until the tokens or the BCH arrive.
+          <code>report_source_transaction</code> attaches the source hash; <code>get_bridge_status</code> follows the transfer.
         </Step>
       </Steps>
 
       <h2 id="safety">Who signs, and what is checked</h2>
       <Callout kind="note" title="The server holds no keys">
-        It never signs or sends a transaction. Whatever it prepares still has to be signed by the user.
+        Whatever it prepares still has to be signed by the user. Do not ask the agent for seeds or private keys.
       </Callout>
       <ul>
-        <li>The server builds an EVM transaction itself from THORChain&apos;s own data: it calls the chain&apos;s current THORChain router, pays the current vault and carries the quoted memo and asset. A quote whose vault is not the current one, or whose memo does not pay the destination, gets no transaction.</li>
-        <li>The memo must pay the destination that was asked for. With a Router order, it must pay the order&apos;s contract, and the server checks that contract is built from the order&apos;s own terms, exactly as the site does.</li>
-        <li>A Router order can only buy at least its minimum of the token for the recipient, or send the BCH back to them. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.</li>
-        <li>The order token is the only key to a Router order. The agent should keep it with the transfer; it is not shown again.</li>
-        <li>Quotes and deposit addresses expire within minutes. After <code>expires_at</code>, prepare a new one rather than reuse it.</li>
+        <li>EVM deposits are built from current THORChain router / vault / memo data. Stale vaults or memos that do not pay the destination get no transaction.</li>
+        <li>With a Router order, the memo must pay the order contract, and the server checks that contract matches the order terms — the same rebuild the site does.</li>
+        <li>A Router order can only buy at least its minimum for the recipient, or send BCH back. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.</li>
+        <li>The order token is the capability for that order; keep it with the transfer.</li>
+        <li>Quotes and deposit addresses expire within minutes. After <code>expires_at</code>, prepare again.</li>
       </ul>
 
       <h2 id="limits">Limits</h2>
       <ul>
         <li>
-          {REQUEST_LIMIT} requests per 10 minutes for each client IP, and {WRITE_LIMIT} Router order writes among them. Past that, the server answers 429 with a <code>Retry-After</code> header.
+          {REQUEST_LIMIT} requests per 10 minutes per client IP, and {WRITE_LIMIT} Router order writes among them. Past that: HTTP 429 with <code>Retry-After</code>.
         </li>
-        <li>One JSON-RPC message per request; batches are not taken.</li>
-        <li>Selling a CashToken back from BCH is prepared on the site only for now. The quote tool still prices it.</li>
+        <li>One JSON-RPC message per request; batches are not accepted.</li>
         <li>
-          Cash Bridge charges no fee of its own. The networks, THORChain, NEAR Intents and the Cauldron pools charge theirs, as on <Link href="/docs/fees">Fees and limits</Link>.
+          <strong>Sale prepare</strong> (CashToken back from BCH) is on the site only for now. The quote tool can still price it.
+        </li>
+        <li>
+          <strong>NEAR → CashToken:</strong> NEAR Intents pays plain BCH only. Preparing a CashToken receive uses the Router on THORChain, not <code>route: near_intents</code>.
+        </li>
+        <li>
+          Cash Bridge charges no fee of its own. Networks, THORChain, NEAR Intents and Cauldron still charge — <Link href="/docs/fees">Fees and limits</Link>.
         </li>
       </ul>
 
       <h2 id="without-mcp">Without an MCP client</h2>
-      <p>The endpoint is plain JSON-RPC over HTTP, so any script can call a tool:</p>
+      <p>Plain JSON-RPC over HTTP:</p>
       <pre>
         <code>{curlExample}</code>
       </pre>
@@ -107,10 +115,10 @@ export default function Page() {
       <h2 id="discovery">For language models</h2>
       <ul>
         <li>
-          <a href="/llms.txt">/llms.txt</a> sums up the site and the tools for a language model.
+          <a href="/llms.txt">/llms.txt</a> — short site + tools summary.
         </li>
         <li>
-          <a href="/.well-known/mcp/server-card.json">/.well-known/mcp/server-card.json</a> describes the server for MCP registries.
+          <a href="/.well-known/mcp/server-card.json">/.well-known/mcp/server-card.json</a> — MCP registry card.
         </li>
       </ul>
     </DocsArticle>

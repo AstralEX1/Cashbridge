@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { DocsArticle } from '@/components/docs/docs-ui'
+import { Callout, DocsArticle } from '@/components/docs/docs-ui'
 import { RUNS } from '@/lib/mainnet-runs'
 
 export const metadata: Metadata = {
@@ -13,8 +13,12 @@ export default function Page() {
     <DocsArticle
       href="/docs/mainnet"
       title="Proof on mainnet"
-      lead="Real transfers through this site, end to end, in both directions. Every link opens the transaction on a public explorer, so anyone can check that the funds moved."
+      lead="Real transfers through this site, end to end, in both directions. Every link opens a public explorer so anyone can check that the funds moved."
     >
+      <Callout kind="note" title="Contract vs legacy Router proof">
+        The published <strong>Cashbridge Router</strong> row below used a legacy P2PKH order address (temporary service custody of the BCH). It shows a mainnet run where the user signed once in the source wallet. It is <strong>not</strong> funded evidence of the newer P2SH purchase / sale covenants (<code>apiVersion=2</code>). Contract settlements, when published, will be labelled separately.
+      </Callout>
+
       <h2 id="runs">Transfers</h2>
       <table>
         <thead>
@@ -53,22 +57,18 @@ export default function Page() {
         <li>Both directions: into Bitcoin Cash and its stablecoins, and back out to other chains.</li>
         <li>Two Cauldron stablecoins, PUSD and MUSD, and payouts on BNB Smart Chain and Avalanche.</li>
         <li>
-          Both modes. In <strong>Manual</strong> mode the user signs each step in their own wallets. With the <strong>Cashbridge Router</strong> the
-          user signs once in the source wallet, and the Cashbridge Router buys PUSD and pays it out. See{' '}
-          <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.
+          Both modes. <strong>Manual</strong>: the user signs each step. <strong>Cashbridge Router</strong>: the listed run used one source signature; the Router bought PUSD and paid it out under the legacy order model. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link> for how contract orders work when the service returns them.
         </li>
         <li>
-          The cross-chain leg runs on THORChain. Every <strong>THORChain swap</strong> link opens the swap on{' '}
+          These runs used THORChain for the cross-chain leg. Every <strong>THORChain swap</strong> link opens{' '}
           <a href="https://thorchain.net" target="_blank" rel="noopener noreferrer">
             thorchain.net
           </a>
-          : each one finished without a refund, and its payout is the transaction listed next to it.
+          ; each finished without a refund, and its payout is listed next to it. NEAR Intents mainnet rows are not in this table yet.
         </li>
       </ul>
       <p>
-        The runs used small amounts, $1 to $3 per leg. The Cashbridge Router delivered 1.51 PUSD 5.7 minutes after the single BNB signature, against a
-        quote of 1.50 and a minimum of 1.48. Every payout arrived at or above the minimum shown on the Confirm screen. New runs are added at the
-        bottom of the table.
+        The runs used small amounts, $1 to $3 per leg. The Cashbridge Router delivered 1.51 PUSD 5.7 minutes after the single BNB signature, against a quote of 1.50 and a minimum of 1.48. Every payout arrived at or above the minimum shown on Confirm. New runs are added at the bottom of the table.
       </p>
     </DocsArticle>
   )

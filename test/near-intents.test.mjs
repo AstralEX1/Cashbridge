@@ -5,9 +5,12 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { hexToBin } from '@bitauth/libauth'
 import { checkPayment, bindingFromPubkey, decodeTx, txidOf } from '../src/lib/bch.ts'
-import { findNearToken, interpretNearStatus, isNearRoute, nearLegOf, nearQuoteBody, nearRoute, nearSlippageBps, NEAR_BCH } from '../src/lib/near-intents.ts'
+import { Chain, ProviderName } from '@tcswap/helpers'
+import { assetsFromNearTokens, findNearToken, interpretNearStatus, isNearRoute, mergeNearAssets, nearAssetIdentifier, nearLegOf, nearQuoteBody, nearRoute, nearSlippageBps, NEAR_BCH } from '../src/lib/near-intents.ts'
+import { isAssetInMode, isNearOnlyAsset } from '../src/hooks/use-assets.ts'
 import { bestRoute } from '../src/hooks/use-quote.ts'
 import { isBridgeRoute } from '../src/lib/api.ts'
+import { BridgeConfig } from '../src/config.ts'
 import { otherPubkey, outboundTx, PUSD, pubkey } from './fixtures/bridge-fixtures.mjs'
 
 // Entries shaped as /v0/tokens lists them.
@@ -19,6 +22,16 @@ const TOKENS = [
   { assetId: 'nep141:btc.omft.near', decimals: 8, blockchain: 'btc', symbol: 'BTC', price: 63000 },
   { assetId: '1cs_v1:btc:native:coin', decimals: 8, blockchain: 'btc', symbol: 'BTC(OMNI)', price: 63000 },
   { assetId: 'nep141:tron-d28a265909efecdcee7c5028585214ea0b96f015.omft.near', decimals: 6, blockchain: 'tron', symbol: 'USDT', price: 1, contractAddress: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' },
+  { assetId: 'nep141:sol.omft.near', decimals: 9, blockchain: 'sol', symbol: 'SOL', price: 140, contractAddress: null },
+  {
+    assetId: 'nep141:sol-5ebsggvtubrd7shjge89k6nc2bnlzqgcjxb2ejrhtdbk.omft.near',
+    decimals: 9,
+    blockchain: 'sol',
+    symbol: 'kV-gtSOLb',
+    price: 1,
+    contractAddress: '5EBsGgVTubrd7ShJgE89k6nC2bnLzqGCjXb2ejrhtdBK'
+  },
+  { assetId: 'nep141:arb.omft.near', decimals: 18, blockchain: 'arb', symbol: 'ETH', price: 1800, contractAddress: null },
   { assetId: 'nep141:xrp.omft.near', decimals: 6, blockchain: 'xrp', symbol: 'XRP', price: 1 },
   { assetId: NEAR_BCH, decimals: 8, blockchain: 'bch', symbol: 'BCH', price: 207, contractAddress: null }
 ]
@@ -36,9 +49,116 @@ test('THORChain identifiers map to 1Click tokens by chain and contract, or by ti
   assert.equal(findNearToken(TOKENS, 'TRON.USDT-TR7NHQJEKQXGTCI8Q8ZY4PL8OTSZGJLJ6T')?.decimals, 6)
   assert.equal(findNearToken(TOKENS, 'SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V')?.decimals, 6)
   assert.equal(findNearToken(TOKENS, 'BASE.USDC-0X0000000000000000000000000000000000000001'), undefined)
+  // Ticker itself contains `-`: match by contract suffix, not the first dash.
+  assert.equal(findNearToken(TOKENS, 'SOL.kV-gtSOLb-5EBsGgVTubrd7ShJgE89k6nC2bnLzqGCjXb2ejrhtdBK')?.assetId, TOKENS[8].assetId)
+  assert.equal(findNearToken(TOKENS, 'ARB.ETH')?.assetId, 'nep141:arb.omft.near')
   // Not listed by 1Click, or a deposit that needs a memo the wallet send does not carry.
   assert.equal(findNearToken(TOKENS, 'DOGE.DOGE'), undefined)
   assert.equal(findNearToken(TOKENS, 'XRP.XRP'), undefined)
+})
+
+test('1Click rows become picker assets with findNearToken-compatible identifiers under NEAR', () => {
+  assert.equal(nearAssetIdentifier(usdc), 'BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913')
+  assert.equal(nearAssetIdentifier(TOKENS[3]), 'SOL.USDC-EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v')
+  assert.equal(nearAssetIdentifier(TOKENS[8]), 'SOL.kV-gtSOLb-5EBsGgVTubrd7ShJgE89k6nC2bnLzqGCjXb2ejrhtdBK')
+  assert.equal(nearAssetIdentifier(TOKENS[10]), undefined, 'XRP is not a mapped wallet chain')
+  assert.equal(nearAssetIdentifier({ ...TOKENS[4], symbol: 'BTC(OMNI)', assetId: '1cs_v1:btc:native:coin' }), undefined)
+
+  const assets = assetsFromNearTokens(TOKENS)
+  assert.ok(assets.every(a => a.providers.length === 1 && a.providers[0] === ProviderName.NEAR), 'NEAR-only stamp; never THORCHAIN')
+  const solUsdc = assets.find(a => a.identifier === 'SOL.USDC-EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v')
+  assert.equal(solUsdc?.chain, 'SOL')
+  assert.equal(solUsdc?.decimals, 6)
+  assert.equal(solUsdc?.address, 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v')
+  assert.notEqual(solUsdc?.address, solUsdc.address.toUpperCase(), 'Solana mint stays case-exact for wallet send')
+  assert.equal(findNearToken(TOKENS, solUsdc.identifier)?.assetId, TOKENS[3].assetId)
+  const arbEth = assets.find(a => a.identifier === 'ARB.ETH')
+  assert.equal(arbEth?.ticker, 'ETH')
+  assert.equal(arbEth?.address, undefined, 'native gas has no contract')
+  assert.equal(findNearToken(TOKENS, arbEth.identifier)?.blockchain, 'arb')
+  assert.equal(assets.some(a => a.identifier === 'XRP.XRP'), false)
+  assert.equal(isAssetInMode(solUsdc, false), BridgeConfig.nearIntents)
+  assert.equal(isAssetInMode(solUsdc, true), false, 'NEAR-only tokens stay off the private tab')
+  assert.equal(isNearOnlyAsset(solUsdc), true)
+  assert.equal(isNearOnlyAsset({ ...solUsdc, providers: [ProviderName.THORCHAIN, ProviderName.NEAR] }), false)
+})
+
+test('native vs contract identity stays exact; dashed tickers and malformed catalog are rejected or deduped', () => {
+  const withWeth = [
+    ...TOKENS,
+    { assetId: 'nep141:base-0x4200000000000000000000000000000000000006.omft.near', decimals: 18, blockchain: 'base', symbol: 'WETH', price: 1, contractAddress: '0x4200000000000000000000000000000000000006' }
+  ]
+  assert.equal(findNearToken(withWeth, 'BASE.ETH')?.assetId, 'nep141:base.omft.near')
+  assert.equal(findNearToken(withWeth, 'BASE.ETH')?.contractAddress ?? null, null)
+  assert.equal(findNearToken(withWeth, 'BASE.WETH-0X4200000000000000000000000000000000000006')?.symbol, 'WETH')
+  assert.notEqual(findNearToken(withWeth, 'BASE.ETH')?.assetId, findNearToken(withWeth, 'BASE.WETH-0X4200000000000000000000000000000000000006')?.assetId)
+
+  const dashed = assetsFromNearTokens([TOKENS[8]])
+  assert.equal(dashed[0]?.identifier, 'SOL.kV-gtSOLb-5EBsGgVTubrd7ShJgE89k6nC2bnLzqGCjXb2ejrhtdBK')
+  assert.equal(findNearToken([TOKENS[8]], dashed[0].identifier)?.assetId, TOKENS[8].assetId)
+
+  const malformed = [
+    null,
+    { assetId: '', decimals: 6, blockchain: 'eth', symbol: 'X', price: 1 },
+    { assetId: 'x', decimals: NaN, blockchain: 'eth', symbol: 'X', price: 1 },
+    { assetId: 'x', decimals: 6, blockchain: 'eth', symbol: '', price: 1 },
+    { assetId: 'x', decimals: 6, blockchain: 'eth', symbol: 'BAD', price: 1, contractAddress: '   ' },
+    { assetId: 'x', decimals: 6, blockchain: 'xrp', symbol: 'XRP', price: 1 },
+    { assetId: 'dup', decimals: 6, blockchain: 'base', symbol: 'USDC', price: 1, contractAddress: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' },
+    { assetId: 'dup2', decimals: 8, blockchain: 'base', symbol: 'USDC', price: 1, contractAddress: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' }
+  ]
+  const cleaned = assetsFromNearTokens(malformed)
+  assert.equal(cleaned.length, 1, 'blank contract rejected; duplicates collapse to first')
+  assert.equal(cleaned[0].decimals, 6)
+  assert.equal(cleaned[0].providers.includes(ProviderName.THORCHAIN), false)
+  assert.deepEqual(assetsFromNearTokens(undefined), [])
+})
+
+test('mergeNearAssets tags overlap with NEAR, restores Solana case, and leaves THOR alone on catalog failure', () => {
+  const thorSol = {
+    address: 'EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V',
+    chain: Chain.Solana,
+    chainId: 'solana',
+    decimals: 6,
+    identifier: 'SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V',
+    name: 'USDC',
+    providers: [ProviderName.THORCHAIN],
+    ticker: 'USDC'
+  }
+  const thorBtc = {
+    chain: Chain.Bitcoin,
+    chainId: 'bitcoin',
+    decimals: 8,
+    identifier: 'BTC.BTC',
+    name: 'Bitcoin',
+    providers: [ProviderName.THORCHAIN],
+    ticker: 'BTC',
+    logoURI: '/networks/btc.svg'
+  }
+  const map = new Map([
+    [`${thorSol.chain}-${thorSol.identifier}`.toLowerCase(), { ...thorSol, providers: [...thorSol.providers] }],
+    [`${thorBtc.chain}-${thorBtc.identifier}`.toLowerCase(), { ...thorBtc, providers: [...thorBtc.providers] }]
+  ])
+  const before = map.size
+  mergeNearAssets(map, [])
+  assert.equal(map.size, before, 'empty catalog (failure path) keeps the THOR list')
+  assert.equal(isNearOnlyAsset(map.get(`${thorBtc.chain}-${thorBtc.identifier}`.toLowerCase())), false)
+
+  mergeNearAssets(map, TOKENS)
+  const mergedSol = [...map.values()].find(a => a.ticker === 'USDC' && a.chain === Chain.Solana)
+  assert.ok(mergedSol.providers.includes(ProviderName.THORCHAIN) && mergedSol.providers.includes(ProviderName.NEAR))
+  assert.equal(isNearOnlyAsset(mergedSol), false)
+  assert.equal(mergedSol.address, 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'wallet send gets case-exact mint')
+  assert.match(mergedSol.identifier, /EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/)
+
+  const nearOnly = [...map.values()].find(a => a.identifier === 'ARB.ETH')
+  assert.ok(nearOnly)
+  assert.equal(isNearOnlyAsset(nearOnly), true)
+  assert.deepEqual(nearOnly.providers, [ProviderName.NEAR])
+  const btc = map.get(`${thorBtc.chain}-${thorBtc.identifier}`.toLowerCase())
+  assert.equal(btc.identifier, 'BTC.BTC', 'default sell BTC.BTC untouched — no rewrite to ETH')
+  assert.equal(btc.providers.includes(ProviderName.THORCHAIN), true)
+  assert.equal(isNearOnlyAsset(btc), false)
 })
 
 test('a forward quote asks exact input in base units, pays the plain BCH address and refunds the source', () => {

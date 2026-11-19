@@ -56,13 +56,13 @@ export const Step = ({ title, children }: { title: string; children: ReactNode }
   </li>
 )
 
-export type FlowNode = { title: string; note: string }
+export type FlowNode = { title: string; note: string; kind?: 'wallet' | 'onchain' | 'service' | 'contract' }
 
 // A route drawn as boxes joined by arrows; it stacks vertically on narrow screens.
 export const Flow = ({ nodes, label }: { nodes: FlowNode[]; label: string }) => (
   <ol className="docs-flow" aria-label={label}>
     {nodes.map(node => (
-      <li key={node.title}>
+      <li key={node.title + node.note} data-kind={node.kind}>
         <strong>{node.title}</strong>
         <span>{node.note}</span>
       </li>
@@ -70,10 +70,42 @@ export const Flow = ({ nodes, label }: { nodes: FlowNode[]; label: string }) => 
   </ol>
 )
 
+/** Side-by-side protocol schemas (Manual vs Router, THOR vs NEAR, purchase vs sale). */
+export const SchemaCompare = ({
+  label,
+  left,
+  right
+}: {
+  label: string
+  left: { title: string; nodes: FlowNode[]; note?: string }
+  right: { title: string; nodes: FlowNode[]; note?: string }
+}) => (
+  <div className="docs-schema" role="group" aria-label={label}>
+    <div className="docs-schema-pane">
+      <h3>{left.title}</h3>
+      <Flow nodes={left.nodes} label={left.title} />
+      {left.note && <p className="docs-schema-note">{left.note}</p>}
+    </div>
+    <div className="docs-schema-pane">
+      <h3>{right.title}</h3>
+      <Flow nodes={right.nodes} label={right.title} />
+      {right.note && <p className="docs-schema-note">{right.note}</p>}
+    </div>
+  </div>
+)
+
 export const Cards = ({ children }: { children: ReactNode }) => <div className="docs-cards">{children}</div>
 
-export const Card = ({ href, title, children }: { href: string; title: string; children: ReactNode }) => (
+export const CardGroup = ({ title, children }: { title: string; children: ReactNode }) => (
+  <section className="docs-card-group">
+    <h3 className="docs-card-group-title">{title}</h3>
+    <Cards>{children}</Cards>
+  </section>
+)
+
+export const Card = ({ href, title, children, eyebrow }: { href: string; title: string; children: ReactNode; eyebrow?: string }) => (
   <Link href={href} className="docs-card">
+    {eyebrow && <span className="docs-card-eyebrow">{eyebrow}</span>}
     <strong>{title}</strong>
     <span>{children}</span>
   </Link>

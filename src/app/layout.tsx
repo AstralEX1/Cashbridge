@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import localFont from 'next/font/local'
 import { Noto_Sans_Runic } from 'next/font/google'
 import { ThemeProvider } from 'next-themes'
@@ -14,10 +14,24 @@ import { getLangDir, type Locale } from '@/i18n/config'
 import '@/components/tx-toast.css'
 import './globals.css'
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f8fdff' },
+    { media: '(prefers-color-scheme: dark)', color: '#020707' }
+  ]
+}
+
 export const metadata: Metadata = {
   metadataBase: new URL(AppConfig.baseUrl),
   title: AppConfig.title,
   description: AppConfig.description,
+  icons: {
+    icon: [{ url: AppConfig.logo, type: 'image/svg+xml' }],
+    apple: [{ url: AppConfig.logo }]
+  },
   appleWebApp: {
     capable: true,
     title: AppConfig.appName,
@@ -29,12 +43,14 @@ export const metadata: Metadata = {
     url: AppConfig.baseUrl,
     siteName: AppConfig.appName,
     type: 'website',
-    locale: 'en_US'
+    locale: 'en_US',
+    images: [{ url: AppConfig.logo, width: 64, height: 64, alt: AppConfig.appName }]
   },
   twitter: {
     card: 'summary',
     title: AppConfig.title,
-    description: AppConfig.description
+    description: AppConfig.description,
+    images: [AppConfig.logo]
   }
 }
 

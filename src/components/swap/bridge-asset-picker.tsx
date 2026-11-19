@@ -15,7 +15,7 @@ import { useAssetFrom, useSetAssetFrom } from '@/hooks/use-swap'
 import { isAssetHalted } from '@/lib/swap-helpers'
 import { type CauldronToken, FEATURED_TOKENS, fetchCauldronTokens, sameToken, searchCauldronTokens } from '@/lib/cauldron-tokens'
 import { isBridgeSellAsset, isReverseTargetAsset, useSwapStore } from '@/store/swap-store'
-import { TokenMark } from '@/components/swap/bridge-marks'
+import { NearMark, ThorchainMark, TokenMark } from '@/components/swap/bridge-marks'
 
 // THORChain's own per-chain table (scanning, trading, LP and signing), where a halted chain shows up.
 const THORCHAIN_STATUS_URL = 'https://thorchain.net/network'
@@ -240,8 +240,10 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
         )}
       </div>
       {!bch && tokens.length === 0 && (
-        <p className="bridge-muted text-sm" role="status">
-          {t(isLoading ? 'loading' : !modeAssets ? 'assetsUnavailable' : 'empty')}
+        <p className="bridge-picker-empty" role="status">
+          <ThorchainMark size={18} />
+          <NearMark size={18} />
+          <span>{t(isLoading ? 'loading' : !modeAssets ? 'assetsUnavailable' : 'empty')}</span>
         </p>
       )}
       {bch && (listed.isLoading || searched.isFetching) && (
@@ -250,8 +252,9 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
         </p>
       )}
       {bch && listed.isError && (
-        <p className="bridge-muted text-sm" role="status">
-          {t('tokensUnavailable')}
+        <p className="bridge-picker-empty" role="status">
+          <img src="/networks/bch.svg" width={18} height={18} alt="" className="bridge-mark" />
+          <span>{t('tokensUnavailable')}</span>
         </p>
       )}
       {bch && <p className="bridge-muted mt-3 text-xs">{t('destinationNote')}</p>}

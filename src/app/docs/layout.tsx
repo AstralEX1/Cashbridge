@@ -7,7 +7,7 @@ import '@/components/docs/docs.css'
 
 export const metadata: Metadata = {
   title: { template: `%s · ${AppConfig.appName} Docs`, default: `${AppConfig.appName} Docs` },
-  description: 'How to bridge assets to Bitcoin Cash and PUSD and back with Cash Bridge: guides, wallets, fees and troubleshooting.'
+  description: 'Cash Bridge protocol docs: Manual vs Cashbridge Router, THORChain and NEAR Intents, contract orders, MCP agents, wallets, fees and mainnet proof.'
 }
 
 export default function DocsLayout({ children }: Readonly<{ children: React.ReactNode }>) {
@@ -15,7 +15,7 @@ export default function DocsLayout({ children }: Readonly<{ children: React.Reac
     <div className="docs-page">
       <header className="docs-top">
         <Link href="/docs" className="docs-brand">
-          <Image src={AppConfig.logo} alt="" width={32} height={32} priority />
+          <Image src={AppConfig.logo} alt="" width={32} height={32} priority sizes="32px" />
           {AppConfig.appName} <span>Docs</span>
         </Link>
         <a href={AppConfig.repoUrl} className="docs-repo" target="_blank" rel="noopener noreferrer">

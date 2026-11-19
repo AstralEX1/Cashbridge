@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { DocsDemoContract } from '@/components/docs/docs-demo-contract'
 import { Callout, DocsArticle } from '@/components/docs/docs-ui'
 
 export const metadata: Metadata = {
@@ -12,71 +13,91 @@ export default function Page() {
     <DocsArticle
       href="/docs/security"
       title="Security and custody"
-      lead="Who can touch your funds depends on the mode. In manual mode only you can. With the Cashbridge Router, the BCH waits in a contract made for your order, which can only pay you or refund you. Both modes rely on THORChain and Cauldron."
+      lead="Who can touch your funds depends on the mode and on the order the service returns. Manual: your wallets sign every step. Cashbridge Router contract orders: a per-order P2SH covenant that can only pay you or refund you under its terms. Legacy Router orders used temporary P2PKH custody. Both modes still rely on THORChain or NEAR Intents for the cross-chain leg, and on Cauldron for CashTokens."
     >
       <h2 id="manual">Manual mode: you stay in control</h2>
-      <p>
-        With the Cashbridge Router off, which is the default, Cash Bridge never holds funds and never sees a private key.
-      </p>
+      <p>With the Cashbridge Router off (the default), Cash Bridge never holds funds and never sees a private key.</p>
       <ul>
-        <li>Your wallets sign every transaction. Cash Bridge builds the request, and your wallet shows it before you approve.</li>
-        <li>THORChain pays the BCH straight to an address in your BCH wallet.</li>
-        <li>The Cauldron swap is built in your browser and signed by your BCH wallet. Cash Bridge reviews every output of it before you sign, and checks the result carries signatures by your key on your own inputs only, before anything is broadcast.</li>
+        <li>Your wallets sign every transaction. Cash Bridge builds the request; your wallet shows it before you approve.</li>
+        <li>THORChain or NEAR Intents pays BCH straight to an address in your BCH wallet. NEAR uses a plain one-use deposit address — there is no Cashbridge contract on that leg.</li>
+        <li>The Cauldron swap is built in your browser and signed by your BCH wallet. Cash Bridge reviews outputs before you sign and checks that the result only carries your signatures on your inputs before broadcast.</li>
       </ul>
 
-      <h2 id="router">The Cashbridge Router: a contract for each order</h2>
-      <Callout kind="warning" title="With the Cashbridge Router on, the Router decides when your BCH moves, not where">
-        THORChain pays the BCH to a contract built from your order&apos;s terms. Only the Router can spend it, and only to pay you at least the quoted minimum of your token, or to send the BCH back to your fallback address, less at most 2,000 sats for the miner. After three hours anyone can send it back on the same terms. If the Router stopped, your BCH would wait in the contract until then.
+      <h2 id="router">Cashbridge Router: contract orders</h2>
+      <Callout kind="warning" title="The Router decides when your BCH moves, not where">
+        For <code>apiVersion=2</code> purchase orders, the bridge pays BCH to a P2SH20 contract built from your order terms. Only the Router key for that order can spend early, and only to pay you at least the quoted minimum of your token (<code>convert</code>) or to send BCH to your fallback (<code>giveBack</code>, ≤ 2,000 sats miner fee). After <code>refundAfter</code> — set about three hours from order creation; Bitcoin Cash median time runs about an hour behind wall clock — anyone may <code>expire</code> on the same refund terms.
       </Callout>
-      <p>This is what the service does and what it is built to avoid:</p>
+
+      <DocsDemoContract />
+
+      <p>What the service does, and what the contract prevents:</p>
       <ul>
-        <li>Each order gets its own contract, with the minimum of your token fixed in it when the order is created. The page rebuilds the contract from your order and refuses any other deposit address.</li>
-        <li>It verifies on the Bitcoin Cash chain that the BCH really arrived before it acts.</li>
-        <li>If the minimum cannot be met before the conversion deadline, it sends the BCH to your fallback address, less the miner fee.</li>
-        <li>Signed transactions are written down before they are sent, so a restart replays the same transaction and never builds a second payout.</li>
-        <li>An order that the service cannot settle safely is held for the operator to review. It does not trigger a second automatic payout.</li>
-        <li>The service limits how much BCH it holds across open orders.</li>
+        <li>Each contract order gets its own script: recipient, fallback, token category, minimum and refund time. The page rebuilds the contract from the public order fields and refuses any other deposit address.</li>
+        <li>It verifies on Bitcoin Cash that BCH arrived before it acts.</li>
+        <li>If the minimum cannot be met before the conversion deadline, it refunds BCH to your fallback (less the miner fee), within the covenant.</li>
+        <li>Signed transactions are recorded before send, so a restart replays the same bytes and does not build a second payout.</li>
+        <li>Unsafe cases go to operator review instead of a second automatic payout.</li>
+        <li>Open-order BCH exposure is limited by the service.</li>
       </ul>
+
+      <h3 id="sale-contracts">Sale contracts (reverse)</h3>
       <p>
-        The web app talks to the service only through a narrow, authenticated connection. It never receives the service&apos;s wallet. Delays are possible after outages or recovery. If an order does not move, do not pay again. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.
+        When Router sales are offered, a reverse CashToken transfer uses a sale covenant: your wallet sends the token in; the Router may sell for ≥ min BCH and deposit to THORChain with the fixed memo, or return the tokens; after <code>refundAfter</code> (same median-time rule) anyone may return them. Sales stay on THORChain. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.
+      </p>
+
+      <h3 id="legacy">Legacy P2PKH orders</h3>
+      <p>
+        Older Router orders (and the published mainnet Router proof row) used a P2PKH order address — temporary service custody of BCH, not the purchase covenant. That row proves a mainnet run with a single source-wallet signature under that legacy model; it does not prove funded settlement of the P2SH covenants.
+      </p>
+
+      <h2 id="near">NEAR Intents and custody</h2>
+      <p>
+        NEAR Intents never places funds in a Cashbridge contract on the source chain. You (or the Router&apos;s tracking of your order) rely on 1Click&apos;s deposit address and on reading the BCH payout on Bitcoin Cash. When NEAR feeds a Router order, the covenant (if any) begins only once BCH sits at the order address.
+      </p>
+
+      <h2 id="mcp">MCP agents</h2>
+      <p>
+        The MCP server at <code>https://www.cashbridge.space/mcp</code> holds no keys. It quotes, prepares unsigned deposits for the user to sign, and reads status. It does not prepare sale orders today, and it will not prepare NEAR→CashToken as a NEAR route (CashTokens go through the Router on THORChain). See <Link href="/docs/agents">AI agents</Link>.
       </p>
 
       <h2 id="data">What the site stores and sees</h2>
       <ul>
         <li>
-          <strong>In your browser.</strong> Your transfer records, wallet reconnection data and settings such as your Manual or Cashbridge Router choice. Cash Bridge has no accounts, and in manual mode the history of your transfers lives only there.
+          <strong>In your browser.</strong> Transfer records, wallet reconnection data, Manual / Cashbridge Router choice. No accounts; Manual history lives only there.
         </li>
         <li>
-          <strong>On the server.</strong> Quote and status requests pass through Cash Bridge&apos;s server on their way to THORChain, so the server and THORChain can see the amounts and addresses in them. A Cashbridge Router order is also stored by the service, with the addresses you gave it.
+          <strong>On the server.</strong> Quote and status requests may pass through Cash Bridge&apos;s server. Router orders are stored by the service with the addresses you gave it.
         </li>
         <li>
-          <strong>Wallet connections.</strong> Pairing with a BCH wallet goes through a relay. WizardConnect and WalletConnect use their own relay servers to pass the messages between the page and your wallet.
+          <strong>Wallet connections.</strong> WizardConnect and WalletConnect use their own relays between the page and your wallet.
         </li>
       </ul>
 
       <h2 id="third-parties">What you rely on</h2>
       <ul>
         <li>
-          <strong>THORChain</strong> holds the funds during a swap and can pause an asset or refund a swap. A fault in the protocol would affect any bridge built on it.
+          <strong>THORChain</strong> and <strong>NEAR Intents</strong> hold or route funds during a cross-chain swap and can refund or pause. A fault there affects any interface built on them.
         </li>
         <li>
-          <strong>Cauldron</strong> pools and their covenants decide the price and the payout of the token swap. Cash Bridge builds the transaction from live pools and checks each pool is still unspent, but it does not control them.
+          <strong>Cauldron</strong> pools set CashToken prices. Cash Bridge builds from live pools but does not control them.
         </li>
         <li>
-          <strong>Your wallets and chains.</strong> A compromised wallet or a congested chain is outside Cash Bridge&apos;s control.
+          <strong>Your wallets and chains.</strong> Compromised wallets or congested networks are outside Cash Bridge&apos;s control.
         </li>
       </ul>
 
       <h2 id="stay-safe">Staying safe</h2>
       <ul>
-        <li>Check the address in the browser bar: <strong>www.cashbridge.space</strong>. Bookmark it.</li>
-        <li>Cash Bridge never asks for a seed phrase, a private key or a password. Nobody working on it will either.</li>
-        <li>Read what your wallet shows before you approve. Amounts and addresses should match what you saw on the confirmation screen.</li>
-        <li>Blockchain transfers cannot be reversed. A wrong address or a paste into the wrong field means lost funds.</li>
-        <li>Start with a small amount, especially with the Cashbridge Router, until you know the flow.</li>
+        <li>
+          Check the address bar: <strong>www.cashbridge.space</strong>. Bookmark it.
+        </li>
+        <li>Cash Bridge never asks for a seed phrase, private key or password.</li>
+        <li>Read what your wallet shows before you approve.</li>
+        <li>Blockchain transfers cannot be reversed.</li>
+        <li>Start small, especially with the Cashbridge Router, until you know the flow.</li>
       </ul>
       <p>
-        Cash Bridge is new software. Treat it that way. For wallet messages and what to do about them, see <Link href="/docs/faq">FAQ and troubleshooting</Link>.
+        For stuck steps and wallet messages, see <Link href="/docs/faq">FAQ and troubleshooting</Link>.
       </p>
     </DocsArticle>
   )

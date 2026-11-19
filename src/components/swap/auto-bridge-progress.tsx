@@ -12,12 +12,12 @@ import { useDialog } from '@/components/global-dialog'
 import { TransactionHistoryDialog } from '@/components/header/transaction-history-dialog'
 import { BchMark, TokenMark } from '@/components/swap/bridge-marks'
 import { SwapError } from '@/components/swap/swap-error'
+import { FlowToasts, type FlowToast } from '@/components/swap/flow-toasts'
 import {
   BridgeFlow,
   chainTxUrl,
   type FlowBar,
   type FlowStage,
-  type FlowToast,
   type FlowToken,
   thorchainTxUrl,
   timeOf,
@@ -40,6 +40,8 @@ import { formatBaseUnits } from '@/lib/bridge'
 import { orderRequest, pollAutomaticOrders, restoreAutomaticOrder, type OrderPollSchedule } from '@/lib/auto-bridge-client'
 import { sourceTransactionId } from '@/lib/source-transaction'
 import { autoBridgeStore, type SavedAutoOrder } from '@/store/auto-bridge-store'
+
+const BCH_STAGES = ['awaiting_deposit', 'streaming']
 
 export const AutomaticHistoryRow = ({ reference }: { reference: SavedAutoOrder }) => {
   const t = useTranslations('automatic')
@@ -80,17 +82,102 @@ export const AutomaticOrders = () => {
   }, [ids])
   if (!hydrated) return null
   const active = references.filter(ref => !ref.order || !isTerminal(ref.order.state)).slice(-3)
-  if (!active.length && !offline) return null
-  return <section className="bridge-auto-orders" aria-label={t('transfers')}>
-    {offline && <p role="status" className="bridge-flow-message">{t('offline')}</p>}
-    {active.map(reference => <AutomaticHistoryRow key={reference.id} reference={reference} />)}
-  </section>
+  return (
+    <>
+      {/* Toasts stay on the bridge tab after the tracking dialog is closed. */}
+      <BackgroundAutomaticToasts active={active} />
+      {(active.length > 0 || offline) && (
+        <section className="bridge-auto-orders" aria-label={t('transfers')}>
+          {offline && <p role="status" className="bridge-flow-message">{t('offline')}</p>}
+          {active.map(reference => (
+            <AutomaticHistoryRow key={reference.id} reference={reference} />
+          ))}
+        </section>
+      )}
+    </>
+  )
 }
 
-const BCH_STAGES = ['awaiting_deposit', 'streaming']
+// Corner toasts for in-flight Cashbridge Router orders — owned here so closing the dialog does not wipe them.
+function BackgroundAutomaticToasts({ active }: { active: SavedAutoOrder[] }) {
+  const t = useTranslations('automatic')
+  const tb = useTranslations('bridge')
+  const { openDialog } = useDialog()
+  const { assets } = useAssets()
+  const [dismissed, setDismissed] = useState<string[]>([])
+  const toasts: FlowToast[] = active.flatMap(reference => {
+    const order = reference.order
+    const token = reference.token ?? PUSD_TOKEN
+    const source = order?.source ?? reference.intent?.source
+    const asset = source && assets?.find(item => item.identifier.toLowerCase() === source.asset.toLowerCase())
+    const sourceHash = order?.sourceHash ?? reference.sourceHash
+    const firstDone = !!order && !BCH_STAGES.includes(order.state) && order.state !== 'awaiting_deposit'
+    const receiptTxids = [...new Set((order?.bchReceipts ?? []).map(item => item.txid))]
+    const icon = <TokenMark token={token} size={30} />
+    const open = () => openDialog(AutomaticOrderDialog, { id: reference.id })
+    const items: FlowToast[] = []
+    if (sourceHash && source && Object.values(Chain).includes(source.chain as Chain)) {
+      items.push({
+        id: `auto:${reference.id}:send:${sourceHash}`,
+        title: tb(firstDone ? 'progress.toastSendConfirmed' : 'progress.toastSent'),
+        hash: sourceHash.replace(/-\d+$/, ''),
+        chain: source.chain as Chain,
+        icon: asset ? (
+          <span className="bridge-flow-icon">
+            <AssetIcon asset={asset} showNetworkIcons={false} />
+          </span>
+        ) : icon,
+        pending: !firstDone,
+        actionLabel: t('viewTransfer'),
+        onAction: open
+      })
+    }
+    for (const hash of receiptTxids) {
+      items.push({
+        id: `auto:${reference.id}:receive:${hash}`,
+        title: tb('progress.toastReceived'),
+        hash,
+        chain: Chain.BitcoinCash,
+        icon: <BchMark size={30} />,
+        actionLabel: t('viewTransfer'),
+        onAction: open
+      })
+    }
+    if (order?.settlement?.seen) {
+      items.push({
+        id: `auto:${reference.id}:payout:${order.settlement.txid}`,
+        title:
+          order.settlement.kind === 'refund'
+            ? t('toastRefund', { confirmations: order.settlement.confirmations })
+            : tb('progress.toastPusdReceived', { ticker: token.ticker, confirmations: order.settlement.confirmations }),
+        hash: order.settlement.txid,
+        chain: Chain.BitcoinCash,
+        icon: order.settlement.kind === 'refund' ? <BchMark size={30} /> : icon,
+        actionLabel: t('viewTransfer'),
+        onAction: open
+      })
+    }
+    // No chain toast yet — still show the live Router status so leaving the dialog is not a silent wait.
+    if (!items.length) {
+      const draft = !reference.sourceAttempted && !order?.sourceHash && order?.state === 'awaiting_deposit'
+      items.push({
+        id: `auto:${reference.id}:status`,
+        title: `${t('automatic')} · ${token.ticker}`,
+        description: t(draft ? 'draft' : order ? `states.${order.state}` : 'restoring'),
+        icon,
+        pending: true,
+        actionLabel: t('viewTransfer'),
+        onAction: open
+      })
+    }
+    return items
+  }).filter(item => !dismissed.includes(item.id))
+
+  return <FlowToasts toasts={toasts} onDismiss={id => setDismissed(list => [...list, id])} />
+}
 
 // The automatic transfer's progress, laid out like the manual PUSD bridge: Bridge (1/2), then the
-// service's swap (2/2), the same toasts and the same receipt. Nothing here asks for a signature.
+// service's swap (2/2). Transaction toasts stay on the bridge tab via BackgroundAutomaticToasts.
 export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string; isOpen: boolean; onOpenChange: (open: boolean) => void }) => {
   const t = useTranslations('automatic')
   const tb = useTranslations('bridge')
@@ -98,7 +185,6 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
   const reference = autoBridgeStore(state => state.orders.find(order => order.id === id))
   const token = reference?.token ?? PUSD_TOKEN
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [hint, setHint] = useState('')
-  const [dismissed, setDismissed] = useState<string[]>([])
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000)
@@ -192,25 +278,6 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
     icon: <TokenMark token={token} size={30} />
   }
 
-  const receiptTxids = [...new Set((order?.bchReceipts ?? []).map(item => item.txid))]
-  const toasts: FlowToast[] = [
-    ...(sourceHash && source && Object.values(Chain).includes(source.chain as Chain)
-      ? [{ id: `send:${sourceHash}`, title: tb(firstDone ? 'progress.toastSendConfirmed' : 'progress.toastSent'), hash: sourceHash.replace(/-\d+$/, ''), chain: source.chain as Chain, time: timeOf(start), icon: sent.icon, pending: !firstDone }]
-      : []),
-    ...receiptTxids.map(hash => ({ id: `receive:${hash}`, title: tb('progress.toastReceived'), hash, chain: Chain.BitcoinCash, icon: bch.icon })),
-    ...(order?.settlement?.seen
-      ? [{
-          id: `payout:${order.settlement.txid}`,
-          title: order.settlement.kind === 'refund'
-            ? t('toastRefund', { confirmations: order.settlement.confirmations })
-            : tb('progress.toastPusdReceived', { ticker: token.ticker, confirmations: order.settlement.confirmations }),
-          hash: order.settlement.txid,
-          chain: Chain.BitcoinCash,
-          icon: order.settlement.kind === 'refund' ? bch.icon : final.icon
-        }]
-      : [])
-  ].filter(item => !dismissed.includes(item.id)).reverse()
-
   const close = () => onOpenChange(false)
   // A NEAR Intents order is found by its deposit address, so it never needs the hash typed in.
   const hashMissing = !!reference?.sourceAttempted && !order?.sourceHash && !order?.inboundHash && !order?.nearDepositAddress && !receipt
@@ -263,8 +330,8 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
           additionalReceived: receipt.change ? [{ amount: receipt.change, ticker: 'BCH', icon: <BchMark size={14} /> }] : undefined,
           notice: ['completed', 'refunded'].includes(order.state) ? t('final') : t('confirmations', { count: order.settlement?.confirmations ?? 0 })
         } : undefined}
-        toasts={toasts}
-        onDismissToast={toastId => setDismissed(list => [...list, toastId])}
+        toasts={[]}
+        onDismissToast={() => {}}
         onHistory={() => openDialog(TransactionHistoryDialog, {})}
         onClose={close}
         onBridgeAnother={handsOff ? close : undefined}

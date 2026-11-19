@@ -10,15 +10,16 @@ interface Options {
   description?: ReactNode
   icon?: ReactNode
   duration?: number
-  // An explorer link under the text.
+  // An explorer link under the text, or an in-app action when `onAction` is set instead.
   actionLabel?: string
   actionHref?: string
+  onAction?: () => void
   dismissLabel?: string
   // Called when the toast is closed (its button, a swipe or `toast.dismiss`), not when it times out.
   onDismiss?: () => void
 }
 
-const show = (status: TxToastStatus, title: ReactNode, { id, description, icon, duration, actionLabel, actionHref, dismissLabel, onDismiss }: Options = {}): Id =>
+const show = (status: TxToastStatus, title: ReactNode, { id, description, icon, duration, actionLabel, actionHref, onAction, dismissLabel, onDismiss }: Options = {}): Id =>
   sonner.custom(
     toastId => (
       <TxToastCard
@@ -28,6 +29,7 @@ const show = (status: TxToastStatus, title: ReactNode, { id, description, icon, 
         icon={icon}
         actionLabel={actionLabel}
         actionHref={actionHref}
+        onAction={onAction}
         dismissLabel={dismissLabel}
         onDismiss={() => sonner.dismiss(toastId)}
       />

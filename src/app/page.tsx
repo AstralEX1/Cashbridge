@@ -51,16 +51,16 @@ const INTEGRATIONS: { name: string; logo?: string; href: string; show?: boolean 
   { name: 'NEAR Intents', logo: '/providers/near.svg', href: 'https://near-intents.org', show: NEAR_INTENTS },
   { name: 'Cauldron', logo: '/providers/cauldron.png', href: 'https://cauldron.quest' },
   { name: 'WalletConnect', logo: '/wallets/walletconnect.svg', href: 'https://walletconnect.network' },
-  { name: 'WizardConnect', href: 'https://docs.riftenlabs.com/wizardconnect/dapp' },
-  { name: 'Fulcrum', href: 'https://github.com/cculianu/Fulcrum' },
-  { name: 'Rostrum', href: 'https://gitlab.com/bitcoinunlimited/rostrum' },
-  { name: 'BCMR', href: 'https://cashtokens.org/docs/bcmr/chip' }
+  { name: 'WizardConnect', logo: '/integrations/wizardconnect.svg', href: 'https://docs.riftenlabs.com/wizardconnect/dapp' },
+  { name: 'Fulcrum', logo: '/integrations/fulcrum.svg', href: 'https://github.com/cculianu/Fulcrum' },
+  { name: 'Rostrum', logo: '/integrations/rostrum.svg', href: 'https://gitlab.com/bitcoinunlimited/rostrum' },
+  { name: 'BCMR', logo: '/integrations/bcmr.svg', href: 'https://cashtokens.org/docs/bcmr/chip' }
 ]
 
 const WALLETS: [string, string?][] = [
-  ['Selene'],
-  ['Paytaca'],
-  ['Cashonize'],
+  ['Selene', '/wallets/selene.svg'],
+  ['Paytaca', '/wallets/paytaca.svg'],
+  ['Cashonize', '/wallets/cashonize.svg'],
   ['MetaMask', '/wallets/metamask.svg'],
   ['Rabby', '/wallets/rabby.svg'],
   ['Phantom', '/wallets/phantom.svg'],
@@ -70,6 +70,12 @@ const WALLETS: [string, string?][] = [
   ['Vultisig', '/wallets/vultisig.svg'],
   ['Ledger', '/wallets/ledger.svg'],
   ['Trezor', '/wallets/trezor.svg']
+]
+
+const AGENTS = [
+  { name: 'Eliza', href: 'https://github.com/elizaOS/eliza' },
+  { name: 'OpenClaw', href: 'https://openclaw.ai' },
+  { name: 'Moltbot', href: 'https://molt.bot' }
 ]
 
 // Coins around BCH: dollars on the inner ring, the other pinned tokens and "any" on the outer one.
@@ -210,6 +216,27 @@ export default function Page() {
               <Coin ticker="+" angle={45 + (360 / (OUTER.length + 1)) * OUTER.length} />
             </div>
           </InView>
+        </section>
+
+        <section id="agents" className="landing-section" aria-labelledby="agents-title">
+          <h2 id="agents-title" className="landing-kicker">
+            For agents
+          </h2>
+          <p className="landing-lead">MCP and HTTP so bots can quote and bridge without a browser.</p>
+          <ul className="landing-integrations">
+            {AGENTS.map(agent => (
+              <li key={agent.name}>
+                <a href={agent.href} target="_blank" rel="noopener noreferrer">
+                  {agent.name}
+                </a>
+              </li>
+            ))}
+          </ul>
+          <div className="landing-actions">
+            <Link href="/docs#mcp" className="landing-button landing-button-ghost">
+              Agent docs <ArrowRight size={18} aria-hidden />
+            </Link>
+          </div>
         </section>
 
         <section id="integrations" className="landing-section" aria-labelledby="integrations-title">

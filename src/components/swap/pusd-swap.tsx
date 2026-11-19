@@ -444,6 +444,8 @@ export interface BridgeFlowProps {
   completion?: Omit<BridgeCompletionProps, 'onClose'>
   toasts: FlowToast[]
   onDismissToast: (id: string) => void
+  // Keep sonner toasts when this flow unmounts (BackgroundBridgeToasts / BackgroundAutomaticToasts keep them).
+  persistToasts?: boolean
   onHistory: () => void
   onClose: () => void
   // Set once nothing more is asked of the user: leaves this operation running and opens a fresh form.
@@ -668,7 +670,7 @@ export const BridgeFlow = (props: BridgeFlowProps) => {
         {props.waitGame}
       </div>
 
-      <FlowToasts toasts={props.toasts} onDismiss={props.onDismissToast} />
+      <FlowToasts toasts={props.toasts} onDismiss={props.onDismissToast} persist={props.persistToasts} />
     </div>
   )
 }
@@ -771,29 +773,143 @@ export const cauldronQuoteView = (
 
 // The progress screen of the operation `uid`, in its own direction.
 // Operations left running with Bridge another, one row each under the form; a row reopens its progress.
-export const BackgroundBridges = ({ onOpen }: { onOpen: (uid: string) => void }) => {
+export const BackgroundBridges = ({ onOpen, openUid }: { onOpen: (uid: string) => void; openUid?: string }) => {
   const t = useTranslations('bridge')
   const tAuto = useTranslations('automatic')
-  const waiting = useUnfinishedBridges().filter(tx => isBridgeWaiting(tx.bridge))
-  if (!waiting.length) return null
+  const unfinished = useUnfinishedBridges()
+  const waiting = unfinished.filter(tx => isBridgeWaiting(tx.bridge))
   return (
-    <section className="bridge-auto-orders" aria-label={t('progress.inFlight')}>
-      {waiting.map(tx => (
-        <button key={tx.uid} type="button" className="bridge-auto-history" onClick={() => onOpen(tx.uid)}>
-          <span>
-            <strong>
-              {tx.assetFrom.ticker} → {tx.assetTo.ticker}
-            </strong>
-            <small>{t(isReverseOperation(tx.bridge) ? `reverse.history.${tx.bridge.stage}` : `stage.${tx.bridge.stage}`)}</small>
-          </span>
-          <span>
-            {tAuto('viewTransfer')}
-            <ExternalLink size={14} aria-hidden="true" />
-          </span>
-        </button>
-      ))}
-    </section>
+    <>
+      {/* Status/tx toasts stay on /bridge after the tracking dialog closes. */}
+      <BackgroundBridgeToasts openUid={openUid} />
+      {waiting.length > 0 && (
+        <section className="bridge-auto-orders" aria-label={t('progress.inFlight')}>
+          {waiting.map(tx => (
+            <button key={tx.uid} type="button" className="bridge-auto-history" onClick={() => onOpen(tx.uid)}>
+              <span>
+                <strong>
+                  {tx.assetFrom.ticker} → {tx.assetTo.ticker}
+                </strong>
+                <small>{t(isReverseOperation(tx.bridge) ? `reverse.history.${tx.bridge.stage}` : `stage.${tx.bridge.stage}`)}</small>
+              </span>
+              <span>
+                {tAuto('viewTransfer')}
+                <ExternalLink size={14} aria-hidden="true" />
+              </span>
+            </button>
+          ))}
+        </section>
+      )}
+    </>
   )
+}
+
+// Corner toasts for in-flight manual bridges — owned here so closing the tracking dialog does not wipe them.
+function BackgroundBridgeToasts({ openUid }: { openUid?: string }) {
+  const t = useTranslations('bridge')
+  const unfinished = useUnfinishedBridges().filter(tx => !isBridgeTerminal(tx.bridge) && tx.uid !== openUid)
+  const [dismissed, setDismissed] = useState<string[]>([])
+  const toasts: FlowToast[] = unfinished.flatMap(tx => {
+    const op = tx.bridge
+    const token = operationToken(op)
+    const items: FlowToast[] = []
+    if (isReverseOperation(op) && op.reverse) {
+      const reverse = op.reverse
+      if (reverse.sale?.txid) {
+        items.push({
+          id: `sale:${reverse.sale.txid}`,
+          title: t('reverse.toastSwap', { ticker: token?.ticker ?? '' }),
+          hash: reverse.sale.txid,
+          chain: Chain.BitcoinCash,
+          icon: token ? <TokenMark token={token} size={30} /> : <BchMark size={30} />,
+          pending: ['first_leg_signing', 'first_leg_pending', 'first_leg_unknown'].includes(op.stage)
+        })
+      }
+      if (reverse.deposit?.txid) {
+        items.push({
+          id: `deposit:${reverse.deposit.txid}`,
+          title: t(op.near ? 'reverse.toastDepositNear' : 'reverse.toastDeposit'),
+          hash: reverse.deposit.txid,
+          chain: Chain.BitcoinCash,
+          icon: <BchMark size={30} />,
+          pending: !reverse.payout && !reverse.refund
+        })
+      }
+      if (reverse.payout) {
+        items.push({
+          id: `payout:${reverse.payout.hash}`,
+          title: t('reverse.toastPayout', { ticker: tx.assetTo.ticker }),
+          hash: reverse.payout.hash,
+          chain: tx.assetTo.chain,
+          icon: (
+            <span className="bridge-flow-icon">
+              <AssetIcon asset={tx.assetTo} showNetworkIcons={false} />
+            </span>
+          )
+        })
+      }
+      if (reverse.refund?.txid) {
+        items.push({
+          id: `refund:${reverse.refund.txid}`,
+          title: t('reverse.toastRefund'),
+          hash: reverse.refund.txid,
+          chain: Chain.BitcoinCash,
+          icon: <BchMark size={30} />
+        })
+      }
+    } else {
+      const firstDone =
+        ['bch_ready', 'second_leg_signing', 'second_leg_signed', 'second_leg_unknown', 'second_leg_pending', 'completed', 'kept_bch'].includes(op.stage) ||
+        (isBridgeTerminal(op) && !!op.received?.length)
+      const sendConfirmed = (op.firstLeg.sourceConfirmations ?? 0) > 0 || firstDone
+      if (tx.hash) {
+        items.push({
+          id: `send:${tx.hash}`,
+          title: sendConfirmed ? t('progress.toastSendConfirmed') : t('progress.toastSent'),
+          hash: tx.hash,
+          chain: tx.assetFrom.chain,
+          icon: (
+            <span className="bridge-flow-icon">
+              <AssetIcon asset={tx.assetFrom} showNetworkIcons={false} />
+            </span>
+          ),
+          pending: !sendConfirmed
+        })
+      }
+      for (const hash of [...new Set((op.received ?? []).map(output => output.txid))]) {
+        items.push({ id: `receive:${hash}`, title: t('progress.toastReceived'), hash, chain: Chain.BitcoinCash, icon: <BchMark size={30} /> })
+      }
+      if (op.secondLeg?.txid) {
+        items.push({
+          id: `swap:${op.secondLeg.txid}`,
+          title: t(op.stage === 'completed' ? 'progress.toastPusdReceived' : 'progress.toastSwapSent', {
+            ticker: token?.ticker ?? '',
+            confirmations: op.secondLeg.confirmations ?? 0
+          }),
+          hash: op.secondLeg.txid,
+          chain: Chain.BitcoinCash,
+          icon: token ? <TokenMark token={token} size={30} /> : <BchMark size={30} />,
+          pending: op.stage !== 'completed'
+        })
+      }
+    }
+    if (!items.length) {
+      items.push({
+        id: `manual:${tx.uid}:status`,
+        title: `${tx.assetFrom.ticker} → ${tx.assetTo.ticker}`,
+        description: t(isReverseOperation(op) ? `reverse.history.${op.stage}` : `stage.${op.stage}`),
+        icon: (
+          <span className="bridge-flow-icon">
+            <AssetIcon asset={tx.assetFrom} showNetworkIcons={false} />
+          </span>
+        ),
+        pending: true
+      })
+    }
+    return items
+  }).filter(item => !dismissed.includes(item.id))
+
+  return <FlowToasts toasts={toasts} onDismiss={id => setDismissed(list => [...list, id])} />
 }
 
 export const BridgeOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => void }) => {
@@ -970,6 +1086,8 @@ const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => 
     },
     toasts,
     onDismissToast: (id: string) => setDismissed(list => [...list, id]),
+    // Leaving the dialog must not wipe live status/tx toasts; BackgroundBridgeToasts keeps them.
+    persistToasts: !terminal,
     onHistory: () => openDialog(TransactionHistoryDialog, {}),
     onClose,
     onBridgeAnother: isBridgeWaiting(op) ? onClose : undefined,

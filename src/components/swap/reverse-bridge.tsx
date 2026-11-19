@@ -1209,6 +1209,7 @@ export const ReverseOperationPanel = ({ uid, onClose }: { uid?: string; onClose:
     },
     toasts,
     onDismissToast: (id: string) => setDismissed(list => [...list, id]),
+    persistToasts: !terminal,
     onHistory: () => openDialog(TransactionHistoryDialog, {}),
     onClose,
     onBridgeAnother: isBridgeWaiting(op) ? onClose : undefined,

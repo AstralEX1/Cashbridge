@@ -12,6 +12,8 @@ export interface TxToastCardProps {
   icon?: ReactNode
   actionLabel?: string
   actionHref?: string
+  // In-app action (e.g. reopen a bridge transfer) when there is no explorer URL.
+  onAction?: () => void
   dismissLabel?: string
   onDismiss?: () => void
   // Plays the exit animation; the owner unmounts the card afterwards.
@@ -71,22 +73,28 @@ const TokenRing = ({ done, children }: { done: boolean; children: ReactNode }) =
   </span>
 )
 
-export const TxToastCard = ({ status, title, description, icon, actionLabel, actionHref, dismissLabel, onDismiss, leaving }: TxToastCardProps) => {
+export const TxToastCard = ({ status, title, description, icon, actionLabel, actionHref, onAction, dismissLabel, onDismiss, leaving }: TxToastCardProps) => {
   const fallbackLabel = useContext(TxToastDismissLabel)
+  const action =
+    actionLabel && actionHref ? (
+      <a className="tx-toast-action" href={actionHref} target="_blank" rel="noopener noreferrer">
+        {actionLabel}
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M7 17 17 7M9 7h8v8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </a>
+    ) : actionLabel && onAction ? (
+      <button type="button" className="tx-toast-action" onClick={onAction}>
+        {actionLabel}
+      </button>
+    ) : null
   return (
     <div role={status === 'error' ? 'alert' : 'status'} className={['tx-toast', status === 'error' && 'is-error', leaving && 'is-leaving'].filter(Boolean).join(' ')}>
       {icon && (status === 'loading' || status === 'success') ? <TokenRing done={status === 'success'}>{icon}</TokenRing> : <Glyph status={status} />}
       <div className="tx-toast-body">
         <p className="tx-toast-title">{title}</p>
         {description && <p className="tx-toast-description">{description}</p>}
-        {actionLabel && actionHref && (
-          <a className="tx-toast-action" href={actionHref} target="_blank" rel="noopener noreferrer">
-            {actionLabel}
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M7 17 17 7M9 7h8v8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </a>
-        )}
+        {action}
       </div>
       {onDismiss && (
         <button type="button" className="tx-toast-dismiss" aria-label={dismissLabel ?? fallbackLabel} onClick={onDismiss}>

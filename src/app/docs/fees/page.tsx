@@ -39,6 +39,13 @@ export default function Page() {
             </td>
           </tr>
           <tr>
+            <td>NEAR Intents fee</td>
+            <td>NEAR Intents market makers / 1Click — embedded in the quoted output when that route is chosen</td>
+            <td>
+              The route compare card and Confirm, when NEAR Intents quotes beside THORChain
+            </td>
+          </tr>
+          <tr>
             <td>Cauldron swap fee</td>
             <td>The liquidity providers of the Cauldron pool, a small percentage of the amount traded</td>
             <td>
@@ -60,7 +67,7 @@ export default function Page() {
 
       <h2 id="impact">Reading the price impact</h2>
       <p>
-        Next to the amount you receive, the form shows the price impact of the whole route: what you lose between the value you send and the value you receive, without gas. Hover over it for the breakdown into THORChain fee, Cauldron fee and pool price impact. A small transfer pays mostly fees. A large one pays mostly price impact, because the pools have limited depth.
+        Next to the amount you receive, the form shows the price impact of the whole route: what you lose between the value you send and the value you receive, without gas. Hover over it for the breakdown into bridge fee (THORChain when that route wins), Cauldron fee and pool price impact. When both THORChain and NEAR Intents quote, compare their outputs side by side before you choose. A small transfer pays mostly fees. A large one pays mostly price impact, because the pools have limited depth.
       </p>
       <p>
         If the Cauldron pools price PUSD away from its peg of one dollar, the form shows the rate at which one PUSD costs. A smaller amount, or waiting for the pools to recover, gives a better result. Transfers with the Cashbridge Router ask you to tick a box before you accept a price impact above about 2%.
@@ -73,7 +80,7 @@ export default function Page() {
       <Shot name="settings" alt="The settings popover with the Max slippage slider at 1%" size="md" caption="Max slippage, set to the default of 1%." />
       <ul>
         <li>A low value protects you from large moves, and the swap is refunded more often when the market is volatile.</li>
-        <li>The setting applies to the THORChain swap. The Cauldron swap is quoted again on the BCH you actually receive and has its own minimum, which is part of the transaction and shown before you sign.</li>
+        <li>The setting applies to the THORChain swap (NEAR Intents uses its own slippage parameter on that route). The Cauldron swap is quoted again on the BCH you actually receive and has its own minimum, which is part of the transaction and shown before you sign.</li>
         <li>With the Cashbridge Router on, the minimum PUSD is fixed when the order is created. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.</li>
       </ul>
 

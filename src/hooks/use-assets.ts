@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Chain, getChainConfig, isSecuredAssetIdentifier, ProviderName } from '@tcswap/helpers'
 import { USwapApi } from '@tcswap/helpers/api'
 import { Asset } from '@/components/swap/asset'
-import { AppConfig } from '@/config'
+import { AppConfig, BridgeConfig } from '@/config'
+import { getNearTokens, mergeNearAssets } from '@/lib/near-intents'
 import { useIsPrivateSwap } from '@/store/private-swap-store'
 
 // Chains a private (Houdini) swap may start or end on. Houdini lists more, but an asset is only
@@ -35,10 +36,21 @@ export const PRIVATE_SWAP_CHAINS: Chain[] = [
 ]
 
 // The providers whose listing makes an asset selectable in the current tab: the native protocols
-// on SWAP/LIMIT, Houdini alone on PRIVATE. An asset both list appears in both.
+// on SWAP/LIMIT (plus NEAR Intents when enabled), Houdini alone on PRIVATE. An asset both list
+// appears in both. NEAR-only rows stay visible whenever Intents is on so Manual and the Router
+// share one picker; they are not gated on the live quote path.
 export const isAssetInMode = (asset: Asset, isPrivateSwap: boolean): boolean => {
   const providers = asset.providers ?? []
-  return isPrivateSwap ? providers.includes(AppConfig.privateProvider) : providers.some(p => AppConfig.providers.includes(p))
+  if (isPrivateSwap) return providers.includes(AppConfig.privateProvider)
+  if (providers.some(p => AppConfig.providers.includes(p))) return true
+  return BridgeConfig.nearIntents && providers.includes(ProviderName.NEAR)
+}
+
+// True when the asset is listed only by NEAR Intents (no THORChain/Maya stamp). Quotes must not ask
+// the aggregator for a THORChain deposit for these — Midgard has no vault for them.
+export const isNearOnlyAsset = (asset?: Asset) => {
+  const providers = asset?.providers ?? []
+  return providers.includes(ProviderName.NEAR) && !providers.some(p => p === ProviderName.THORCHAIN || p === ProviderName.THORCHAIN_STREAMING || AppConfig.providers.includes(p))
 }
 
 export const useAssets = (): { assets?: Asset[]; isLoading: boolean } => {
@@ -113,6 +125,17 @@ export const useAssets = (): { assets?: Asset[]; isLoading: boolean } => {
         }
 
         assets.set(key, asset)
+      }
+
+      // Merge 1Click tokens on chains Cashbridge already maps. Overlap keeps THOR metadata and
+      // adds NEAR to providers; NEAR-only rows fill the gap Midgard never listed. A catalog failure
+      // leaves the THOR list as-is.
+      if (BridgeConfig.nearIntents) {
+        const nearList = await getNearTokens().catch(error => {
+          console.warn('NEAR Intents token list unavailable', error)
+          return []
+        })
+        mergeNearAssets(assets, nearList)
       }
 
       return Array.from(assets.values())

@@ -1,5 +1,6 @@
-import { ProviderName } from '@tcswap/helpers'
+import { Chain, getChainConfig, ProviderName } from '@tcswap/helpers'
 import type { QuoteResponseRoute } from '@tcswap/helpers/api'
+import type { Asset } from '@/components/swap/asset'
 import { BridgeConfig } from '@/config'
 import { formatBaseUnits, toBaseUnits } from '@/lib/bridge'
 import type { NearLeg } from '@/store/transaction-store'
@@ -44,6 +45,111 @@ const CHAINS: Record<string, string> = {
   ZEC: 'zec'
 }
 export const isNearChain = (chain?: string) => !!chain && chain.toUpperCase() in CHAINS
+
+// 1Click `blockchain` → the Chain enum wallets and the picker already use.
+const BLOCKCHAIN_TO_CHAIN: Record<string, Chain> = {
+  arb: Chain.Arbitrum,
+  avax: Chain.Avalanche,
+  base: Chain.Base,
+  bch: Chain.BitcoinCash,
+  bsc: Chain.BinanceSmartChain,
+  btc: Chain.Bitcoin,
+  doge: Chain.Dogecoin,
+  eth: Chain.Ethereum,
+  ltc: Chain.Litecoin,
+  op: Chain.Optimism,
+  pol: Chain.Polygon,
+  sol: Chain.Solana,
+  tron: Chain.Tron,
+  zec: Chain.Zcash
+}
+
+const chainPrefix = (blockchain: string) => Object.entries(CHAINS).find(([, value]) => value === blockchain)?.[0]
+
+// Contract as 1Click ships it. `null`/`undefined` = chain native; a blank string is malformed (not a native).
+// Solana and TRON keep casing for wallet send.
+const catalogContract = (token: OneClickToken): string | undefined | false => {
+  if (token.contractAddress == null) return undefined
+  if (typeof token.contractAddress !== 'string') return false
+  const trimmed = token.contractAddress.trim()
+  return trimmed || false
+}
+
+// Skip retired rows, unmapped chains, and rows the wallet send cannot fund or identify.
+const isSelectableNearToken = (token: OneClickToken) =>
+  !!token &&
+  typeof token.assetId === 'string' &&
+  !!token.assetId &&
+  typeof token.symbol === 'string' &&
+  !!token.symbol.trim() &&
+  Number.isFinite(token.decimals) &&
+  token.decimals >= 0 &&
+  token.decimals <= 24 &&
+  !!chainPrefix(token.blockchain) &&
+  !/DEPRECATED|\(OMNI\)/i.test(token.symbol)
+
+// THORChain-style id for a 1Click row (`BASE.USDC-0X8335…`, `SOL.USDC-EPjF…`, `ETH.ETH`). Solana and
+// TRON keep the catalog's contract casing; EVM contracts are upper-cased like Midgard.
+export const nearAssetIdentifier = (token: OneClickToken): string | undefined => {
+  if (!isSelectableNearToken(token)) return undefined
+  const prefix = chainPrefix(token.blockchain)!
+  const contract = catalogContract(token)
+  if (contract === false) return undefined
+  if (!contract) return `${prefix}.${token.symbol.trim()}`
+  const encoded = token.blockchain === 'sol' || token.blockchain === 'tron' ? contract : contract.toUpperCase()
+  return `${prefix}.${token.symbol.trim()}-${encoded}`
+}
+
+// Picker rows for 1Click tokens on chains Cashbridge already maps. Tagged NEAR only — never THORCHAIN —
+// so a Midgard-missing asset cannot be deposited into an unsupported THORChain vault by provider stamp.
+// Malformed / duplicate catalog rows are dropped (first valid wins).
+export const assetsFromNearTokens = (tokens: OneClickToken[]): Asset[] => {
+  const assets = new Map<string, Asset>()
+  if (!Array.isArray(tokens)) return []
+  for (const token of tokens) {
+    const identifier = nearAssetIdentifier(token)
+    const chain = BLOCKCHAIN_TO_CHAIN[token?.blockchain]
+    if (!identifier || !chain || !getChainConfig(chain).chain) continue
+    const key = `${chain}-${identifier}`.toLowerCase()
+    if (assets.has(key)) continue
+    const contract = catalogContract(token)
+    if (contract === false) continue
+    const ticker = token.symbol.trim()
+    assets.set(key, {
+      address: contract || undefined,
+      chain,
+      chainId: getChainConfig(chain).chainId,
+      decimals: token.decimals,
+      identifier,
+      // Natives reuse the network mark; contract tokens get no logoURI (1Click ships none).
+      logoURI: contract ? undefined : `/networks/${chain.toLowerCase()}.svg`,
+      name: ticker,
+      providers: [ProviderName.NEAR],
+      ticker
+    })
+  }
+  return Array.from(assets.values())
+}
+
+// Fold validated 1Click rows into the THOR-built map. Overlap keeps THOR providers/metadata and adds NEAR;
+// Solana/TRON overlap adopts the catalog's case-exact contract for wallet send. Catalog failure is the
+// caller's empty list — the THOR map is left unchanged.
+export const mergeNearAssets = (assets: Map<string, Asset>, nearList: OneClickToken[]) => {
+  for (const nearAsset of assetsFromNearTokens(nearList)) {
+    const key = `${nearAsset.chain}-${nearAsset.identifier}`.toLowerCase()
+    const existing = assets.get(key)
+    if (existing) {
+      if (!existing.providers.includes(ProviderName.NEAR)) existing.providers.push(ProviderName.NEAR)
+      if (nearAsset.address && (nearAsset.chain === Chain.Solana || nearAsset.chain === Chain.Tron)) {
+        existing.address = nearAsset.address
+        existing.identifier = nearAsset.identifier
+      }
+      continue
+    }
+    assets.set(key, nearAsset)
+  }
+  return assets
+}
 
 // Valid addresses for a dry quote, which needs a recipient and a refund address but creates nothing.
 // Real quotes always carry the user's own addresses.
@@ -149,20 +255,19 @@ export const getNearTokens = () => {
 
 // The 1Click token for a THORChain-style identifier (`BASE.USDC-0X8335…`, `ETH.ETH`, `BCH.BCH`): same chain, and the
 // same contract or, for a chain's own coin, no contract and its ticker. Contracts compare without case because
-// THORChain upper-cases them, base58 ones too (`TRON.USDT-TR7NHQ…`).
+// THORChain upper-cases them, base58 ones too (`TRON.USDT-TR7NHQ…`). When a ticker itself contains `-`
+// (`SOL.kV-gtSOLb-5EB…`), match by chain + contract suffix rather than the first dash.
 export const findNearToken = (list: OneClickToken[], identifier: string) => {
   const dot = identifier.indexOf('.')
   const blockchain = CHAINS[identifier.slice(0, dot).toUpperCase()]
   if (dot < 0 || !blockchain) return undefined
   const rest = identifier.slice(dot + 1)
-  const dash = rest.indexOf('-')
-  const ticker = (dash < 0 ? rest : rest.slice(0, dash)).toUpperCase()
-  const contract = dash < 0 ? undefined : rest.slice(dash + 1)
-  return list.find(
-    t =>
-      t.blockchain === blockchain &&
-      (contract ? t.contractAddress?.toLowerCase() === contract.toLowerCase() : !t.contractAddress && t.symbol.toUpperCase() === ticker)
-  )
+  if (rest.includes('-')) {
+    const upper = identifier.toUpperCase()
+    return list.find(t => t.blockchain === blockchain && !!t.contractAddress && upper.endsWith(`-${t.contractAddress.toUpperCase()}`))
+  }
+  const ticker = rest.toUpperCase()
+  return list.find(t => t.blockchain === blockchain && !t.contractAddress && t.symbol.toUpperCase() === ticker)
 }
 
 export interface NearQuoteRequest {
