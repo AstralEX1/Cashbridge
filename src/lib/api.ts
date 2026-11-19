@@ -217,11 +217,20 @@ const providerTimedOut = (status: number, body: unknown) => {
 
 export class QuoteTimeoutError extends Error {}
 
+// The page asks through our proxy, which adds the key; the server (the agent endpoint) asks the aggregator itself.
+const quoteEndpoint = (): [string, Record<string, string>] =>
+  typeof window === 'undefined' && process.env.THORCHAIN_API_KEY
+    ? [`${(process.env.THORCHAIN_API_URL || 'https://api.thorchain.org/v1').replace(/\/$/, '')}/quote`, { 'x-api-key': process.env.THORCHAIN_API_KEY }]
+    : [`${aggregatorApiUrl()}/quote`, referralHeaders()]
+
 const postQuote = async (request: QuoteRequest, abortController?: AbortController, attempt = 0): Promise<QuoteResponse> => {
-  const response = await fetch(`${aggregatorApiUrl()}/quote`, {
+  const [url, headers] = quoteEndpoint()
+  const response = await fetch(url, {
     method: 'POST',
-    headers: { ...referralHeaders(), 'Content-Type': 'application/json' },
+    headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
+    // A redirect would carry the server's key to another host.
+    redirect: 'error',
     signal: abortController?.signal
   })
   const body = await response.json().catch(() => null)
