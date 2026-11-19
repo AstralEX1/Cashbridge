@@ -1,6 +1,6 @@
-import { binToHex, binsAreEqual, hexToBin, type Output } from '@bitauth/libauth'
+import { binToHex, binsAreEqual, hexToBin, type Output, type Transaction } from '@bitauth/libauth'
 import type { TxStatusResponse } from '@/lib/api'
-import { addressToLockingBytecode, checkOutbound, decodeTx, isTxid, normalizeTxid, opReturnText, txidOf } from '@/lib/bch'
+import { addressToLockingBytecode, checkOutbound, decodeTx, isTxid, normalizeTxid, opReturnText, txidOf, type VerifiedOutput } from '@/lib/bch'
 import { inboundMatchesBinding, interpretTxStatus } from '@/lib/bridge'
 import { BroadcastRejected, buildTokenTrade, type BuildIntent, type BuildResult } from '@/lib/cauldron'
 import { checkInbound, type InboundAddress } from '@/lib/thorchain-deposit'
@@ -228,95 +228,9 @@ export async function processOrder(
     store.update(order.id, order.version, { state: 'manual_review', error: 'A customer destination is a service deposit address; operator verification is required.' }, clock())
     return
   }
-  // A known source settles only itself: another inbound to the same address stays in observed funding for recovery.
-  const known = sourceTransactionId(order.inboundHash ?? order.sourceHash)
-  const inboundIds = new Set<string>(known ? [known] : [])
-  for (const id of known ? [] : history) {
-    if (!isTxid(id)) continue
-    const hex = await gateway.raw(id)
-    if (!hex) continue
-    if (txidOf(hex) !== id) throw new Error('BCH node returned another transaction')
-    const tx = decodeTx(hex)
-    if (!tx.outputs.some(output => binToHex(output.lockingBytecode) === order!.binding.lockingBytecode)) continue
-    for (const output of tx.outputs) {
-      // Source transaction IDs can use non-hex alphabets; preserve all existing source routes.
-      const memo = opReturnText(output.lockingBytecode)
-      const source = memo && sourceIdFromMemo(memo)
-      if (source) inboundIds.add(source)
-    }
-  }
-  const candidates: { id: string; status: TxStatusResponse }[] = []
-  for (const id of inboundIds) {
-    const status = await gateway.thorStatus(id)
-    if (
-      status?.tx?.id &&
-      sameSourceTransaction(status.tx.id, id) &&
-      inboundMatchesBinding(status, order.binding.lockingBytecode) &&
-      (known || matchesSourceIntent(status, order.source))
-    )
-      candidates.push({ id, status })
-  }
-  if (candidates.length === 0) return
-  if (candidates.length > 1) {
-    store.update(order.id, order.version, { state: 'manual_review', error: 'Multiple THORChain inbounds paid a one-use order address.' }, clock())
-    return
-  }
-  const { id: inboundHash, status } = candidates[0]
-  const view = interpretTxStatus(status, order.binding.lockingBytecode)
-  if (view.kind === 'invalid') {
-    store.update(order.id, order.version, { state: 'manual_review', error: view.reason }, clock())
-    return
-  }
-  if (view.kind === 'refunded') {
-    store.update(order.id, order.version, { state: 'source_refunded', inboundHash, sourceRefunds: view.refunds.map(r => ({ ...r, evidence: 'thorchain' as const })) }, clock())
-    return
-  }
-  if (view.kind !== 'outbound' || status.stages?.swap_finalised?.completed !== true || status.stages.swap_status?.pending === true) {
-    store.update(order.id, order.version, { state: 'streaming', inboundHash }, clock())
-    return
-  }
-  const outs = new Map<string, string>()
-  for (const out of view.outbound) {
-    if (!isTxid(out.txid) || !/^[1-9]\d*$/.test(out.amountSats) || (outs.has(out.txid) && outs.get(out.txid) !== out.amountSats))
-      throw new Error('Invalid THORChain outbound list')
-    outs.set(out.txid, out.amountSats)
-  }
-  if (outs.size < (status.planned_out_txs ?? []).filter(planned => !planned.refund).length) {
-    store.update(order.id, order.version, { state: 'streaming', inboundHash }, clock())
-    return
-  }
-  const tip = await gateway.tip(),
-    received = []
-  for (const [outTxid, amount] of outs) {
-    const hex = await gateway.raw(outTxid)
-    if (!hex) return
-    if (txidOf(hex) !== outTxid) throw new Error('BCH transaction hash mismatch')
-    const tx = decodeTx(hex),
-      utxos = []
-    for (let vout = 0; vout < tx.outputs.length; vout++) {
-      const output = tx.outputs[vout]
-      if (binToHex(output.lockingBytecode) !== order.binding.lockingBytecode) continue
-      const coin = await gateway.coin(outTxid, vout)
-      if (coin && binsAreEqual(coin.output.lockingBytecode, output.lockingBytecode))
-        utxos.push({
-          txid: outTxid,
-          vout,
-          value: coin.output.valueSatoshis,
-          hasToken: !!coin.output.token,
-          height: coin.confirmations > 0 ? tip - coin.confirmations + 1 : 0
-        })
-    }
-    const receipt = checkOutbound(
-      { hex, tx },
-      { inboundHash, lockingBytecode: order.binding.lockingBytecode, expectedSats: BigInt(amount) },
-      { tip, utxos }
-    )
-    if (receipt.kind !== 'ok') {
-      store.update(order.id, order.version, { state: 'manual_review', error: 'BCH outbound failed order verification.' }, clock())
-      return
-    }
-    received.push(...receipt.outputs)
-  }
+  const found = await thorchainFunding(store, gateway, order, history, clock)
+  if (!found) return
+  const { received, evidence } = found
   const funding = [...new Map(received.map(coin => [`${coin.txid}:${coin.vout}`, coin])).values()]
   if (!funding.length) return
   if (funding.some(coin => !coin.unspent)) {
@@ -331,8 +245,7 @@ export async function processOrder(
       order.version,
       {
         funding,
-        inboundHash,
-        sourceRefunds: view.refunds.map(r => ({ ...r, evidence: 'thorchain' as const })),
+        ...evidence,
         receivedAt: order.receivedAt ?? clock(),
         deadline: Math.min(order.deadline ?? Infinity, (order.receivedAt ?? clock()) + Math.min(order.maxWaitMs, policy.maxWaitMs)),
         state: funding.every(coin => coin.confirmations >= depth) ? 'ready' : 'awaiting_confirmations'
@@ -393,6 +306,109 @@ export async function processOrder(
         clock()
       )
   }
+}
+
+type Funding = { received: VerifiedOutput[]; evidence: Pick<Order, 'inboundHash' | 'sourceRefunds'> }
+
+// The order-address outputs of `tx` that the node still holds unspent, as the receipt checks read them.
+async function orderUtxos(gateway: Gateway, order: Order, txid: string, tx: Transaction, tip: number) {
+  const utxos = []
+  for (let vout = 0; vout < tx.outputs.length; vout++) {
+    const output = tx.outputs[vout]
+    if (binToHex(output.lockingBytecode) !== order.binding.lockingBytecode) continue
+    const coin = await gateway.coin(txid, vout)
+    if (coin && binsAreEqual(coin.output.lockingBytecode, output.lockingBytecode))
+      utxos.push({
+        txid,
+        vout,
+        value: coin.output.valueSatoshis,
+        hasToken: !!coin.output.token,
+        height: coin.confirmations > 0 ? tip - coin.confirmations + 1 : 0
+      })
+  }
+  return utxos
+}
+
+// The THORChain first leg: the order's inbound (from the browser's hint, else from OUT memos at the address), and
+// its BCH outbounds as THORChain lists them, each checked on the BCH node.
+async function thorchainFunding(store: OrderStore, gateway: Gateway, order: Order, history: Set<string>, clock: () => number): Promise<Funding | undefined> {
+  // A known source settles only itself: another inbound to the same address stays in observed funding for recovery.
+  const known = sourceTransactionId(order.inboundHash ?? order.sourceHash)
+  const inboundIds = new Set<string>(known ? [known] : [])
+  for (const id of known ? [] : history) {
+    if (!isTxid(id)) continue
+    const hex = await gateway.raw(id)
+    if (!hex) continue
+    if (txidOf(hex) !== id) throw new Error('BCH node returned another transaction')
+    const tx = decodeTx(hex)
+    if (!tx.outputs.some(output => binToHex(output.lockingBytecode) === order!.binding.lockingBytecode)) continue
+    for (const output of tx.outputs) {
+      // Source transaction IDs can use non-hex alphabets; preserve all existing source routes.
+      const memo = opReturnText(output.lockingBytecode)
+      const source = memo && sourceIdFromMemo(memo)
+      if (source) inboundIds.add(source)
+    }
+  }
+  const candidates: { id: string; status: TxStatusResponse }[] = []
+  for (const id of inboundIds) {
+    const status = await gateway.thorStatus(id)
+    if (
+      status?.tx?.id &&
+      sameSourceTransaction(status.tx.id, id) &&
+      inboundMatchesBinding(status, order.binding.lockingBytecode) &&
+      (known || matchesSourceIntent(status, order.source))
+    )
+      candidates.push({ id, status })
+  }
+  if (candidates.length === 0) return
+  if (candidates.length > 1) {
+    store.update(order.id, order.version, { state: 'manual_review', error: 'Multiple THORChain inbounds paid a one-use order address.' }, clock())
+    return
+  }
+  const { id: inboundHash, status } = candidates[0]
+  const view = interpretTxStatus(status, order.binding.lockingBytecode)
+  if (view.kind === 'invalid') {
+    store.update(order.id, order.version, { state: 'manual_review', error: view.reason }, clock())
+    return
+  }
+  if (view.kind === 'refunded') {
+    store.update(order.id, order.version, { state: 'source_refunded', inboundHash, sourceRefunds: view.refunds.map(r => ({ ...r, evidence: 'thorchain' as const })) }, clock())
+    return
+  }
+  if (view.kind !== 'outbound' || status.stages?.swap_finalised?.completed !== true || status.stages.swap_status?.pending === true) {
+    store.update(order.id, order.version, { state: 'streaming', inboundHash }, clock())
+    return
+  }
+  const outs = new Map<string, string>()
+  for (const out of view.outbound) {
+    if (!isTxid(out.txid) || !/^[1-9]\d*$/.test(out.amountSats) || (outs.has(out.txid) && outs.get(out.txid) !== out.amountSats))
+      throw new Error('Invalid THORChain outbound list')
+    outs.set(out.txid, out.amountSats)
+  }
+  if (outs.size < (status.planned_out_txs ?? []).filter(planned => !planned.refund).length) {
+    store.update(order.id, order.version, { state: 'streaming', inboundHash }, clock())
+    return
+  }
+  const tip = await gateway.tip(),
+    received: VerifiedOutput[] = []
+  for (const [outTxid, amount] of outs) {
+    const hex = await gateway.raw(outTxid)
+    if (!hex) return
+    if (txidOf(hex) !== outTxid) throw new Error('BCH transaction hash mismatch')
+    const tx = decodeTx(hex),
+      utxos = await orderUtxos(gateway, order, outTxid, tx, tip)
+    const receipt = checkOutbound(
+      { hex, tx },
+      { inboundHash, lockingBytecode: order.binding.lockingBytecode, expectedSats: BigInt(amount) },
+      { tip, utxos }
+    )
+    if (receipt.kind !== 'ok') {
+      store.update(order.id, order.version, { state: 'manual_review', error: 'BCH outbound failed order verification.' }, clock())
+      return
+    }
+    received.push(...receipt.outputs)
+  }
+  return { received, evidence: { inboundHash, sourceRefunds: view.refunds.map(r => ({ ...r, evidence: 'thorchain' as const })) } }
 }
 
 // Custody discovery never authorizes a spend. It also runs for terminal and quarantined orders.
