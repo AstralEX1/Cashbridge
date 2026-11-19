@@ -40,7 +40,7 @@ in the BCH VM on a real Cauldron trade.
 
 ## Sale orders (Cashbridge Router back from BCH)
 
-With `AUTO_BRIDGE_SALE_ORDERS=true` on the Router and `NEXT_PUBLIC_ROUTER_SALES=true` on the site, a token transfer back
+With `AUTO_BRIDGE_SALE_ORDERS=true` on the Router (the site offers it unless `NEXT_PUBLIC_ROUTER_SALES=false`), a token transfer back
 from BCH can also go through the Router. The page quotes the Cauldron sale and the THORChain deposit, then opens an order
 whose deposit is the P2SH20 address of [`contracts/router-sale.cash`](../contracts/router-sale.cash), built from: the
 Router's key for this order, THORChain's BCH vault, the deposit memo (destination asset and address), the user's address
