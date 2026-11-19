@@ -1002,6 +1002,7 @@
     "addressNotTokenAware": "PUSD is a CashToken, so a plain BCH address can’t receive it. Paste the token-aware address that starts with bitcoincash:z…",
     "fallback": "BCH fallback: {address} · miner fee deducted",
     "custody": "CashBridge temporarily controls the BCH received from THORChain. If the original PUSD minimum cannot be met, the verified BCH is returned to the fallback address, less the miner fee. Network or recovery delays are possible.",
+    "contractCustody": "THORChain pays the BCH into a contract made for this order. It can only pay at least the minimum PUSD to your address or return the BCH to the fallback, so the Cashbridge Router cannot send it anywhere else. If the Router stops, anyone can return the BCH after 3 hours.",
     "minimumLabel": "Minimum PUSD if converted",
     "minimum": "Minimum if converted: {amount} PUSD",
     "noRoute": "No executable source route is available for this order.",

@@ -153,7 +153,7 @@ export const AutoBridgeDialog = ({ prepared, isOpen, onOpenChange }: Props) => {
   return (
     <Credenza open={isOpen} onOpenChange={onOpenChange}>
       <CredenzaContent className="bridge-confirm-dialog flex h-auto max-h-5/6 flex-col md:max-w-[620px]">
-        <BridgeConfirm quote={route} token={PUSD_TOKEN} bchAddress={order.recipientAddress} automatic={{ minPusd: order.minPusd, refundAddress: order.refundAddress }} />
+        <BridgeConfirm quote={route} token={PUSD_TOKEN} bchAddress={order.recipientAddress} automatic={{ minPusd: order.minPusd, refundAddress: order.refundAddress, contract: !!order.contract }} />
         <div className="space-y-3 p-4 pt-2 md:px-7 md:pb-7">
           {needsLtc && <SwapAddressWarning checked={acceptedLtc} onCheckedChange={setAcceptedLtc} text={t('ltcWarning')} />}
           {needsImpact && <SwapAddressWarning checked={acceptedImpact} onCheckedChange={setAcceptedImpact} text={t('highImpact')} />}
