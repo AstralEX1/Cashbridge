@@ -193,13 +193,16 @@ export class BchGateway implements Gateway {
       )
         throw new Error('BCH mainnet RPC is not synchronized')
     })
-    // Once per node and process; a node that is down now is probed when it is back.
+    // Every configured node must prove its transaction index once per process before orders can run.
     for (const node of this.nodes) {
-      if (node.indexed || node.downUntil > Date.now()) continue
+      if (node.indexed) continue
       try {
-        node.indexed = txidOf(await this.rpcAt<string>(node, 'getrawtransaction', [INDEX_PROBE, false])) === INDEX_PROBE
+        const hex = await this.rpcAt<string>(node, 'getrawtransaction', [INDEX_PROBE, false])
+        if (typeof hex !== 'string' || txidOf(hex) !== INDEX_PROBE) throw new Error('BCH transaction hash mismatch')
+        node.indexed = true
       } catch (error) {
         if (error instanceof NodeError && error.code === -5) throw new Error('A BCH RPC cannot look up confirmed transactions; it needs txindex=1 without pruning')
+        throw error
       }
     }
   }

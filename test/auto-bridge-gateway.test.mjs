@@ -121,6 +121,7 @@ test('hosted RPC reads its private configuration without exposing credentials an
   globalThis.fetch = async (_url, options) => {
     assert.equal(options.redirect, 'error')
     authorized = options.headers['x-api-key'] === secret
+    if (JSON.parse(options.body).method === 'getrawtransaction') return Response.json({ result: indexProbe.hex })
     return Response.json({ result: { chain, initialblockdownload: false, blocks: 100, headers: 100 } })
   }
   try {
@@ -256,12 +257,12 @@ const synced = { chain: 'main', initialblockdownload: false, blocks: 100, header
 
 test('a node answering 200 with an empty or lagging result is skipped and then asked last', async () => {
   const empty = { result: null, error: null }
-  await withNodes(['first.example', 'second.example'], host => Response.json(host === 'first.example' ? empty : { result: synced }), async (gateway, calls) => {
+  await withNodes(['first.example', 'second.example'], (host, { method }) => Response.json(method === 'getrawtransaction' ? { result: indexProbe.hex } : host === 'first.example' ? empty : { result: synced }), async (gateway, calls) => {
     await gateway.assertReady()
     await gateway.assertReady()
     assert.deepEqual(calls.filter(call => call.endsWith('getblockchaininfo')), ['first.example getblockchaininfo', 'second.example getblockchaininfo', 'second.example getblockchaininfo'])
   })
-  await withNodes(['first.example', 'second.example'], host => Response.json({ result: host === 'first.example' ? { ...synced, blocks: 90 } : synced }), async gateway => {
+  await withNodes(['first.example', 'second.example'], (host, { method }) => Response.json({ result: method === 'getrawtransaction' ? indexProbe.hex : host === 'first.example' ? { ...synced, blocks: 90 } : synced }), async gateway => {
     await gateway.assertReady()
   })
   await withNodes(['first.example', 'second.example'], () => Response.json(empty), async gateway => {
@@ -338,6 +339,36 @@ test('readiness refuses a synchronized node that cannot look up confirmed transa
     await gateway.assertReady()
     assert.deepEqual(calls, ['indexed.example getblockchaininfo', 'indexed.example getrawtransaction', 'indexed.example getblockchaininfo'])
   })
+})
+
+test('every node must prove its index even after failover, and failed probes are retried', async () => {
+  for (const fail of [
+    () => { throw new Error('unavailable') },
+    () => Response.json({ result: null }),
+    () => Response.json({ result: '00' }),
+    () => Response.json({ error: { code: -28 } }),
+    () => new Response('not JSON', { status: 502 })
+  ]) {
+    let recovered = false
+    await withNodes(['first.example', 'second.example'], (host, { method }) => {
+      if (method === 'getblockcount') {
+        if (host === 'first.example') throw new Error('unavailable')
+        return Response.json({ result: 100 })
+      }
+      if (method === 'getblockchaininfo') return Response.json({ result: synced })
+      if (host === 'first.example' && !recovered) return fail()
+      return Response.json({ result: indexProbe.hex })
+    }, async (gateway, calls) => {
+      assert.equal(await gateway.tip(), 100)
+      await assert.rejects(gateway.assertReady())
+      await assert.rejects(gateway.assertReady())
+      recovered = true
+      await gateway.assertReady()
+      await gateway.assertReady()
+      assert.equal(calls.filter(call => call === 'first.example getrawtransaction').length, 3)
+      assert.equal(calls.filter(call => call === 'second.example getrawtransaction').length, 1)
+    })
+  }
 })
 
 test('Fulcrum servers: the configured ones first, then the public ones, without repeats', () => {
