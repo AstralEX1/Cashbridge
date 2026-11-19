@@ -1003,6 +1003,7 @@
     "fallback": "BCH fallback: {address} · miner fee deducted",
     "custody": "CashBridge temporarily controls the BCH received from THORChain. If the original {ticker} minimum cannot be met, the verified BCH is returned to the fallback address, less the miner fee. Network or recovery delays are possible.",
     "contractCustody": "THORChain pays the BCH into a contract made for this order. It can only pay at least the minimum {ticker} to your address or return the BCH to the fallback, so the Cashbridge Router cannot send it anywhere else. If the Router stops, anyone can return the BCH after 3 hours.",
+    "saleCustody": "Your {ticker} goes to a contract made for this transfer. It can only sell it on Cauldron for at least the quoted minimum BCH and deposit that BCH to THORChain for this transfer, or return the coins to your wallet, so the Cashbridge Router cannot send them anywhere else. If the Router stops, anyone can return them after 3 hours.",
     "minimumLabel": "Minimum {ticker} if converted",
     "minimum": "Minimum if converted: {amount} {ticker}",
     "noRoute": "No executable source route is available for this order.",

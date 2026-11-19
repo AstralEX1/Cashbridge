@@ -149,6 +149,9 @@ export interface ReverseDetails {
   refund?: { txid: string; amountSats: string }
   // Deposit txids signed earlier for this operation (a rejected broadcast is re-quoted and re-signed).
   priorDepositTxids?: string[]
+  // Set when the Cashbridge Router runs the sale and the deposit: its order (id and capability), the signed send of
+  // the tokens to the order's contract, and what the payout search needs.
+  router?: { id: string; capability: string; depositAddress: string; sendTxid?: string; signedHex?: string; payoutRouter?: string; startBlock?: number }
 }
 
 export interface BridgeOperation {

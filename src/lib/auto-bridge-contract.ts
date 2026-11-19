@@ -75,5 +75,5 @@ export interface PublicOrder extends OrderIntent {
   attempts: { txid: string; kind: 'swap' | 'refund' | 'deposit'; pusdOut: string; status: 'signed' | 'unknown' | 'rejected' | 'accepted' }[]
 }
 export const isTerminal = (state: OrderState) => ['completed', 'refunded', 'source_refunded', 'manual_review'].includes(state)
-// The Router buys any Cauldron token on a forward transfer.
-export const automaticEligible = (reverse: boolean, category: string | undefined) => !reverse && !!category
+// The Router buys any Cauldron token on a forward transfer, and sells one on a transfer back when sales are on.
+export const automaticEligible = (reverse: boolean, category: string | undefined, sales = false) => !!category && (!reverse || sales)
