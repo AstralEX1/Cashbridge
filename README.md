@@ -8,7 +8,7 @@ By default (**Manual**) the user signs every step in their own wallets. For tran
 
 Promo film on the landing page: [`/landing/cashbridge-promo.mp4`](https://www.cashbridge.space/).
 
-AI agents use the MCP server at `https://www.cashbridge.space/mcp`: list assets, quote, prepare an unsigned deposit for the user’s wallet, report the source tx, and read status. The server holds no keys; it does not prepare sale orders today, and NEAR→CashToken prepare stays on THORChain via the Router. Add it with `claude mcp add --transport http cash-bridge https://www.cashbridge.space/mcp`; see the [agent docs](https://www.cashbridge.space/docs/agents).
+AI agents use the MCP server at `https://www.cashbridge.space/mcp`: list assets, quote, prepare an unsigned deposit for the user’s wallet, report the source tx, and read status. The server holds no keys; it does not prepare sale orders, and NEAR→CashToken prepare stays on THORChain via the Router. Add it with `claude mcp add --transport http cash-bridge https://www.cashbridge.space/mcp`; see the [agent docs](https://www.cashbridge.space/docs/agents).
 
 Forked from the [swap.thorchain.org](https://github.com/thorchain/swap.thorchain) interface.
 

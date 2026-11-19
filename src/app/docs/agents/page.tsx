@@ -96,7 +96,7 @@ export default function Page() {
         </li>
         <li>One JSON-RPC message per request; batches are not accepted.</li>
         <li>
-          <strong>Sale prepare</strong> (CashToken back from BCH) is on the site only for now. The quote tool can still price it.
+          <strong>Sale prepare</strong> (CashToken back from BCH) is unsupported on MCP; use the site. The quote tool can still price it.
         </li>
         <li>
           <strong>NEAR → CashToken:</strong> NEAR Intents pays plain BCH only. Preparing a CashToken receive uses the Router on THORChain, not <code>route: near_intents</code>.

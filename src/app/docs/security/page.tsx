@@ -57,7 +57,7 @@ export default function Page() {
 
       <h2 id="mcp">MCP agents</h2>
       <p>
-        The MCP server at <code>https://www.cashbridge.space/mcp</code> holds no keys. It quotes, prepares unsigned deposits for the user to sign, and reads status. It does not prepare sale orders today, and it will not prepare NEAR→CashToken as a NEAR route (CashTokens go through the Router on THORChain). See <Link href="/docs/agents">AI agents</Link>.
+        The MCP server at <code>https://www.cashbridge.space/mcp</code> holds no keys. It quotes, prepares unsigned deposits for the user to sign, and reads status. It does not prepare sale orders, and it will not prepare NEAR→CashToken as a NEAR route (CashTokens go through the Router on THORChain). See <Link href="/docs/agents">AI agents</Link>.
       </p>
 
       <h2 id="data">What the site stores and sees</h2>

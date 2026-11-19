@@ -58,7 +58,7 @@ export function DocsDemoMcp() {
           <p className="docs-demo-kicker">Interactive demo</p>
           <h3 id={labelId}>MCP agent tools</h3>
           <p>
-            Expand a tool for its role. Sample JSON is read-only. Sale prepare and NEAR→CashToken prepare stay on the site for now.
+            Expand a tool for its role. Sample JSON is read-only. Sale prepare and NEAR→CashToken prepare are unsupported on MCP; use the site.
           </p>
         </div>
         <p className="docs-demo-endpoint">
