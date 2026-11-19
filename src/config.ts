@@ -13,8 +13,19 @@ export const AppConfig = {
   // The PRIVATE tab quotes this provider alone; its assets are listed only there.
   privateProvider: ProviderName.HOUDINI,
   logo: '/logo.svg',
+  repoUrl: 'https://github.com/AstralEX1/Cashbridge',
   // Trezor Connect requires a contact email in its manifest.
   supportEmail: process.env.NEXT_PUBLIC_SUPPORT_EMAIL || ''
+}
+
+// BCH BLAZE 2026 entry banner at the top of the home page. An empty link hides its item.
+export const BlazeConfig = {
+  deckUrl: '',
+  // CashTokens address that receives EMBER2026 community votes.
+  emberAddress: '',
+  // The public repository at the code as it stood before the 14 November build start (published there 14-16 November).
+  preBlazeCodeUrl: 'https://github.com/AstralEX1/Cashbridge/tree/3b502ceef396dd0c421fa82d1b745d794c5b0f21',
+  preBlazeDemoUrl: ''
 }
 
 // The aggregator API key stays on the server, so the SDK and src/lib/api.ts talk to our own
