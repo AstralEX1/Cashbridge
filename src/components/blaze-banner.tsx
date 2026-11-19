@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { AppConfig, BlazeConfig } from '@/config'
+import './blaze-banner.css'
 
 const { deckUrl, emberAddress } = BlazeConfig
 

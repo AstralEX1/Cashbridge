@@ -519,59 +519,6 @@
   color: #a9bbc2;
 }
 
-/* BCH BLAZE 2026 entry banner above the header: the header's width, quiet on the dark page. */
-.blaze-banner {
-  max-width: 514px;
-  margin: 0 auto 20px;
-  padding: 10px 14px;
-  border: 1px solid #ffffff1a;
-  border-radius: 14px;
-  background: #ffffff0a;
-  color: #d2dee2;
-  font-size: 13px;
-  line-height: 1.45;
-}
-.blaze-links {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 14px;
-}
-.blaze-tag {
-  color: #0ac18e;
-  font-weight: 600;
-}
-.blaze-banner :is(a, button) {
-  border-radius: 4px;
-  color: #f8fdff;
-  font-weight: 500;
-  text-decoration: underline;
-  text-decoration-color: #ffffff4d;
-  text-underline-offset: 3px;
-}
-.blaze-banner :is(a, button):hover {
-  text-decoration-color: currentColor;
-}
-.blaze-banner :is(a, button):focus-visible {
-  outline: 2px solid #0ac18e;
-  outline-offset: 2px;
-}
-.blaze-ember button,
-.blaze-address {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-}
-.blaze-address {
-  user-select: all;
-  overflow-wrap: anywhere;
-}
-.blaze-note {
-  margin-top: 6px;
-  color: #a9bbc2;
-  font-size: 12px;
-}
-
-
 @media (max-width: 480px) {
   .bridge-page {
     padding: 24px 12px 40px;
