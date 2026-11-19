@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { hexToBin } from '@bitauth/libauth'
+import { binToHex, encodeTransaction, generateTransaction, hexToBin, walletTemplateP2pkhNonHd, walletTemplateToCompilerBch } from '@bitauth/libauth'
 import { bindingFromPubkey, decodeTx, RpcError, txidOf, WsRpc } from '../src/lib/bch.ts'
 import { buildDeposit, maxBchDeposit, pickBchFunding } from '../src/lib/thorchain-deposit.ts'
-import { reviewBuild, sourcesOf } from '../src/lib/cauldron.ts'
-import { pubkey, otherPubkey, PUSD, signBuild, swapBuild } from './fixtures/bridge-fixtures.mjs'
+import { checkSigned, reviewBuild, sourcesOf } from '../src/lib/cauldron.ts'
+import { pubkey, otherPubkey, privateKey, PUSD, signBuild, swapBuild } from './fixtures/bridge-fixtures.mjs'
 
 const data = new Map()
 globalThis.localStorage = { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) }
@@ -123,4 +123,29 @@ test('an old retry cannot erase a newer deposit stored while its network check w
     transactionStore.getState().updateBridge(id, patch)
   })
   assert.equal(current().reverse.deposit.txid, newer)
+})
+
+test('a deposit signed with the longest ECDSA signatures still pays the configured fee rate', () => {
+  const own = bindingFromPubkey(pubkey, 0),
+    vault = bindingFromPubkey(otherPubkey, 0).lockingBytecode
+  const compiler = walletTemplateToCompilerBch(JSON.parse(JSON.stringify(walletTemplateP2pkhNonHd).replaceAll('schnorr_signature', 'ecdsa_signature')))
+  for (const inputs of [1, 3]) {
+    const funding = Array.from({ length: inputs }, (_, vout) => ({ txid: 'cd'.repeat(32), vout, value: '400000' }))
+    const built = buildDeposit({ funding, lockingBytecode: own.lockingBytecode, vaultScript: vault, memo: '=:b:synthetic:0', amountSats: 300000n, feeRate: 1n })
+    const unsigned = decodeTx(built.unsignedHex),
+      sources = sourcesOf(built)
+    const result = generateTransaction({
+      ...unsigned,
+      inputs: unsigned.inputs.map((input, i) => ({
+        ...input,
+        unlockingBytecode: { compiler, data: { keys: { privateKeys: { key: privateKey } } }, script: 'unlock', valueSatoshis: sources[i].valueSatoshis }
+      })),
+      sourceOutputs: sources
+    })
+    assert.equal(result.success, true)
+    const signed = binToHex(encodeTransaction(result.transaction))
+    // The wallet review accepts ECDSA, so the fee must already cover it.
+    assert.equal(checkSigned(built.unsignedHex, signed, built.ownIndexes, sources, own.pubkey), txidOf(signed))
+    assert.ok(built.minerFeeSats >= BigInt(signed.length / 2), `${built.minerFeeSats} sats for ${signed.length / 2} bytes`)
+  }
 })

@@ -16,7 +16,9 @@ export const BCH_DUST_THRESHOLD = 10_000n
 export const MAX_MEMO_BYTES = 80
 // Change below this is not worth an output; it goes to the miner.
 const CHANGE_DUST = 546n
-const P2PKH_UNLOCK_BYTES = 100
+// The largest P2PKH unlocking script a wallet can sign: a 72-byte low-S DER ECDSA signature plus sighash
+// byte, and a 33-byte key, each with its push. A Schnorr signature is 8 bytes shorter and simply overpays.
+const P2PKH_UNLOCK_BYTES = 108
 
 export class DepositError extends Error {}
 
