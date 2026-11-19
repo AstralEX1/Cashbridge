@@ -10,7 +10,7 @@ import { ScanList } from './scan-list'
 type Filter = 'all' | 'router' | 'manual'
 const FILTERS: [Filter, string][] = [
   ['all', 'All'],
-  ['router', 'Cashbridge Router'],
+  ['router', 'Router'],
   ['manual', 'Manual']
 ]
 const REFRESH_MS = 30_000
@@ -47,15 +47,15 @@ export function ScannerView() {
   const shown = rows.filter(row => (filter === 'all' || row.router === (filter === 'router')) && matchesQuery(row, query))
   const lookups = shown.length ? [] : hashLookups(query)
   const stats: [string, number][] = [
-    ['Transfers listed', rows.length],
-    ['Cashbridge Router', rows.filter(row => row.router).length],
-    ['Completed', rows.filter(row => row.status === 'completed').length],
+    ['Listed', rows.length],
+    ['Router', rows.filter(row => row.router).length],
+    ['Settled', rows.filter(row => row.status === 'completed').length],
     ['Chains', new Set(rows.flatMap(row => [row.from.chain, row.to.chain])).size]
   ]
 
   return (
     <>
-      <dl className="scanner-stats">
+      <dl className="scanner-stats" data-ready={orders !== undefined || undefined}>
         {stats.map(([label, value]) => (
           <div key={label}>
             <dt>{label}</dt>
@@ -72,7 +72,7 @@ export function ScannerView() {
             type="search"
             value={query}
             onChange={event => setQuery(event.target.value)}
-            placeholder="Search by transaction hash, token or chain"
+            placeholder="Hash, token or chain"
             spellCheck={false}
             autoComplete="off"
           />
@@ -88,18 +88,18 @@ export function ScannerView() {
 
       <p className="scanner-feed" aria-live="polite">
         {orders === undefined
-          ? 'Loading Cashbridge Router orders…'
+          ? 'Loading Router orders…'
           : orders === null
-            ? 'Live Cashbridge Router orders are unavailable right now. Showing the transfers verified on mainnet.'
-            : 'Cashbridge Router orders update every 30 seconds.'}
+            ? 'Live Router feed unavailable. Showing verified mainnet transfers.'
+            : 'Router orders refresh every 30s.'}
       </p>
 
-      <div className="scanner-table">
+      <div className="scanner-table" data-ready={orders !== undefined || undefined}>
         {shown.length > 0 ? (
           <ScanList rows={shown} now={now} />
         ) : (
           <div className="scanner-empty">
-            <p>No transfer in this list matches “{query.trim()}”.</p>
+            <p>No transfer matches “{query.trim()}”.</p>
             {lookups.length > 0 && (
               <p>
                 Look it up on{' '}

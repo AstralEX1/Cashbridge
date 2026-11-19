@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArrowRight, ArrowUpRight } from 'lucide-react'
 import { BlazeBanner } from '@/components/blaze-banner'
+import { ChainCarousel } from '@/components/landing/chain-carousel'
 import { FlowDiagram } from '@/components/landing/flow-diagram'
 import { LandingVideo } from '@/components/landing/landing-video'
 import { SiteFooter, SiteHeader } from '@/components/landing/site-chrome'
@@ -21,61 +22,44 @@ export const metadata: Metadata = {
 // The second cross-chain route, for manual transfers both ways. Set to false to take it off the page.
 const NEAR_INTENTS = true
 
-// Source chains, as the docs list them (THORChain decides what is open at a given moment).
-const CHAINS: [string, string][] = [
-  ['btc', 'Bitcoin'],
-  ['eth', 'Ethereum'],
-  ['base', 'Base'],
-  ['sol', 'Solana'],
-  ['bsc', 'BNB Chain'],
-  ['avax', 'Avalanche'],
-  ['xrp', 'XRP Ledger'],
-  ['tron', 'TRON'],
-  ['ltc', 'Litecoin'],
-  ['doge', 'Dogecoin'],
-  ['zec', 'Zcash'],
-  ['gaia', 'Cosmos'],
-  ['thor', 'THORChain']
-]
-
 const INTEGRATIONS: { name: string; role: string; logo?: string; href: string; show?: boolean }[] = [
   {
     name: 'THORChain',
-    role: 'Swaps assets from other chains into native BCH and back, through its official API.',
+    role: 'Cross-chain swaps into native BCH and back.',
     logo: '/providers/thorchain.svg',
     href: 'https://thorchain.org'
   },
   {
     name: 'NEAR Intents',
-    role: 'A second route into BCH and out of it. Market makers fill the swap, and the form takes the better of the two quotes.',
+    role: 'Second route; the form takes the better quote.',
     logo: '/providers/near.svg',
     href: 'https://near-intents.org',
     show: NEAR_INTENTS
   },
   {
     name: 'Cauldron',
-    role: 'The Bitcoin Cash AMM. Trades are built in your browser from its live pools.',
+    role: 'Bitcoin Cash AMM. Trades built in your browser.',
     logo: '/providers/cauldron.png',
     href: 'https://cauldron.quest'
   },
   {
     name: 'WizardConnect',
-    role: 'Pairs Selene and other Bitcoin Cash wallets with a QR code or a link.',
+    role: 'Selene and other BCH wallets via QR or link.',
     href: 'https://docs.riftenlabs.com/wizardconnect/dapp'
   },
   {
     name: 'WalletConnect',
-    role: 'Paytaca and Cashonize on the BCH side, and any WalletConnect wallet as the source.',
+    role: 'Paytaca, Cashonize, and any WC wallet as source.',
     logo: '/wallets/walletconnect.svg',
     href: 'https://walletconnect.network'
   },
   {
     name: 'Fulcrum',
-    role: 'Electrum servers: every BCH step is broadcast and followed on the chain itself.',
+    role: 'Every BCH step broadcast and followed on chain.',
     href: 'https://github.com/cculianu/Fulcrum'
   },
-  { name: 'Rostrum', role: 'A live feed of Cauldron pools, so quotes follow every trade.', href: 'https://gitlab.com/bitcoinunlimited/rostrum' },
-  { name: 'BCMR', role: 'Token names, tickers and icons from each CashToken’s own metadata registry.', href: 'https://cashtokens.org/docs/bcmr/chip' }
+  { name: 'Rostrum', role: 'Live Cauldron pool feed for quotes.', href: 'https://gitlab.com/bitcoinunlimited/rostrum' },
+  { name: 'BCMR', role: 'Token names and icons from CashToken metadata.', href: 'https://cashtokens.org/docs/bcmr/chip' }
 ]
 
 const WALLETS: [string, string?][] = [
@@ -111,15 +95,11 @@ export default function Page() {
       <main>
         <section className="landing-hero">
           <div className="landing-hero-copy">
-            <p className="landing-eyebrow">
-              <span className="landing-dot" aria-hidden /> Live on Bitcoin Cash mainnet
-            </p>
             <h1>
               Bridge anything to <em>Bitcoin Cash</em>.
             </h1>
             <p className="landing-lead">
-              Send BTC, ETH, USDC, SOL and more from the chain they live on. Receive BCH, PUSD or any CashToken traded on Cauldron in your own wallet.
-              And go back the same way.
+              Send BTC, ETH, USDC, SOL and more. Receive BCH, PUSD or any CashToken with Cauldron liquidity — and go back the same way.
             </p>
             <div className="landing-actions">
               <Link href="/bridge" className="landing-button">
@@ -136,7 +116,7 @@ export default function Page() {
             </ul>
           </div>
           <LandingVideo
-            className="landing-hero-video"
+            className="landing-hero-video landing-video-crop"
             src="/landing/cashbridge-promo.mp4"
             poster="/landing/cashbridge-promo.webp"
             label="Cash Bridge in use: 100 USDC on Base becomes PUSD on Bitcoin Cash with the Cashbridge Router. Demo amounts."
@@ -148,61 +128,23 @@ export default function Page() {
           <h2 id="chains-title" className="landing-kicker">
             Send from
           </h2>
-          <ul className="landing-chain-list">
-            {CHAINS.map(([icon, name]) => (
-              <li key={icon} title={name}>
-                <Logo src={`/networks/${icon}.svg`} size={32} />
-                <span>{name}</span>
-              </li>
-            ))}
-          </ul>
+          <ChainCarousel />
           <p className="landing-chains-to">
-            <ArrowRight size={18} aria-hidden /> Receive on <Logo src="/networks/bch.svg" size={22} /> Bitcoin Cash
+            <ArrowRight size={18} aria-hidden /> Receive on <Logo src="/networks/bch.svg" size={22} alt="" /> Bitcoin Cash
           </p>
         </section>
 
         <section id="how" className="landing-section" aria-labelledby="how-title">
           <p className="landing-kicker">How it works</p>
-          <h2 id="how-title">Two hops from any chain to any CashToken.</h2>
-          <p className="landing-sub">
-            Cash Bridge plans the route and builds each transaction. Open protocols move the value: THORChain{NEAR_INTENTS ? ' or NEAR Intents' : ''}{' '}
-            for the cross-chain swap, Cauldron for the token.
-          </p>
+          <h2 id="how-title">Two hops to any CashToken.</h2>
           <FlowDiagram nearIntents={NEAR_INTENTS} />
-
-          <div className="landing-cards">
-            <article>
-              <h3>Your funds stay yours</h3>
-              <p>
-                In Manual mode every transaction is signed in your own wallet. THORChain or NEAR Intents pays the BCH straight to your address, and
-                Cash Bridge never holds funds or sees a private key.
-              </p>
-            </article>
-            <article>
-              <h3>Permissionless rails</h3>
-              <p>
-                THORChain and Cauldron are open protocols anyone can use. No account and no allow-list. The Cauldron trade is built in your browser
-                from live pools, and every output is checked before you sign.
-              </p>
-            </article>
-            <article>
-              <h3>One signature, if you want it</h3>
-              <p>
-                Turn on the Cashbridge Router and sign once. The BCH waits in a contract made for your order, which can only pay you the token or
-                send the BCH back to you. <Link href="/docs/security">Custody details</Link>
-              </p>
-            </article>
-          </div>
         </section>
 
         <section id="tokens" className="landing-section landing-tokens" aria-labelledby="tokens-title">
           <div>
             <p className="landing-kicker">Tokens</p>
             <h2 id="tokens-title">Every CashToken with a Cauldron market.</h2>
-            <p className="landing-sub">
-              Dollars like PUSD and MUSD, and every other token with live liquidity on Cauldron. Pick one from the list, or search all of Cauldron by
-              ticker, name or category id. Sell any of them back for BTC, ETH, USDC and more.
-            </p>
+            <p className="landing-sub">PUSD, MUSD, and any token with live liquidity. Sell any of them back for BTC, ETH, USDC and more.</p>
           </div>
           <ul className="landing-token-grid">
             {FEATURED_TOKENS.map(token => (
@@ -226,6 +168,7 @@ export default function Page() {
 
         <section id="router" className="landing-section landing-split" aria-labelledby="router-title">
           <LandingVideo
+            className="landing-video-crop landing-video-crop-router"
             src="/landing/cashbridge-router.mp4"
             poster="/landing/cashbridge-router.webp"
             label="Turning on the Cashbridge Router in the bridge form. Demo."
@@ -234,14 +177,13 @@ export default function Page() {
             <p className="landing-kicker">Cashbridge Router</p>
             <h2 id="router-title">One signature. Then close the tab.</h2>
             <ul className="landing-checks">
-              <li>Sign once on the source chain. The Router buys your token on Cauldron and pays it to your BCH address.</li>
-              <li>The minimum you receive is fixed when the order is created.</li>
-              <li>It acts only after it sees the BCH arrive on the Bitcoin Cash chain.</li>
-              <li>If the minimum cannot be met in time, the BCH goes back to your fallback address.</li>
+              <li>Sign once. The Router buys your token on Cauldron and pays your BCH address.</li>
+              <li>Your minimum is fixed when the order is created.</li>
+              <li>If the minimum cannot be met in time, the BCH returns to your fallback address.</li>
             </ul>
             <p className="landing-note">
-              While it works, the BCH sits in a contract made for your order. The Router can only pay you or refund you, and after three hours
-              anyone can send the BCH back. Manual mode stays one click away.{' '}
+              On a contract order, the covenant can only pay you or refund you. Legacy Router orders differ — see{' '}
+              <Link href="/docs/security">Security and custody</Link>. Manual mode stays one click away.{' '}
               <Link href="/docs/guides/cashbridge-router">How the Router works</Link>
             </p>
           </div>
@@ -249,7 +191,7 @@ export default function Page() {
 
         <section id="integrations" className="landing-section" aria-labelledby="integrations-title">
           <p className="landing-kicker">Integrations</p>
-          <h2 id="integrations-title">Built on open Bitcoin Cash and cross-chain infrastructure.</h2>
+          <h2 id="integrations-title">Open Bitcoin Cash and cross-chain rails.</h2>
           <ul className="landing-integrations">
             {INTEGRATIONS.filter(item => item.show !== false).map(item => (
               <li key={item.name}>
@@ -285,9 +227,6 @@ export default function Page() {
             <div>
               <p className="landing-kicker">Scanner</p>
               <h2 id="scanner-title">Every transfer, on the record.</h2>
-              <p className="landing-sub">
-                Cashbridge Router orders as they happen and the transfers verified on mainnet, each step linked to a public explorer.
-              </p>
             </div>
             <Link href="/scanner" className="landing-button landing-button-ghost">
               Open scanner <ArrowRight size={18} aria-hidden />

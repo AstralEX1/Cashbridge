@@ -1,8 +1,15 @@
-import { ArrowUpRight } from 'lucide-react'
-import { chainName, shortHash, type ScanRow, type ScanSide, type ScanStatus } from '@/lib/scanner'
+import { ArrowUpRight, Check, CircleAlert, LoaderCircle, RotateCcw } from 'lucide-react'
+import type { CSSProperties } from 'react'
+import { chainIcon, chainName, shortHash, type ScanRow, type ScanSide, type ScanStatus } from '@/lib/scanner'
+import { statusLabel } from './status-label'
 import './scan-list.css'
 
-const STATUS_TEXT: Record<ScanStatus, string> = { completed: 'Completed', pending: 'In progress', refunded: 'Refunded', review: 'Under review' }
+const STATUS_ICON: Record<ScanStatus, typeof Check> = {
+  completed: Check,
+  pending: LoaderCircle,
+  refunded: RotateCcw,
+  review: CircleAlert
+}
 
 const ago = (time: number, now: number) => {
   const minutes = Math.max(0, Math.round((now - time) / 60000))
@@ -14,19 +21,39 @@ const ago = (time: number, now: number) => {
 }
 
 function Side({ side }: { side: ScanSide }) {
+  const chain = chainName(side.chain)
+  const network = chainIcon(side.chain)
   return (
     <div className="scan-side">
-      <span className="scan-icon" data-initial={side.ticker.slice(0, 1)}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        {side.icon && <img src={side.icon} alt="" width={28} height={28} loading="lazy" />}
+      <span className="scan-icons">
+        <span className="scan-icon" data-initial={side.ticker.slice(0, 1)}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {side.icon && <img src={side.icon} alt="" width={28} height={28} loading="lazy" />}
+        </span>
+        {network && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img className="scan-chain" src={network} alt="" width={14} height={14} loading="lazy" />
+        )}
       </span>
       <span>
-        <strong>
+        <strong aria-label={`${side.amount ? `${side.amount} ` : ''}${side.ticker} on ${chain}`}>
           {side.amount && <span className="scan-amount">{side.amount} </span>}
           {side.ticker}
         </strong>
-        <small>{chainName(side.chain)}</small>
       </span>
+    </div>
+  )
+}
+
+function Status({ status, router }: { status: ScanStatus; router: boolean }) {
+  const Icon = STATUS_ICON[status]
+  return (
+    <div className="scan-status-block">
+      <span className="scan-status" data-status={status}>
+        <Icon size={12} aria-hidden className={status === 'pending' ? 'scan-status-spin' : undefined} />
+        {statusLabel(status)}
+      </span>
+      <span className="scan-mode">{router ? 'Cashbridge Router' : 'Manual'}</span>
     </div>
   )
 }
@@ -45,8 +72,8 @@ export function ScanList({ rows, now, compact }: { rows: ScanRow[]; now?: number
         </tr>
       </thead>
       <tbody>
-        {rows.map(row => (
-          <tr key={row.key}>
+        {rows.map((row, index) => (
+          <tr key={row.key} style={{ '--i': index } as CSSProperties}>
             <td data-label="From">
               <Side side={row.from} />
             </td>
@@ -67,10 +94,7 @@ export function ScanList({ rows, now, compact }: { rows: ScanRow[]; now?: number
               </ul>
             </td>
             <td data-label="Status">
-              <span className="scan-status" data-status={row.status}>
-                {STATUS_TEXT[row.status]}
-              </span>
-              <span className="scan-mode">{row.router ? 'Cashbridge Router' : 'Manual'}</span>
+              <Status status={row.status} router={row.router} />
             </td>
             {!compact && (
               <td data-label="Time" className="scan-time">
@@ -81,7 +105,7 @@ export function ScanList({ rows, now, compact }: { rows: ScanRow[]; now?: number
                 ) : (
                   row.date
                 )}
-                {row.verified && <span className="scan-verified">Verified on explorers</span>}
+                {row.verified && <span className="scan-verified">Verified</span>}
               </td>
             )}
           </tr>

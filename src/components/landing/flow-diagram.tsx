@@ -21,9 +21,9 @@ function Swap({ manual, router }: { manual: React.ReactNode; router: React.React
   )
 }
 
-const Logo = ({ src, size = 28 }: { src: string; size?: number }) => (
+const Logo = ({ src, size = 28, alt = '' }: { src: string; size?: number; alt?: string }) => (
   // eslint-disable-next-line @next/next/no-img-element
-  <img src={src} alt="" width={size} height={size} className="flow-logo" loading="lazy" />
+  <img src={src} alt={alt} width={size} height={size} className="flow-logo" loading="lazy" />
 )
 
 // The connector between two stops; `n` is the stop it leaves from, which times its packet.
@@ -35,8 +35,7 @@ function Link({ n }: { n: number }) {
   )
 }
 
-// How a transfer moves, as an explanatory loop: a packet runs from the source wallet to the token in the
-// user's wallet, and each stop lights up as it arrives. It runs only while on screen and never under reduced motion.
+// Explanatory loop: a packet runs source → token. Plays only while on screen; never under reduced motion.
 export function FlowDiagram({ nearIntents }: { nearIntents: boolean }) {
   const [mode, setMode] = useState<Mode>('manual')
   const [visible, setVisible] = useState(false)
@@ -68,83 +67,73 @@ export function FlowDiagram({ nearIntents }: { nearIntents: boolean }) {
 
         <ol className="flow-track" aria-label="Route of a transfer to Bitcoin Cash">
           <li className="flow-node" style={{ '--n': 0 } as React.CSSProperties}>
-            <span className="flow-icons">
+            <span className="flow-icons" aria-hidden>
               <Logo src="/networks/btc.svg" />
               <Logo src="/networks/eth.svg" />
               <Logo src="/networks/sol.svg" />
               <Logo src="/networks/base.svg" />
             </span>
             <strong>Your wallet</strong>
-            <span className="flow-note">BTC, ETH, USDC, SOL and more, on the chain they live on</span>
-            <span className="flow-badge">
-              <Swap manual="You sign" router="You sign once" />
+            <span className="flow-note">
+              <Swap manual="You sign each step" router="You sign once" />
             </span>
           </li>
           <Link n={0} />
           <li className="flow-node" style={{ '--n': 1 } as React.CSSProperties}>
             <span className="flow-routes">
               <span className="flow-route">
-                <Logo src="/providers/thorchain.svg" size={22} /> THORChain
+                <Logo src="/providers/thorchain.svg" size={22} alt="" /> THORChain
               </span>
-              {/* NEAR Intents carries manual transfers; the Cashbridge Router uses THORChain. */}
               {nearIntents && (
                 <Swap
                   manual={
                     <span className="flow-route">
-                      <Logo src="/providers/near.svg" size={22} /> NEAR Intents
+                      <Logo src="/providers/near.svg" size={22} alt="" /> NEAR Intents
                     </span>
                   }
                   router={null}
                 />
               )}
             </span>
-            <strong>Cross-chain route</strong>
-            <span className="flow-note">Swaps your asset for native BCH and pays it out on Bitcoin Cash</span>
-            <span className="flow-badge flow-badge-quiet">
-              {nearIntents ? <Swap manual="Best of two quotes" router="Permissionless" /> : 'Permissionless'}
-            </span>
+            <strong>Cross-chain</strong>
+            <span className="flow-note">Asset → native BCH</span>
           </li>
           <Link n={1} />
           <li className="flow-node" style={{ '--n': 2 } as React.CSSProperties}>
-            <span className="flow-icons">
-              <Swap manual={<Logo src="/networks/bch.svg" />} router={<Logo src="/logo.svg" />} />
+            <span className="flow-icons" aria-hidden>
+              <Swap manual={<Logo src="/networks/bch.svg" alt="" />} router={<Logo src="/logo.svg" alt="" />} />
             </span>
             <strong>
               <Swap manual="Your BCH wallet" router="Cashbridge Router" />
             </strong>
             <span className="flow-note">
-              <Swap manual="The BCH lands at an address in your own wallet" router="A contract made for your order receives the BCH" />
-            </span>
-            <span className="flow-badge">
-              <Swap manual="Only you can spend it" router="It can only pay you" />
+              <Swap manual="BCH lands in your wallet" router="Contract holds BCH for your order" />
             </span>
           </li>
           <Link n={2} />
           <li className="flow-node" style={{ '--n': 3 } as React.CSSProperties}>
-            <span className="flow-icons">
-              <Logo src="/providers/cauldron.png" />
+            <span className="flow-icons" aria-hidden>
+              <Logo src="/providers/cauldron.png" alt="" />
             </span>
             <strong>Cauldron</strong>
-            <span className="flow-note">Live Bitcoin Cash pools swap the BCH for PUSD or any CashToken</span>
-            <span className="flow-badge">
-              <Swap manual="You sign" router="The Router signs" />
+            <span className="flow-note">
+              <Swap manual="You sign the swap" router="Router signs the swap" />
             </span>
           </li>
           <Link n={3} />
           <li className="flow-node" style={{ '--n': 4 } as React.CSSProperties}>
-            <span className="flow-icons">
-              <Logo src="/tokens/pusd.svg" />
+            <span className="flow-icons" aria-hidden>
+              <Logo src="/tokens/pusd.svg" alt="" />
             </span>
             <strong>You</strong>
-            <span className="flow-note">The token arrives in your own BCH wallet</span>
-            <span className="flow-badge flow-badge-quiet">Done</span>
+            <span className="flow-note">Token in your BCH wallet</span>
           </li>
         </ol>
 
         <p className="flow-caption" aria-live="polite">
           <Swap
-            manual="Manual is the default. Your wallets sign every step and Cash Bridge never holds your funds."
-            router="With the Cashbridge Router you sign once on the source chain, and the Router finishes the trade for you."
+            manual="Manual: your wallets sign every step. Cash Bridge never holds funds."
+            router="Router: sign once on the source chain; it finishes the trade."
           />
         </p>
       </div>

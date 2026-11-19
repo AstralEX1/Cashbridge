@@ -17,16 +17,12 @@ export default function ScannerPage() {
       <SiteHeader />
       <main className="scanner">
         <p className="landing-kicker">Scanner</p>
-        <h1>Transfers through Cash Bridge</h1>
-        <p className="landing-sub">
-          Cashbridge Router orders as they happen, and the transfers verified on mainnet. Every step links to a public explorer, so you can check it
-          on the chain itself.
-        </p>
+        <h1>Transfers</h1>
+        <p className="landing-sub">Router orders as they happen, plus transfers verified on mainnet. Every step links to a public explorer.</p>
         <ScannerView />
         <p className="scanner-note">
-          Manual transfers are signed in your own wallets and carry no Cash Bridge marker on chain, so they are not listed here unless they were
-          verified by hand. Your own transfers stay in History in the <Link href="/bridge">app</Link>, in this browser. See{' '}
-          <Link href="/docs/guides/track-a-transfer">Track a transfer</Link> for every status.
+          Manual transfers stay in History in the <Link href="/bridge">app</Link> on this browser — they carry no on-chain Cash Bridge marker unless
+          verified by hand. <Link href="/docs/guides/track-a-transfer">Track a transfer</Link>
         </p>
       </main>
       <SiteFooter />
