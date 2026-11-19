@@ -46,11 +46,24 @@ interface SwapRecipientProps {
   onFetchQuote: (quote: QuoteResponseRoute & { destinationMemo?: string }) => void
 }
 
-export const SwapRecipient = ({ provider, onFetchQuote, autoPrepare = false }: SwapRecipientProps) => {
-  const t = useTranslations('swap')
-  const isMobile = useIsMobile()
+// The form's hooks run only once both assets are chosen, so their order never changes between renders.
+export const SwapRecipient = (props: SwapRecipientProps) => {
   const assetFrom = useAssetFrom()
   const assetTo = useAssetTo()
+  return assetFrom && assetTo ? <RecipientForm {...props} assetFrom={assetFrom} assetTo={assetTo} /> : null
+}
+
+type Chosen = NonNullable<ReturnType<typeof useAssetFrom>>
+
+const RecipientForm = ({
+  provider,
+  onFetchQuote,
+  autoPrepare = false,
+  assetFrom,
+  assetTo
+}: SwapRecipientProps & { assetFrom: Chosen; assetTo: NonNullable<ReturnType<typeof useAssetTo>> }) => {
+  const t = useTranslations('swap')
+  const isMobile = useIsMobile()
   const slippage = useSlippage()
   const customInterval = useCustomInterval()
   const customQuantity = useCustomQuantity()
@@ -81,8 +94,6 @@ export const SwapRecipient = ({ provider, onFetchQuote, autoPrepare = false }: S
   const [warningCheckedLTC, setWarningCheckedLTC] = useState(false)
   // Read-only on mobile until touched: focus gets moved into the field (e.g. by ticking the warning) and raises the keyboard.
   const [editingField, setEditingField] = useState<'refund' | 'destination'>()
-
-  if (!assetFrom || !assetTo) return null
 
   // Houdini pays out from its partner exchanges' wallets, not THORChain's Router, so an EIP-7702 delegated
   // address can receive it and the self-custody and LTC MWEB acknowledgements do not apply.
