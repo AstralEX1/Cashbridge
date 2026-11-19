@@ -22,10 +22,24 @@ export const PUSD_TOKEN: CauldronToken = {
   icon: '/tokens/pusd.svg'
 }
 
+const IPFS_GATEWAY = 'https://ipfs.io/ipfs/'
+
+// Pinned at the top of the picker, so they show even when the indexer is down: the two dollar
+// stablecoins, then the three most liquid other tokens on Cauldron (indexer tvl_sats, 19 November:
+// RES 817 BCH, OLA 134 BCH, LIFT 97 BCH; NWB, third, is left out for its name). Category, ticker
+// and decimals agree in each token's BCMR on bcmr.paytaca.com and indexer.riften.net.
+export const FEATURED_TOKENS: readonly CauldronToken[] = [
+  PUSD_TOKEN,
+  // Moria USD v1; Cauldron also lists the older MUSDv0 (4046913c…), which this is not.
+  { category: 'b38a33f750f84c5c169a6f23cb873e6e79605021585d4f3408789689ed87f366', ticker: 'MUSD', name: 'Moria USD', decimals: 2, icon: 'https://meta.moria.money/m1.png' },
+  { category: '5e4a058f6593be30090ce6e03282ab0a85ad393275f246c2fb34fae15da017da', ticker: 'RES', name: 'RES', decimals: 6, icon: 'https://bcmr.res.cash/.well-known/res.svg' },
+  { category: '7fa887fd4eac015478b95392c4984721fbe3060223c30b342d43cc06817f07f6', ticker: 'OLA', name: 'olando', decimals: 2, icon: `${IPFS_GATEWAY}bafybeidlal7oyr7pf3nshvqqydnrl3nlugv4jwy25fjglouh7yxuwqfype/7fa887fd4eac015478b95392c4984721fbe3060223c30b342d43cc06817f07f6.png` },
+  { category: '5932b2fd4915d6a75d3ec53282cd49118149a2176ee67ed68b1111ff0786f7fc', ticker: 'LIFT', name: 'Paytaca LIFT Token', decimals: 2, icon: `${IPFS_GATEWAY}bafybeictwoxb4ma2ywxl545dhuvqqufiwyhacvauygcj43u2orq3zm2c4e/5932b2fd4915d6a75d3ec53282cd49118149a2176ee67ed68b1111ff0786f7fc.png` }
+]
+
 // Tokens with less BCH than this in their pools are left out: a trade of a few dollars would move them.
 const MIN_TVL_SATS = 100_000_000
 const LIST_SIZE = 40
-const IPFS_GATEWAY = 'https://ipfs.io/ipfs/'
 
 const isCategory = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
 
@@ -56,7 +70,8 @@ interface IndexedToken {
 
 export const parseIndexedToken = (raw: IndexedToken): CauldronToken | undefined => {
   if (!isCategory(raw.token_id)) return undefined
-  if (raw.token_id === PUSD_TOKEN.category) return PUSD_TOKEN
+  const featured = FEATURED_TOKENS.find(t => t.category === raw.token_id)
+  if (featured) return featured
   const meta = raw.bcmr ?? undefined
   // Decimals come from the token's own metadata, and only when it describes this category.
   if (meta?.token?.category !== undefined && meta.token.category !== raw.token_id) return undefined
@@ -75,10 +90,10 @@ const fetchList = async (path: string, params: Record<string, string>) => {
   return (body as IndexedToken[]).filter(t => Number(t.tvl_sats) >= MIN_TVL_SATS).flatMap(t => parseIndexedToken(t) ?? [])
 }
 
-const withPusdFirst = (tokens: CauldronToken[]) => [PUSD_TOKEN, ...tokens.filter(t => !sameToken(t, PUSD_TOKEN))]
+export const withFeaturedFirst = (tokens: CauldronToken[]) => [...FEATURED_TOKENS, ...tokens.filter(t => !FEATURED_TOKENS.some(f => sameToken(f, t)))]
 
-// The bridge's token list: Cauldron's top tokens by score, PUSD first.
-export const fetchCauldronTokens = async () => withPusdFirst(await fetchList('tokens/list_cached', { limit: String(LIST_SIZE), offset: '0', by: 'score', order: 'desc' }))
+// The bridge's token list: the featured tokens, then Cauldron's top tokens by score.
+export const fetchCauldronTokens = async () => withFeaturedFirst(await fetchList('tokens/list_cached', { limit: String(LIST_SIZE), offset: '0', by: 'score', order: 'desc' }))
 
 // Tokens matching a ticker, name or category id, searched across all of Cauldron's tokens.
 export const searchCauldronTokens = async (query: string) =>

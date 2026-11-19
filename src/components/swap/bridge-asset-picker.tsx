@@ -13,7 +13,7 @@ import { useModeAssets } from '@/hooks/use-assets'
 import { useMimir } from '@/hooks/use-mimir'
 import { useAssetFrom, useSetAssetFrom } from '@/hooks/use-swap'
 import { isAssetHalted } from '@/lib/swap-helpers'
-import { type CauldronToken, fetchCauldronTokens, PUSD_TOKEN, sameToken, searchCauldronTokens } from '@/lib/cauldron-tokens'
+import { type CauldronToken, FEATURED_TOKENS, fetchCauldronTokens, sameToken, searchCauldronTokens } from '@/lib/cauldron-tokens'
 import { isBridgeSellAsset, isReverseTargetAsset, useSwapStore } from '@/store/swap-store'
 import { TokenMark } from '@/components/swap/bridge-marks'
 
@@ -124,7 +124,7 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
     retry: false
   })
   const bchOptions = useMemo(() => {
-    const all = [...(listed.data ?? [PUSD_TOKEN]), ...(searched.data ?? [])]
+    const all = [...(listed.data ?? FEATURED_TOKENS), ...(searched.data ?? [])]
     const unique = all.filter((token, i) => all.findIndex(other => sameToken(other, token)) === i)
     // A category id pasted whole finds its token; otherwise ticker and name are matched.
     return unique.filter(token => !query || token.category === query || [token.ticker, token.name].some(value => value?.toLowerCase().includes(query)))
