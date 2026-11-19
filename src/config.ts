@@ -20,12 +20,9 @@ export const AppConfig = {
 
 // BCH BLAZE 2026 entry banner at the top of the home page. An empty link hides its item.
 export const BlazeConfig = {
-  deckUrl: '',
+  deckUrl: 'https://docs.google.com/presentation/d/1XSNgnP1huDaj9bteZzeZsYN8pXcRH4THqivWplrAinQ/edit?usp=sharing',
   // CashTokens address that receives EMBER2026 community votes.
-  emberAddress: '',
-  // The public repository at the code as it stood before the 14 November build start (published there 14-16 November).
-  preBlazeCodeUrl: 'https://github.com/AstralEX1/Cashbridge/tree/3b502ceef396dd0c421fa82d1b745d794c5b0f21',
-  preBlazeDemoUrl: ''
+  emberAddress: ''
 }
 
 // The aggregator API key stays on the server, so the SDK and src/lib/api.ts talk to our own
