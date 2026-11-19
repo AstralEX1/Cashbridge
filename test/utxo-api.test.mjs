@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import { afterEach, test } from 'node:test'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { binToHex, encodeTransaction, hashTransaction, lockingBytecodeToCashAddress } from '@bitauth/libauth'
 import { address, networks, Transaction } from 'bitcoinjs-lib'
 import { NextRequest } from 'next/server.js'
 import { BLOCKCHAIR_CHAINS } from '../src/lib/blockchair.ts'
@@ -13,7 +14,11 @@ import { outputScriptHex, UTXO_CHAINS } from '../src/lib/utxo-api.ts'
 
 const route = await import('../src/app/api/blockchair/[...path]/route.ts')
 const realFetch = globalThis.fetch
-afterEach(() => (globalThis.fetch = realFetch))
+const realWebSocket = globalThis.WebSocket
+afterEach(() => {
+  globalThis.fetch = realFetch
+  globalThis.WebSocket = realWebSocket
+})
 
 const hex = bytes => Buffer.from(bytes).toString('hex')
 const doge = address.toBase58Check(Buffer.alloc(20, 7), 0x1e)
@@ -43,6 +48,39 @@ function upstreams(table) {
     return answer.clone()
   }
 }
+// Fulcrum servers by URL: method -> { result } | { error } (or a function of the params); a URL left out is unreachable.
+const sockets = []
+function fulcrumServers(servers) {
+  sockets.length = 0
+  globalThis.WebSocket = class {
+    static OPEN = 1
+    readyState = 0
+    sent = []
+    constructor(url) {
+      this.url = url
+      sockets.push(this)
+      queueMicrotask(() => {
+        if (!servers[url]) return this.onerror?.()
+        this.readyState = 1
+        this.onopen?.()
+      })
+    }
+    send(data) {
+      const { id, method, params } = JSON.parse(data)
+      this.sent.push({ method, params })
+      const reply = servers[this.url][method] ?? { error: { code: -32601, message: `unknown method ${method}` } }
+      const answer = typeof reply === 'function' ? reply(params) : reply
+      queueMicrotask(() => this.onmessage?.({ data: JSON.stringify({ jsonrpc: '2.0', id, ...answer }) }))
+    }
+    close() {
+      this.readyState = 3
+      this.onclose?.()
+    }
+  }
+}
+const IMAGINARY = 'wss://bch.imaginary.cash:50004'
+const LOPING = 'wss://bch.loping.net:50004'
+
 const json = (value, status = 200) => Response.json(value, { status })
 const text = (value, status = 200) => new Response(value, { status })
 const down = () => new TypeError('fetch failed')
@@ -228,6 +266,78 @@ test('the route serves only the toolbox endpoints, for configured chains, with c
 test('transaction lookups work on the chains that cannot look up addresses', async () => {
   upstreams({ [`https://zec1.trezor.io/api/v2/tx/${hashA}`]: json({ txid: hashA, blockHeight: 3_000_000, vout: [] }) })
   assert.equal((await call(['zcash', 'dashboards', 'transaction', hashA])).body.data[hashA].transaction.block_id, 3_000_000)
+})
+
+// A BCH transaction paying a P2PKH address with THORChain's memo, as Fulcrum hands it over: raw hex.
+const bchScript = Uint8Array.from(Buffer.from(`76a914${'09'.repeat(20)}88ac`, 'hex'))
+const bchAddress = lockingBytecodeToCashAddress({ prefix: 'bitcoincash', bytecode: bchScript }).address
+const bchTx = encodeTransaction({
+  version: 2,
+  inputs: [{ outpointTransactionHash: new Uint8Array(32).fill(3), outpointIndex: 0, sequenceNumber: 0xffffffff, unlockingBytecode: new Uint8Array() }],
+  outputs: [
+    { lockingBytecode: bchScript, valueSatoshis: 150_000n },
+    { lockingBytecode: Uint8Array.from(Buffer.from(memoScript, 'hex')), valueSatoshis: 0n }
+  ],
+  locktime: 0
+})
+const bchHex = binToHex(bchTx)
+const bchHash = hashTransaction(bchTx)
+const fulcrumWith = (answers = {}) => ({
+  'server.version': { result: ['Fulcrum 2.1.4', '1.4'] },
+  'blockchain.transaction.get': ([hash, verbose]) =>
+    hash !== bchHash ? { error: { code: 2, message: 'No such mempool or blockchain transaction' } } : verbose ? { result: { confirmations: 3 } } : { result: bchHex },
+  'blockchain.headers.subscribe': { result: { height: 978_000 } },
+  ...answers
+})
+
+test('Bitcoin Cash transactions are read from Fulcrum and keep the payout check’s shape', async () => {
+  upstreams({})
+  fulcrumServers({ [IMAGINARY]: fulcrumWith() })
+  const { status, body } = await call(['bitcoin-cash', 'dashboards', 'transaction', bchHash])
+  assert.equal(status, 200)
+  assert.deepEqual(body.data[bchHash].transaction, { hash: bchHash, block_id: 977_998 })
+  assert.deepEqual(body.data[bchHash].outputs[0], { recipient: bchAddress, value: 150_000, script_hex: binToHex(bchScript) })
+  assert.equal(body.data[bchHash].outputs[1].recipient, undefined, 'the memo pays nobody')
+  assert.deepEqual(utxoPayout(body, bchHash, { destination: bchAddress, depositTxid: deposit, buyAsset: 'BCH.BCH' }), { hash: bchHash, amount: '150000' })
+  assert.deepEqual((await call(['bitcoin-cash', 'raw', 'transaction', bchHash])).body.data, { [bchHash]: { raw_transaction: bchHex } })
+  assert.equal(calls.length, 0, 'Trezor is not asked while Fulcrum answers')
+})
+
+test('a Fulcrum server that is down or answers another transaction hands over to the next', async () => {
+  upstreams({})
+  // The first server is unreachable; the second has it in the mempool (no confirmations yet).
+  fulcrumServers({ [LOPING]: fulcrumWith({ 'blockchain.transaction.get': ([, verbose]) => ({ result: verbose ? {} : bchHex }) }) })
+  const mempool = await call(['bitcoin-cash', 'dashboards', 'transaction', bchHash])
+  assert.equal(mempool.body.data[bchHash].transaction.block_id, -1)
+
+  fulcrumServers({ [IMAGINARY]: fulcrumWith({ 'blockchain.transaction.get': () => ({ result: '0200' }) }), [LOPING]: fulcrumWith() })
+  assert.deepEqual((await call(['bitcoin-cash', 'raw', 'transaction', bchHash])).body.data, { [bchHash]: { raw_transaction: bchHex } })
+
+  // Both servers down and Trezor turning the site away is an outage.
+  fulcrumServers({})
+  upstreams({ [`https://bch1.trezor.io/api/v2/tx/${bchHash}`]: new Response('<!DOCTYPE html><html></html>', { status: 403 }) })
+  assert.equal((await call(['bitcoin-cash', 'dashboards', 'transaction', bchHash])).status, 502)
+
+  // Unknown everywhere is an empty dashboard.
+  fulcrumServers({ [IMAGINARY]: fulcrumWith(), [LOPING]: fulcrumWith() })
+  upstreams({ [`https://bch1.trezor.io/api/v2/tx/${hashA}`]: json({ error: `Transaction '${hashA}' not found` }, 400) })
+  assert.deepEqual((await call(['bitcoin-cash', 'dashboards', 'transaction', hashA])).body.data, {})
+})
+
+test('a Bitcoin Cash broadcast goes through Fulcrum, and a node refusal stops there', async () => {
+  upstreams({})
+  fulcrumServers({ [IMAGINARY]: fulcrumWith({ 'blockchain.transaction.broadcast': ([hex]) => ({ result: hex === bchHex ? bchHash : 'x' }) }) })
+  const sent = await call(['bitcoin-cash', 'push', 'transaction'], { method: 'POST', body: JSON.stringify({ data: bchHex }) })
+  assert.deepEqual(sent.body, { data: { transaction_hash: bchHash }, context: { code: 200 } })
+
+  fulcrumServers({
+    [IMAGINARY]: fulcrumWith({ 'blockchain.transaction.broadcast': { error: { code: 1, message: 'the transaction was rejected by network rules (min relay fee not met)' } } }),
+    [LOPING]: fulcrumWith()
+  })
+  const refused = await call(['bitcoin-cash', 'push', 'transaction'], { method: 'POST', body: JSON.stringify({ data: bchHex }) })
+  assert.equal(refused.status, 400)
+  assert.match(refused.body.error, /min relay fee not met/)
+  assert.deepEqual(sockets.map(s => s.url), [IMAGINARY], 'no other server is asked to relay a transaction the node refused')
 })
 
 // The toolbox itself, pointed at the route the way src/lib/wallets.ts points it, builds spendable

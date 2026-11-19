@@ -1,8 +1,10 @@
+import { binToHex, lockingBytecodeToCashAddress } from '@bitauth/libauth'
 import { address, networks, type Network } from 'bitcoinjs-lib'
+import { BCH_PREFIX, decodeTx, RpcError, txidOf, WsRpc } from '@/lib/bch'
 
 // Keyless public explorers behind the Blockchair-shaped routes the UTXO toolbox and this app call
-// (src/app/api/blockchair). Two explorer dialects cover everything: Esplora (mempool.space and its
-// forks) and Blockbook (Trezor's public backends). Each chain lists its explorers in order; a call
+// (src/app/api/blockchair). Esplora (mempool.space and its forks) and Blockbook (Trezor's public
+// backends) cover most chains; Bitcoin Cash is read from Fulcrum (Electrum servers). Each chain lists its explorers in order; a call
 // moves to the next one when an explorer is unreachable, rate-limited or failing, and stops at the
 // first one that answers, including "not found" only once every explorer has said so.
 
@@ -139,6 +141,67 @@ function blockbook(base: string): Explorer {
   }
 }
 
+// Fulcrum: the Electrum protocol over WebSocket, the server kind src/lib/bch.ts checks BCH with. No CDN
+// bot filter sits in front of it, unlike Trezor's Blockbook, which answers the deployed site with a
+// Cloudflare block page. Transactions only: Bitcoin Cash has no address lookups here (cashaddr scripts
+// are not derived above). Raw bytes are hashed against the asked id and decoded locally.
+function fulcrum(url: string): Explorer {
+  const name = new URL(url).host
+  const session = async <T>(run: (rpc: WsRpc) => Promise<T>) => {
+    const rpc = new WsRpc(url, { jsonrpc: true, timeoutMs: TIMEOUT_MS })
+    try {
+      await rpc.open()
+      await rpc.request('server.version', ['cashbridge', '1.4'])
+      return await run(rpc)
+    } finally {
+      rpc.close()
+    }
+  }
+  // Fulcrum reports an unknown transaction as an error from its node.
+  const raw = async (rpc: WsRpc, hash: string) => {
+    const hex = await rpc.request<string>('blockchain.transaction.get', [hash.toLowerCase(), false]).catch(error => {
+      if (error instanceof RpcError) return null
+      throw error
+    })
+    if (hex === null) return null
+    if (typeof hex !== 'string' || txidOf(hex) !== hash.toLowerCase()) throw new Error(`${name} answered a transaction that is not ${hash}`)
+    return hex
+  }
+  const noAddresses = () => Promise.reject(new Error('Bitcoin Cash addresses are not looked up here'))
+  return {
+    name,
+    balance: noAddresses,
+    coins: noAddresses,
+    tx: hash =>
+      session(async rpc => {
+        const hex = await raw(rpc, hash)
+        if (!hex) return null
+        const [verbose, tip] = await Promise.all([
+          rpc.request<{ confirmations?: number }>('blockchain.transaction.get', [hash.toLowerCase(), true]),
+          rpc.request<{ height: number }>('blockchain.headers.subscribe', [])
+        ])
+        const confirmations = Number(verbose?.confirmations ?? 0)
+        if (confirmations > 0 && !Number.isInteger(tip?.height)) throw new Error(`${name} answered no chain tip`)
+        return {
+          blockId: confirmations > 0 ? tip.height - confirmations + 1 : -1,
+          outputs: decodeTx(hex).outputs.map(o => {
+            const cashaddr = lockingBytecodeToCashAddress({ prefix: BCH_PREFIX, bytecode: o.lockingBytecode })
+            return { recipient: typeof cashaddr === 'string' ? undefined : cashaddr.address, value: Number(o.valueSatoshis), scriptHex: binToHex(o.lockingBytecode) }
+          })
+        }
+      }),
+    rawTx: hash => session(rpc => raw(rpc, hash)),
+    // An error from the server is its node's verdict on the transaction, as in src/lib/bch.ts.
+    broadcast: hex =>
+      session(rpc => rpc.request<string>('blockchain.transaction.broadcast', [hex])).then(
+        id => txid(id, name),
+        error => {
+          throw error instanceof RpcError ? new Rejected(error.message) : error
+        }
+      )
+  }
+}
+
 // Output scripts are not in either explorer's UTXO list, so they are derived from the address.
 const LITECOIN: Network = { ...networks.bitcoin, messagePrefix: '\x19Litecoin Signed Message:\n', bech32: 'ltc', pubKeyHash: 0x30, scriptHash: 0x32, wif: 0xb0 }
 const DOGECOIN: Network = { ...networks.bitcoin, messagePrefix: '\x19Dogecoin Signed Message:\n', bech32: 'doge', pubKeyHash: 0x1e, scriptHash: 0x16, wif: 0x9e }
@@ -170,7 +233,7 @@ export const UTXO_CHAINS: Record<string, { network?: Network; explorers: Explore
     network: DOGECOIN,
     explorers: [blockbook('https://doge1.trezor.io'), blockbook('https://doge2.trezor.io'), blockbook('https://doge3.trezor.io')]
   },
-  'bitcoin-cash': { explorers: [blockbook('https://bch1.trezor.io')] },
+  'bitcoin-cash': { explorers: [fulcrum('wss://bch.imaginary.cash:50004'), fulcrum('wss://bch.loping.net:50004'), blockbook('https://bch1.trezor.io')] },
   dash: { explorers: [blockbook('https://dash1.trezor.io')] },
   zcash: { explorers: [blockbook('https://zec1.trezor.io')] }
 }
