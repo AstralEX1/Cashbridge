@@ -7,6 +7,11 @@ import { BridgeConfig } from '@/config'
 
 export const orderCategory = (intent: Pick<OrderIntent, 'category'>) => intent.category ?? BridgeConfig.pusd.category
 
+// A coin at a sale contract, with the token it carries.
+export interface SaleCoin extends VerifiedOutput {
+  token?: { category: string; amount: string; nft?: { capability: 'none' | 'mutable' | 'minting'; commitment: string } }
+}
+
 export interface Order extends OrderIntent {
   id: string
   addressIndex: number
@@ -36,7 +41,10 @@ export interface Order extends OrderIntent {
 export interface Attempt {
   txid: string
   hex: string
-  kind: 'swap' | 'refund'
+  // A sale order signs its Cauldron sale ('swap') together with the THORChain 'deposit' that spends it.
+  kind: 'swap' | 'refund' | 'deposit'
+  // The sale a deposit spends.
+  parent?: string
   pusdOut: string
   status: 'signed' | 'unknown' | 'rejected' | 'accepted'
   // Definite node refusals of these bytes after a lost first answer.

@@ -4,10 +4,21 @@ import { sourceTransactionId, sameSourceTransaction } from '@/lib/source-transac
 import { minOutputFor, secondLegSellAmount } from '@/lib/bridge'
 import { rateLimit } from '@/lib/rate-limit'
 import { isSameOrigin } from '@/lib/same-origin'
+import { BCH_DUST_THRESHOLD, checkInbound, type InboundAddress } from '@/lib/thorchain-deposit'
+import { REFUND_FEE_CAP } from '@/lib/router-contract'
 import { OrderError, orderCategory, positiveAmount, type OrderIntent } from '@/server/auto-bridge/types'
+import type { SaleIntent } from '@/lib/auto-bridge-contract'
 import type { OrderStore } from '@/server/auto-bridge/store'
 
-type Service = { store: OrderStore; quote: (sats: bigint, category: string) => Promise<{ output: bigint }>; admit?: () => boolean }
+type Service = {
+  store: OrderStore
+  // What `amount` buys of the token (sats in, token units out), or with side 'sell' what that many tokens sell for in sats.
+  quote: (amount: bigint, category: string, side?: 'buy' | 'sell') => Promise<{ output: bigint }>
+  // THORNode's inbound addresses, which a sale's vault must match when given.
+  inbound?: () => Promise<InboundAddress[]>
+  admit?: () => boolean
+}
+const SALE_KEYS = ['category', 'tokenAmount', 'buyAsset', 'destination', 'memo', 'vaultAddress'] as const
 const headers = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }
 const reply = (body: unknown, status = 200) => NextResponse.json(body, { status, headers })
 const errorReply = (error: unknown) =>
@@ -80,6 +91,12 @@ export async function createOrder(req: NextRequest, service: Service) {
         !/^\d+(?:\.\d+)?$/.test(source.amount as string)) throw new OrderError(400, 'Invalid source intent')
       intent.source = { chain: source.chain as string, asset: source.asset as string, amount: source.amount as string, address: source.address as string }
     }
+    if (input.sale !== undefined) {
+      const sale = input.sale as Record<string, unknown>
+      if (!sale || typeof sale !== 'object' || Array.isArray(sale) || !SALE_KEYS.every(key => typeof sale[key] === 'string' && (sale[key] as string).length > 0 && (sale[key] as string).length <= 256))
+        throw new OrderError(400, 'Invalid sale intent')
+      intent.sale = Object.fromEntries(SALE_KEYS.map(key => [key, sale[key]])) as unknown as SaleIntent
+    }
     const { store, quote, admit } = service
     const old = store.get(input.id)
     if (old) {
@@ -91,10 +108,26 @@ export async function createOrder(req: NextRequest, service: Service) {
     if (!open) throw new OrderError(503, 'New automatic orders are paused')
     store.assertWritable()
     if (BigInt(intent.expectedBchSats) > store.limits.maxOrderSats) throw new OrderError(400, 'Amount exceeds the order limit')
-    const amount = secondLegSellAmount(BigInt(intent.expectedBchSats))
-    if (amount <= 0n) throw new OrderError(400, 'Amount is too small for the automatic bridge')
-    const floor = minOutputFor((await quote(amount, orderCategory(intent))).output)
-    if (floor <= 0n) throw new OrderError(400, 'No executable token quote for this amount')
+    let floor: bigint
+    if (intent.sale) {
+      // The contract's floor is the least BCH the sale may bring; it must still make a THORChain deposit after its fee.
+      if (service.inbound) {
+        try {
+          checkInbound(await service.inbound(), intent.sale.vaultAddress, intent.sale.buyAsset.split('.')[0].toUpperCase())
+        } catch {
+          throw new OrderError(409, 'THORChain is not taking BCH at this vault; get a fresh quote')
+        }
+      }
+      const output = (await quote(BigInt(positiveAmount(intent.sale.tokenAmount)), intent.sale.category, 'sell')).output
+      if (output > store.limits.maxOrderSats) throw new OrderError(400, 'Amount exceeds the order limit')
+      floor = minOutputFor(output)
+      if (floor < BCH_DUST_THRESHOLD + REFUND_FEE_CAP) throw new OrderError(400, 'Amount is too small for the automatic bridge')
+    } else {
+      const amount = secondLegSellAmount(BigInt(intent.expectedBchSats))
+      if (amount <= 0n) throw new OrderError(400, 'Amount is too small for the automatic bridge')
+      floor = minOutputFor((await quote(amount, orderCategory(intent))).output)
+      if (floor <= 0n) throw new OrderError(400, 'No executable token quote for this amount')
+    }
     const order = store.create(input.id, cap, intent, floor.toString())
     return reply(store.public(order.id, cap), 201)
   } catch (error) {
