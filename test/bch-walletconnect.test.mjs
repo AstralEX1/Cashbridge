@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import { binToHex, hexToBin, secp256k1 } from '@bitauth/libauth'
 import { bindingFromPubkey } from '../src/lib/bch.ts'
 import { reviewBuild, sourcesOf } from '../src/lib/cauldron.ts'
-import { signInWallet, SignCancelled, SignDeclined, SignSessionLost, SignUndelivered } from '../src/lib/bch-signing.ts'
+import { signInWallet, SignCancelled, SignDeclined, SignSessionLost, SignTimedOut, SignUndelivered } from '../src/lib/bch-signing.ts'
 import {
   firstP2pkhAddress,
   keyProofMessage,
@@ -130,6 +130,32 @@ test('a WalletConnect refusal reads as declined, and an abort stops waiting', as
   const pending = signInWallet(walletConnectSigner({ request: () => new Promise(() => {}) }, 't'), binding, reviewed, 'x', { signal: controller.signal })
   controller.abort()
   await assert.rejects(pending, SignCancelled)
+})
+
+test('a request withdrawn after a WalletConnect wallet got it is reported as still open there, and expires at the minimum', async () => {
+  const calls = []
+  const delivered = Promise.withResolvers()
+  const wallet = { request: args => (calls.push(args), delivered.resolve(), new Promise(() => {})) }
+  const controller = new AbortController()
+  const pending = signInWallet(walletConnectSigner(wallet, 't'), binding, reviewed, 'x', { signal: controller.signal })
+  await delivered.promise
+  controller.abort()
+  await assert.rejects(pending, error => error instanceof SignCancelled && error.stillOpen === true)
+  assert.equal(calls[0].expiry, 300)
+
+  const timedOut = signInWallet(walletConnectSigner({ request: () => new Promise(() => {}) }, 't'), binding, reviewed, 'x', { timeoutMs: 1 })
+  // AbortSignal.timeout does not hold the event loop open on its own.
+  const awake = setTimeout(() => {}, 1000)
+  await assert.rejects(timedOut, error => error instanceof SignTimedOut && error.stillOpen === true)
+  clearTimeout(awake)
+
+  // A connection that withdraws the request on abort (WizardConnect's sign_cancel) leaves nothing open.
+  const withdrawing = { signTransaction: (_, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('Cancelled')))) }
+  const other = new AbortController()
+  const closed = signInWallet(withdrawing, binding, reviewed, 'x', { signal: other.signal })
+  await new Promise(resolve => setImmediate(resolve))
+  other.abort()
+  await assert.rejects(closed, error => error instanceof SignCancelled && error.stillOpen === false)
 })
 
 test('the signed transaction is read as hex or libauth bytes, and anything else is no signature', () => {

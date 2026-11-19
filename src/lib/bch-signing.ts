@@ -6,17 +6,24 @@ import { checkSigned, type ReviewedSwap, sourcesOf } from '@/lib/cauldron'
 // again is harmless). The result is checked to carry signatures by the bound key on our own inputs
 // alone, and to verify.
 // Every way a request can end without a signature has its own error, so the UI can say what
-// happened and offer the next step; none of them leaves anything sent.
+// happened and offer the next step. Only a request still open in the wallet (stillOpen) may yet be sent.
 
 // The wallet app is given this long; then the request is withdrawn from it (sign_cancel).
 export const SIGN_TIMEOUT_MS = 3 * 60_000
 
+// A request withdrawn here. `stillOpen`: the wallet had it and cannot be told (see BchSigner.keepsAborted), so it may
+// still sign it, and a wallet that broadcasts on its own (older Paytaca) then sends it.
+class SignWithdrawn extends Error {
+  constructor(message: string, readonly stillOpen = false) {
+    super(message)
+  }
+}
 // The user withdrew the request here (Cancel, closing the dialog).
-export class SignCancelled extends Error {}
+export class SignCancelled extends SignWithdrawn {}
 // The wallet answered with a refusal (the user declined it there).
 export class SignDeclined extends Error {}
 // No answer in time; the request was withdrawn from the wallet.
-export class SignTimedOut extends Error {}
+export class SignTimedOut extends SignWithdrawn {}
 // The request never reached the wallet (no relay took it, even on a second try).
 export class SignUndelivered extends Error {}
 // The connection had already ended when signing began, so nothing was asked: the wallet has to be
@@ -60,6 +67,8 @@ export interface BchSigner {
   // ended the session, it expired), so the user is told to reconnect instead of waiting on a
   // request no wallet will see. Without it the request is simply sent.
   isLive?(): boolean | Promise<boolean>
+  // An aborted request stays open in the wallet: nothing can withdraw it (WalletConnect).
+  keepsAborted?: boolean
 }
 
 export const signInWallet = async (
@@ -94,8 +103,8 @@ export const signInWallet = async (
       response = await signer.signTransaction(request, options)
     }
   } catch (error) {
-    if (signal?.aborted) throw new SignCancelled('Cancelled')
-    if (timeout.aborted) throw new SignTimedOut('The wallet did not answer in time')
+    if (signal?.aborted) throw new SignCancelled('Cancelled', !!signer.keepsAborted)
+    if (timeout.aborted) throw new SignTimedOut('The wallet did not answer in time', !!signer.keepsAborted)
     const message = error instanceof Error ? error.message : String(error)
     if (DECLINED.test(message)) throw new SignDeclined(message, { cause: error })
     if (UNDELIVERED.test(message)) throw new SignUndelivered(message, { cause: error })

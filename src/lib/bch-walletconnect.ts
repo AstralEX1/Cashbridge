@@ -100,7 +100,7 @@ export const signedHexOf = (result: unknown) => {
 
 // The slice of a WalletConnect SignClient this file needs, so it stays free of the client itself.
 export interface WalletConnectRequester {
-  request<T>(args: { topic: string; chainId: string; request: { method: string; params: unknown } }): Promise<T>
+  request<T>(args: { topic: string; chainId: string; request: { method: string; params: unknown }; expiry?: number }): Promise<T>
 }
 
 // A WalletConnect error is a JSON-RPC error object, not an Error: keep its message for the UI's
@@ -111,6 +111,9 @@ export const walletConnectError = (error: unknown) => {
   return new Error(typeof message === 'string' && message ? message : 'The wallet could not sign the transaction')
 }
 
+// Seconds; WalletConnect refuses less (its default is 15 minutes).
+export const SIGN_REQUEST_EXPIRY_S = 300
+
 const untilAborted = (signal: AbortSignal | undefined) =>
   new Promise<never>((_, reject) => {
     if (signal?.aborted) reject(signal.reason)
@@ -118,15 +121,17 @@ const untilAborted = (signal: AbortSignal | undefined) =>
   })
 
 // A BchSigner over a WalletConnect session. WalletConnect has no way to withdraw a request from the
-// wallet, so an abort only stops waiting; the wallet's late answer is then ignored, and since it never
-// broadcasts, nothing is sent. `isLive` is the pre-sign session check; `beforeRequest` runs just
-// before each request (bringing up the Paytaca extension's window).
+// wallet, so an abort only stops waiting and the wallet's late answer is ignored; a wallet that
+// broadcasts on its own still sends it, so the request expires at WalletConnect's minimum lifetime.
+// `isLive` is the pre-sign session check; `beforeRequest` runs just before each request (bringing up
+// the Paytaca extension's window).
 export const walletConnectSigner = (
   client: WalletConnectRequester,
   topic: string,
   { isLive, beforeRequest }: { isLive?: () => boolean; beforeRequest?: () => void } = {}
 ): BchSigner => ({
   isLive,
+  keepsAborted: true,
   async signTransaction(request, options) {
     beforeRequest?.()
     const params = walletConnectSignParams(
@@ -136,7 +141,7 @@ export const walletConnectSigner = (
     let result: unknown
     try {
       result = await Promise.race([
-        client.request<unknown>({ topic, chainId: WC_BCH_CHAIN, request: { method: 'bch_signTransaction', params } }),
+        client.request<unknown>({ topic, chainId: WC_BCH_CHAIN, request: { method: 'bch_signTransaction', params }, expiry: SIGN_REQUEST_EXPIRY_S }),
         untilAborted(options?.signal)
       ])
     } catch (error) {
