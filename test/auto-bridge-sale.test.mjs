@@ -156,7 +156,9 @@ test('a THORChain refund that comes back to the contract goes on to the customer
   try {
     tokens()
     await run()
-    net.state.status = { out_txs: [{ id: 'aa'.repeat(32), chain: 'BCH', coins: [], memo: 'REFUND:x' }], planned_out_txs: [{ chain: 'BCH', to_address: get().binding.cashAddress, coin: { asset: 'BCH.BCH', amount: '1' }, refund: true }], stages: { swap_status: { pending: false } } }
+    net.state.status = { out_txs: [{ id: 'aa'.repeat(32), chain: 'BCH', to_address: get().binding.cashAddress, coins: [], memo: 'REFUND:x' }], planned_out_txs: [{ chain: 'BCH', to_address: get().binding.cashAddress, coin: { asset: 'BCH.BCH', amount: '1' }, refund: true }], stages: { swap_status: { pending: false } } }
+    await run()
+    assert.equal(get().state, 'streaming', 'a refund paid to the contract is not done until it is given back')
     net.receive([{ lockingBytecode: hexToBin(get().binding.lockingBytecode), valueSatoshis: 250000n }])
     await run()
     const back = store.attempts(get().id).find(a => a.kind === 'refund')
@@ -167,6 +169,20 @@ test('a THORChain refund that comes back to the contract goes on to the customer
     await run()
     assert.equal(get().state, 'refunded')
     assert.equal(store.public(get().id, token).settlement.kind, 'deposit')
+  } finally {
+    store.close()
+  }
+})
+
+test('a THORChain refund paid straight to the customer ends the order', async () => {
+  const { store, net, run, tokens, get } = setup()
+  try {
+    tokens()
+    await run()
+    net.state.status = { out_txs: [{ id: 'aa'.repeat(32), chain: 'BCH', to_address: customer.cashAddress, coins: [], memo: 'REFUND:x' }], stages: { swap_status: { pending: false } } }
+    await run()
+    assert.equal(get().state, 'refunded')
+    assert.ok(!store.attempts(get().id).some(a => a.kind === 'refund'))
   } finally {
     store.close()
   }

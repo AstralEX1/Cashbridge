@@ -1,6 +1,6 @@
 import { binToHex, binsAreEqual, hexToBin, type Output } from '@bitauth/libauth'
 import type { TxStatusResponse } from '@/lib/api'
-import { checkOutbound, decodeTx, isTxid, normalizeTxid, opReturnText, txidOf } from '@/lib/bch'
+import { addressToLockingBytecode, checkOutbound, decodeTx, isTxid, normalizeTxid, opReturnText, txidOf } from '@/lib/bch'
 import { inboundMatchesBinding, interpretTxStatus } from '@/lib/bridge'
 import { BroadcastRejected, buildTokenTrade, type BuildIntent, type BuildResult } from '@/lib/cauldron'
 import { checkInbound, type InboundAddress } from '@/lib/thorchain-deposit'
@@ -522,8 +522,11 @@ export async function processSale(
     const outs = status?.out_txs ?? []
     const settled = status?.stages?.swap_status?.pending !== true
     const memo = (prefix: string) => outs.some(out => out.memo?.toUpperCase().startsWith(prefix))
+    // A refund paid to the contract is done once given back; one paid to the memo's refund address is done already.
+    const refundedHere = outs.some(out => out.memo?.toUpperCase().startsWith('REFUND:') && !!out.to_address && addressToLockingBytecode(out.to_address) === order!.binding.lockingBytecode)
+    const givenBack = attempts.some(a => a.kind === 'refund' && seen.has(a.txid))
     if (settled && memo('OUT:')) progress({ state: 'completed', error: undefined })
-    else if (settled && memo('REFUND:') && !(status?.planned_out_txs ?? []).some(out => !out.refund) && attempts.some(a => a.kind === 'refund' && seen.has(a.txid)))
+    else if (settled && memo('REFUND:') && !(status?.planned_out_txs ?? []).some(out => !out.refund) && (!refundedHere || givenBack))
       progress({ state: 'refunded', error: undefined })
     else progress({ state: 'streaming', error: undefined })
     return
