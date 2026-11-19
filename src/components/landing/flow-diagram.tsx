@@ -113,10 +113,10 @@ export function FlowDiagram({ nearIntents }: { nearIntents: boolean }) {
               <Swap manual="Your BCH wallet" router="Cashbridge Router" />
             </strong>
             <span className="flow-note">
-              <Swap manual="The BCH lands at an address in your own wallet" router="A one-time order address receives the BCH" />
+              <Swap manual="The BCH lands at an address in your own wallet" router="A contract made for your order receives the BCH" />
             </span>
             <span className="flow-badge">
-              <Swap manual="Only you can spend it" router="Held for minutes" />
+              <Swap manual="Only you can spend it" router="It can only pay you" />
             </span>
           </li>
           <Link n={2} />

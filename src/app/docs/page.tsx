@@ -61,7 +61,7 @@ export default function Page() {
           <tr>
             <th>Custody</th>
             <td>
-              You keep your keys and sign every step yourself. The optional Cashbridge Router holds your BCH briefly while it buys PUSD, see <Link href="/docs/security">Security and custody</Link>.
+              You keep your keys and sign every step yourself. With the optional Cashbridge Router, your BCH waits in a contract made for your order while the Router buys PUSD, see <Link href="/docs/security">Security and custody</Link>.
             </td>
           </tr>
         </tbody>

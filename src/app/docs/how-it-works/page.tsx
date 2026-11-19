@@ -87,7 +87,7 @@ export default function Page() {
         ]}
       />
       <p>
-        With the Cashbridge Router on, THORChain pays the BCH to an address the service controls for that one order. The service verifies the deposit, buys PUSD on Cauldron and pays it to your address. You sign once, but there are still several transactions, and the service holds the BCH for a short time. Details in <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link> and <Link href="/docs/security">Security and custody</Link>.
+        With the Cashbridge Router on, THORChain pays the BCH to a contract made for that one order. The Router verifies the deposit, buys PUSD on Cauldron and pays it to your address; the contract lets it spend the BCH only that way or to refund you. You sign once, but there are still several transactions. Details in <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link> and <Link href="/docs/security">Security and custody</Link>.
       </p>
 
       <h2 id="speed">How long it takes</h2>

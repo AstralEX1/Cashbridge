@@ -188,8 +188,8 @@ export default function Page() {
             <article>
               <h3>One signature, if you want it</h3>
               <p>
-                Turn on the Cashbridge Router and sign once. It holds the BCH for the minutes it takes to buy your token, then pays you, or refunds
-                the BCH. <Link href="/docs/security">Custody details</Link>
+                Turn on the Cashbridge Router and sign once. The BCH waits in a contract made for your order, which can only pay you the token or
+                send the BCH back to you. <Link href="/docs/security">Custody details</Link>
               </p>
             </article>
           </div>
@@ -240,7 +240,8 @@ export default function Page() {
               <li>If the minimum cannot be met in time, the BCH goes back to your fallback address.</li>
             </ul>
             <p className="landing-note">
-              While it works, the Router holds the BCH for a short time. Manual mode stays one click away.{' '}
+              While it works, the BCH sits in a contract made for your order. The Router can only pay you or refund you, and after three hours
+              anyone can send the BCH back. Manual mode stays one click away.{' '}
               <Link href="/docs/guides/cashbridge-router">How the Router works</Link>
             </p>
           </div>

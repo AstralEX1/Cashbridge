@@ -12,7 +12,7 @@ export default function Page() {
     <DocsArticle
       href="/docs/security"
       title="Security and custody"
-      lead="Who can touch your funds depends on the mode. In manual mode only you can. With the Cashbridge Router, the service holds the BCH for a short time. Both modes rely on THORChain and Cauldron."
+      lead="Who can touch your funds depends on the mode. In manual mode only you can. With the Cashbridge Router, the BCH waits in a contract made for your order, which can only pay you or refund you. Both modes rely on THORChain and Cauldron."
     >
       <h2 id="manual">Manual mode: you stay in control</h2>
       <p>
@@ -24,13 +24,13 @@ export default function Page() {
         <li>The Cauldron swap is built in your browser and signed by your BCH wallet. Cash Bridge reviews every output of it before you sign, and checks the result carries signatures by your key on your own inputs only, before anything is broadcast.</li>
       </ul>
 
-      <h2 id="router">The Cashbridge Router: short custody</h2>
-      <Callout kind="warning" title="With the Cashbridge Router on, the service controls your BCH for a while">
-        From the moment THORChain pays the BCH to the order address until the PUSD payout, or a BCH refund, is sent, the keys for that address are held by Cash Bridge&apos;s own server. If the server or its operator failed in that window, the funds could be delayed or lost.
+      <h2 id="router">The Cashbridge Router: a contract for each order</h2>
+      <Callout kind="warning" title="With the Cashbridge Router on, the Router decides when your BCH moves, not where">
+        THORChain pays the BCH to a contract built from your order&apos;s terms. Only the Router can spend it, and only to pay you at least the quoted minimum of your token, or to send the BCH back to your fallback address, less at most 2,000 sats for the miner. After three hours anyone can send it back on the same terms. If the Router stopped, your BCH would wait in the contract until then.
       </Callout>
       <p>This is what the service does and what it is built to avoid:</p>
       <ul>
-        <li>Each order gets its own deposit address, and a fixed minimum of PUSD that is stored when the order is created.</li>
+        <li>Each order gets its own contract, with the minimum of your token fixed in it when the order is created. The page rebuilds the contract from your order and refuses any other deposit address.</li>
         <li>It verifies on the Bitcoin Cash chain that the BCH really arrived before it acts.</li>
         <li>If the minimum cannot be met before the conversion deadline, it sends the BCH to your fallback address, less the miner fee.</li>
         <li>Signed transactions are written down before they are sent, so a restart replays the same transaction and never builds a second payout.</li>

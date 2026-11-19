@@ -13,10 +13,10 @@ export default function Page() {
     <DocsArticle
       href="/docs/guides/cashbridge-router"
       title="Use the Cashbridge Router"
-      lead="The Cashbridge Router turns a two-signature transfer into one. You approve a single transaction in your source wallet. Cash Bridge receives the BCH from THORChain, buys the token you chose on Cauldron and sends it to you."
+      lead="The Cashbridge Router turns a two-signature transfer into one. You approve a single transaction in your source wallet. THORChain pays the BCH to a contract made for your order, and the Router buys the token you chose on Cauldron and sends it to you."
     >
-      <Callout kind="warning" title="Temporary custody">
-        With the Cashbridge Router on, the service controls your BCH from the moment THORChain pays it until the token payout, or a BCH refund, is sent. With it off, nobody but you ever holds your funds. If you are unsure, use manual mode, and always start with a small amount.
+      <Callout kind="warning" title="A contract holds the BCH">
+        With the Cashbridge Router on, THORChain pays your BCH to a contract made for your order. The Router can only spend it to pay you at least the quoted minimum, or to send the BCH back to you, and after three hours anyone can send it back. With it off, nobody but you ever holds your funds. If you are unsure, use manual mode, and always start with a small amount.
       </Callout>
 
       <h2 id="what-it-does">What it does</h2>
