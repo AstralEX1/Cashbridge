@@ -25,7 +25,7 @@ export const PUSD_TOKEN: CauldronToken = {
 const IPFS_GATEWAY = 'https://ipfs.io/ipfs/'
 
 // Pinned at the top of the picker, so they show even when the indexer is down: the two dollar
-// stablecoins, then the three most liquid other tokens on Cauldron (indexer tvl_sats, 19 November:
+// stablecoins, then the three most liquid other tokens on Cauldron (indexer tvl_sats when picked:
 // RES 817 BCH, OLA 134 BCH, LIFT 97 BCH; NWB, third, is left out for its name). Category, ticker
 // and decimals agree in each token's BCMR on bcmr.paytaca.com and indexer.riften.net.
 export const FEATURED_TOKENS: readonly CauldronToken[] = [
