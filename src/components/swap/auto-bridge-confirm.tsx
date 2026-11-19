@@ -24,7 +24,7 @@ import { bchAddressProblem } from '@/lib/bch'
 import { toBaseUnits } from '@/lib/bridge'
 import { firstLegSeconds } from '@/lib/bridge-summary'
 import { getQuotes, isBridgeRoute } from '@/lib/api'
-import { assertAutomaticSaved, createAutomaticOrder, orderRequest, RouterUnavailableError, startAutomaticSource } from '@/lib/auto-bridge-client'
+import { assertAutomaticSaved, createAutomaticOrder, OrderRequestError, orderRequest, RouterUnavailableError, startAutomaticSource } from '@/lib/auto-bridge-client'
 import { getNearQuote, isNearRoute, nearSlippageBps, submitNearDeposit } from '@/lib/near-intents'
 import { getUSwap } from '@/lib/wallets'
 import { resolvePriceImpact } from '@/lib/swap-helpers'
@@ -71,12 +71,14 @@ export const prepareAutomatic = async ({
   const ref: SavedAutoOrder = reusable ?? { id: crypto.randomUUID(), capability: (crypto.randomUUID() + crypto.randomUUID()).replaceAll('-', ''), createdAt: Date.now(), intent, token }
   autoBridgeStore.getState().save(ref)
   assertAutomaticSaved(ref)
-  const order = ref.order ?? (await createAutomaticOrder(ref))
+  let order = ref.order ?? (await createAutomaticOrder(ref))
   if (order.apiVersion !== 2 || order.recoveryRequired) throw new Error(messages.serviceUpdate)
   autoBridgeStore.getState().patch(ref.id, { order })
+  const valid = (candidate?: QuoteResponseRoute): candidate is QuoteResponseRoute =>
+    !!candidate && isBridgeRoute(candidate, { sellAsset: source.asset, destinationAddress: order.depositAddress }) && new USwapNumber(candidate.sellAmount).eqValue(source.amount)
   let route: QuoteResponseRoute | undefined
   if (provider === ProviderName.NEAR) {
-    route = await getNearQuote({
+    const near = await getNearQuote({
       sellAsset: source.asset,
       buyAsset: BridgeConfig.buyAsset,
       sellAmount: source.amount,
@@ -86,7 +88,24 @@ export const prepareAutomatic = async ({
       dry: false,
       slippageBps: nearSlippageBps(slippage)
     })
-  } else {
+    // A reused contract order may be near its refund time: NEAR's payout and the Router's wait must both end before anyone can expire it.
+    const deadline = near?.near.quote.deadline ? Date.parse(near.near.quote.deadline) : NaN
+    if (near && valid(near) && (!order.contract || deadline + order.maxWaitSeconds * 1000 < order.contract.refundAfter * 1000)) {
+      // The Router learns the deposit address before Confirm, so it finds the payout even if this tab closes. A Router
+      // that does not take NEAR orders answers 400, and the transfer goes through THORChain instead.
+      const depositAddress = near.near.quote.depositAddress!
+      try {
+        const noted = await orderRequest(ref, 'POST', { nearDepositAddress: depositAddress })
+        if (noted.nearDepositAddress !== depositAddress) throw new Error(messages.noRoute)
+        order = noted
+        autoBridgeStore.getState().patch(ref.id, { order })
+        route = near
+      } catch (error) {
+        if (!(error instanceof OrderRequestError && error.status === 400)) throw error
+      }
+    }
+  }
+  if (!route) {
     const quotes = await getQuotes({
       buyAsset: BridgeConfig.buyAsset,
       sellAsset: source.asset,
@@ -100,11 +119,7 @@ export const prepareAutomatic = async ({
     })
     route = quotes.find(q => q.providers[0] === provider) ?? quotes[0]
   }
-  // A reused contract order may be near its refund time: NEAR's payout and the Router's wait must both end before anyone can expire it.
-  const nearDeadline = isNearRoute(route) && route.near.quote.deadline ? Date.parse(route.near.quote.deadline) : undefined
-  if (order.contract && nearDeadline !== undefined && !(nearDeadline + order.maxWaitSeconds * 1000 < order.contract.refundAfter * 1000)) throw new Error(messages.noRoute)
-  if (!route || !isBridgeRoute(route, { sellAsset: source.asset, destinationAddress: order.depositAddress }) || !new USwapNumber(route.sellAmount).eqValue(source.amount))
-    throw new Error(messages.noRoute)
+  if (!valid(route)) throw new Error(messages.noRoute)
   return { reference: { ...ref, order }, route }
 }
 
@@ -153,13 +168,8 @@ export const AutoBridgeDialog = ({ prepared, isOpen, onOpenChange }: Props) => {
       if (latest.apiVersion !== 2 || latest.recoveryRequired) throw new Error(t('serviceUpdate'))
       if (latest.minPusd !== order.minPusd || latest.depositAddress !== order.depositAddress) throw new Error(t('changed'))
       autoBridgeStore.getState().patch(reference.id, { order: latest, estimatedSeconds: firstLegSeconds(route.estimatedTime) })
-      // The Router learns the NEAR deposit address before the wallet sends, so it finds the payout even if this tab closes.
       const near = isNearRoute(route) ? route.near.quote.depositAddress : undefined
-      if (near) {
-        const noted = await orderRequest(reference, 'POST', { nearDepositAddress: near })
-        if (noted.nearDepositAddress !== near) throw new Error(t('changed'))
-        autoBridgeStore.getState().patch(reference.id, { order: noted })
-      }
+      if (near && latest.nearDepositAddress !== near) throw new Error(t('changed'))
       const executable = from?.chain === Chain.Tron && route.expiration ? { ...route, expiration: undefined } : route
       const hash = await startAutomaticSource(
         reference,
