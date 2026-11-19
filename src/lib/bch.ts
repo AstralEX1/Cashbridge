@@ -408,19 +408,23 @@ export const checkOutbound = (
   { inboundHash, lockingBytecode, expectedSats, action = 'OUT' }: { inboundHash: string; lockingBytecode: string; expectedSats: bigint; action?: 'OUT' | 'REFUND' },
   { tip, utxos }: { tip: number; utxos: ScriptUtxo[] }
 ): ReceiptCheck => {
-  const txid = txidOf(raw.hex)
   const memos = raw.tx.outputs.map(o => opReturnText(o.lockingBytecode)).filter((m): m is string => m !== undefined)
   if (!memos.some(m => sameSourceTransaction(sourceIdFromMemo(m, action), inboundHash)))
     return { kind: 'invalid', reason: 'The BCH transaction is not THORChain’s outbound for this swap (memo mismatch)' }
+  const check = checkPayment(raw, lockingBytecode, { tip, utxos })
+  if (check.kind === 'ok' && check.total !== expectedSats.toString()) return { kind: 'invalid', reason: `Received ${check.total} sats, THORChain reports ${expectedSats}` }
+  return check
+}
 
+// What `raw` pays `lockingBytecode` in plain (token-free) outputs, and which of those are still unspent.
+export const checkPayment = (raw: RawTx, lockingBytecode: string, { tip, utxos }: { tip: number; utxos: ScriptUtxo[] }): ReceiptCheck => {
+  const txid = txidOf(raw.hex)
   const script = hexToBin(lockingBytecode)
   const ours = raw.tx.outputs.map((o, vout) => ({ o, vout })).filter(({ o }) => binsAreEqual(o.lockingBytecode, script))
   if (ours.length === 0) return { kind: 'invalid', reason: 'The BCH transaction pays nothing to the bound address' }
   if (ours.some(({ o }) => o.token)) return { kind: 'invalid', reason: 'The BCH transaction sends tokens to the bound address' }
 
   const total = ours.reduce((sum, { o }) => sum + o.valueSatoshis, 0n)
-  if (total !== expectedSats) return { kind: 'invalid', reason: `Received ${total} sats, THORChain reports ${expectedSats}` }
-
   const outputs = ours.map(({ o, vout }) => {
     const utxo = utxos.find(u => u.txid === txid && u.vout === vout)
     return {
@@ -453,6 +457,27 @@ export const findThorchainOutbound = (inboundHash: string, lockingBytecode: stri
       if (check.kind === 'ok') return check
     }
     return { kind: 'not_found' }
+  })
+
+// The BCH that a bridge without a memo (NEAR Intents) says it paid: each listed transaction's plain outputs to
+// `lockingBytecode`, read from the chain, together at least `minimumSats`. A transaction no server has yet is
+// 'not_found'; one paying less than promised is refused.
+export const verifyPayments = (txids: string[], lockingBytecode: string, minimumSats: bigint): Promise<ReceiptCheck> =>
+  withElectrum(async client => {
+    const unspent = await fetchUnspent(client, lockingBytecode)
+    const outputs: VerifiedOutput[] = []
+    for (const txid of [...new Set(txids.map(normalizeTxid))]) {
+      if (!isTxid(txid)) return { kind: 'invalid', reason: 'The bridge reported a BCH payout that is not a transaction id' }
+      const raw = await fetchRawTx(client, txid)
+      if (!raw) return { kind: 'not_found' }
+      const check = checkPayment(raw, lockingBytecode, unspent)
+      if (check.kind !== 'ok') return check
+      outputs.push(...check.outputs)
+    }
+    if (!outputs.length) return { kind: 'not_found' }
+    const total = outputs.reduce((sum, o) => sum + BigInt(o.value), 0n)
+    if (total < minimumSats) return { kind: 'invalid', reason: `Received ${total} sats, the quote promised at least ${minimumSats}` }
+    return { kind: 'ok', outputs, total: total.toString(), confirmations: Math.min(...outputs.map(o => o.confirmations)) }
   })
 
 // Which of `txids` the address's history holds (mempool included): a spend of its outputs by one of
