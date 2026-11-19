@@ -1,16 +1,26 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Chain, WalletOption } from '@tcswap/core'
 import { Check, ChevronLeft, LoaderCircle } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { Credenza, CredenzaContent, CredenzaHeader, CredenzaTitle } from '@/components/ui/credenza'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { BrowserWallet } from '@/components/connect-wallet/browser-wallet'
-import { ALL_CHAINS, chainLabel, COMING_SOON_CHAINS, isWalletAvailable, WalletParams, WALLETS, WalletType } from '@/components/connect-wallet/config'
+import {
+  ALL_CHAINS,
+  chainLabel,
+  COMING_SOON_CHAINS,
+  describeWalletconnectError,
+  isWalletAvailable,
+  WalletParams,
+  WALLETS,
+  WalletType
+} from '@/components/connect-wallet/config'
 import { Ledger } from '@/components/connect-wallet/ledger'
 import { Trezor } from '@/components/connect-wallet/trezor'
 import { WalletIcon } from '@/components/wallet-icon'
 import { useWallets } from '@/hooks/use-wallets'
 import { isMobileBrowser, metaMaskAppLink } from '@/lib/metamask-link'
+import { preloadWalletConnect } from '@/lib/wallets'
 import { cn } from '@/lib/utils'
 
 const WALLETS_WITH_LOGO_BOUNCE = new Set(['metamask', 'trustwallet', 'rabby', 'okx'])
@@ -22,19 +32,26 @@ interface ConnectWalletProps {
 }
 
 // One list, as in Allbridge: wallets that can sign on the requested chain, installed ones first
-// with a "Detected" mark. With a chain given, a browser wallet connects on click; hardware wallets
-// and the chain-less entry (wallet sidebar) open a second step for the derivation path or chains.
+// with a "Detected" mark, then WalletConnect for any wallet app. With a chain given, a browser wallet
+// or WalletConnect connects on click; hardware wallets and the chain-less entry (wallet sidebar) open
+// a second step for the derivation path or chains.
 export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProps) => {
   const t = useTranslations('wallet')
   const [selectedWallet, setSelectedWallet] = useState<WalletParams>()
   const [connecting, setConnecting] = useState<string>()
   const { accounts, select, connect } = useWallets()
 
+  const hasWalletConnect = WALLETS.some(w => w.type === WalletType.mobile)
+  useEffect(() => {
+    if (isOpen && hasWalletConnect) preloadWalletConnect()
+  }, [isOpen, hasWalletConnect])
+
   const chains = useMemo(() => [...ALL_CHAINS, ...COMING_SOON_CHAINS].sort((a, b) => chainLabel(a)?.localeCompare(chainLabel(b))), [])
 
   const wallets = useMemo(() => {
     const usable = WALLETS.filter(wallet => !chain || wallet.supportedChains.includes(chain))
-    const rank = (wallet: WalletParams) => (wallet.type === WalletType.hardware ? 2 : isWalletAvailable(wallet.option) ? 0 : 1)
+    const rank = (wallet: WalletParams) =>
+      wallet.type === WalletType.hardware ? 3 : wallet.type === WalletType.mobile ? 1 : isWalletAvailable(wallet.option) ? 0 : 2
     return usable.sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label))
   }, [chain])
 
@@ -43,9 +60,16 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
   const chooseWallet = (wallet: WalletParams) => {
     if (connecting) return
     const connected = accounts.find(account => account.provider === wallet.option && (!chain || account.network === chain))
-    if (connected && wallet.type === WalletType.browser) {
+    const connectsOnClick = wallet.type === WalletType.browser || wallet.type === WalletType.mobile
+    if (connected && connectsOnClick) {
       select(connected)
       close()
+      return
+    }
+    if (wallet.type === WalletType.mobile && chain) {
+      // WalletConnect opens its own QR window, which this dialog would sit over and block clicks on.
+      close()
+      connect(wallet.option, [chain], undefined, { describeError: error => describeWalletconnectError(t, error) }).catch(() => {})
       return
     }
     if (wallet.type === WalletType.browser && chain) {
@@ -60,7 +84,7 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
   }
 
   const renderSelectedWallet = (wallet: WalletParams) => {
-    if (wallet.type === WalletType.browser) return <BrowserWallet key={wallet.key} wallet={wallet} chains={chains} chain={chain} onConnect={close} />
+    if (wallet.type !== WalletType.hardware) return <BrowserWallet key={wallet.key} wallet={wallet} chains={chains} chain={chain} onConnect={close} />
     if (wallet.key === 'ledger') return <Ledger key={wallet.key} wallet={wallet} onConnect={close} />
     if (wallet.key === 'trezor') return <Trezor key={wallet.key} wallet={wallet} onConnect={close} />
     return null
@@ -69,6 +93,7 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
   const renderRow = (wallet: WalletParams) => {
     const isBrowser = wallet.type === WalletType.browser
     const isInstalled = !isBrowser || !!isWalletAvailable(wallet.option)
+    const isWalletConnect = wallet.type === WalletType.mobile
     const connected = accounts.some(account => account.provider === wallet.option && (!chain || account.network === chain))
     const isConnecting = connecting === wallet.key
     const bounce = WALLETS_WITH_LOGO_BOUNCE.has(wallet.key) ? '' : undefined
@@ -91,6 +116,8 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
           </span>
         ) : !isInstalled ? (
           <span className="connect-wallet-status connect-wallet-install">{t(appLink ? 'openApp' : 'install')}</span>
+        ) : isWalletConnect ? (
+          <span className="connect-wallet-status">{t(isMobileBrowser() ? 'walletconnectApps' : 'walletconnectQr')}</span>
         ) : null}
       </>
     )

@@ -3,7 +3,7 @@ import { Chain } from '@tcswap/core'
 import { LoaderCircle } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { ChainSelect } from '@/components/connect-wallet/chain-select'
-import { ALL_CHAINS, WalletParams } from '@/components/connect-wallet/config'
+import { ALL_CHAINS, describeWalletconnectError, WalletParams, WalletType } from '@/components/connect-wallet/config'
 import { GenericButton } from '@/components/generic-button'
 import { useWallets } from '@/hooks/use-wallets'
 
@@ -17,14 +17,19 @@ export const BrowserWallet = ({ wallet, chains, chain, onConnect }: { wallet: Wa
 
   const handleConnect = async () => {
     if (connecting || !selectedChains.length) return
+    // WalletConnect opens its own QR window, which this dialog would sit over and block clicks on.
+    const closeFirst = wallet.type === WalletType.mobile
+    if (closeFirst) onConnect()
     setConnecting(true)
 
     connect(
       wallet.option,
-      selectedChains.map(c => c as Chain)
+      selectedChains.map(c => c as Chain),
+      undefined,
+      closeFirst ? { describeError: error => describeWalletconnectError(t, error) } : undefined
     )
       .then(() => {
-        onConnect()
+        if (!closeFirst) onConnect()
       })
       .catch(() => {}) // The store reports the error; keep the dialog open for a retry.
       .finally(() => {

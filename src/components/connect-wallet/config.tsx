@@ -3,11 +3,14 @@ import { getChainConfig } from '@tcswap/helpers'
 import { getBraveEVMProvider, getBraveSolanaProvider } from '@tcswap/wallets/brave'
 // The injected-provider globals (window.vultisig, window.phantom, ...) are declared by this package.
 import type {} from '@tcswap/wallet-extensions'
+import { BridgeConfig } from '@/config'
 import { supportedChains } from '@/lib/wallets'
 
 export enum WalletType {
   browser,
-  hardware
+  hardware,
+  // Any wallet app paired over WalletConnect: a QR code on desktop, a link on a phone.
+  mobile
 }
 
 export type WalletParams = {
@@ -122,6 +125,19 @@ export const WALLETS: WalletParams[] = [
     link: 'https://www.tronlink.org',
     supportedChains: supportedChains[WalletOption.TRONLINK]
   },
+  // Listed only with a WalletConnect (Reown) project id; the same one the BCH wallets pair with.
+  ...(BridgeConfig.walletConnectProjectId
+    ? [
+        {
+          key: 'walletconnect',
+          type: WalletType.mobile,
+          label: 'WalletConnect',
+          option: WalletOption.WALLETCONNECT,
+          link: 'https://walletconnect.network',
+          supportedChains: supportedChains[WalletOption.WALLETCONNECT]
+        }
+      ]
+    : []),
   {
     key: 'ledger',
     type: WalletType.hardware,
@@ -141,6 +157,16 @@ export const WALLETS: WalletParams[] = [
   // No keystore / seed phrase entry: the bridge never imports private keys.
 ]
 
+type WalletconnectErrorKey = 'walletconnectNoChains' | 'walletconnectNotLoaded' | 'walletconnectNotConnected'
+
+// WalletConnect's errors are SDK keys (wallet_walletconnect_…); the user reads what went wrong instead.
+export const describeWalletconnectError = (t: (key: WalletconnectErrorKey) => string, error: unknown) => {
+  const message = error instanceof Error ? error.message : ''
+  if (message.startsWith('wallet_walletconnect_chain_not_supported')) return t('walletconnectNoChains')
+  if (message.includes('did not load')) return t('walletconnectNotLoaded')
+  if (message.startsWith('wallet_walletconnect_')) return t('walletconnectNotConnected')
+}
+
 export const wallet = (option: WalletOption) => {
   return WALLETS.find(w => w.option === option)
 }
@@ -159,6 +185,7 @@ export const isWalletAvailable = (option: WalletOption) => {
     case WalletOption.RABBY: return getEIP6963Provider(RABBY_RDNS) || window?.ethereum?.isRabby
     case WalletOption.LEDGER:
     case WalletOption.TREZOR: return true
+    case WalletOption.WALLETCONNECT: return !!BridgeConfig.walletConnectProjectId
 
     case WalletOption.BRAVE:
       return getBraveSolanaProvider() || getBraveEVMProvider()
