@@ -87,6 +87,14 @@ async function conflicted(gateway: Gateway, order: Order, attempt: Attempt) {
   return poolSpent && !(await gateway.observe(attempt.txid)).seen
 }
 
+// Without the browser's source hint, a discovered inbound must come from the order's own sender, chain and asset.
+// Only the sender is unforgeable; the amount is left out (six significant digits against THORChain's 1e8 units). A mismatch waits for the hint or an operator.
+export const matchesSourceIntent = (status: TxStatusResponse, source?: Order['source']) => {
+  if (!source) return true
+  const same = (a?: string, b?: string) => !!a && !!b && a.toUpperCase() === b.toUpperCase()
+  return same(status.tx?.chain, source.chain) && same(status.tx?.from_address, source.address) && !!status.tx?.coins?.some(coin => same(coin.asset, source.asset))
+}
+
 // The recorded reason of a failure, for the log: these are our own fixed messages, never a URL or credential.
 export const reasonOf = (error: unknown) => (error instanceof Error ? error.message : 'unknown error').replace(/\s+/g, ' ').slice(0, 160)
 
@@ -220,8 +228,10 @@ export async function processOrder(
     store.update(order.id, order.version, { state: 'manual_review', error: 'A customer destination is a service deposit address; operator verification is required.' }, clock())
     return
   }
-  const inboundIds = new Set<string>([order.inboundHash, order.sourceHash].map(sourceTransactionId).filter((value): value is string => !!value))
-  for (const id of history) {
+  // A known source settles only itself: another inbound to the same address stays in observed funding for recovery.
+  const known = sourceTransactionId(order.inboundHash ?? order.sourceHash)
+  const inboundIds = new Set<string>(known ? [known] : [])
+  for (const id of known ? [] : history) {
     if (!isTxid(id)) continue
     const hex = await gateway.raw(id)
     if (!hex) continue
@@ -238,7 +248,12 @@ export async function processOrder(
   const candidates: { id: string; status: TxStatusResponse }[] = []
   for (const id of inboundIds) {
     const status = await gateway.thorStatus(id)
-    if (status?.tx?.id && sameSourceTransaction(status.tx.id, id) && inboundMatchesBinding(status, order.binding.lockingBytecode))
+    if (
+      status?.tx?.id &&
+      sameSourceTransaction(status.tx.id, id) &&
+      inboundMatchesBinding(status, order.binding.lockingBytecode) &&
+      (known || matchesSourceIntent(status, order.source))
+    )
       candidates.push({ id, status })
   }
   if (candidates.length === 0) return

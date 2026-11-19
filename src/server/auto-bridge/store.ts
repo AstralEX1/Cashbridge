@@ -6,6 +6,7 @@ import { addressToLockingBytecode, decodeTx } from '@/lib/bch'
 import { binToHex, utf8ToBin } from '@bitauth/libauth'
 import { MAX_MEMO_BYTES } from '@/lib/thorchain-deposit'
 import { REFUND_AFTER_SECONDS } from '@/lib/router-contract'
+import { sourceTransactionId } from '@/lib/source-transaction'
 import { PublicWallet } from '@/server/auto-bridge/wallet'
 import { OrderError, orderCategory, positiveAmount, type Attempt, type Limits, type Order, type OrderIntent, type PublicOrder } from '@/server/auto-bridge/types'
 
@@ -353,7 +354,8 @@ export class OrderStore {
       state: order.state,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
-      sourceHash: order.inboundHash ?? order.sourceHash,
+      // The customer's own source stays visible; the verified inbound only stands in for a malformed legacy hint.
+      sourceHash: sourceTransactionId(order.sourceHash) ?? order.inboundHash,
       inboundHash: order.inboundHash,
       receivedSats: order.funding.reduce((sum, coin) => sum + BigInt(coin.value), 0n).toString(),
       receivedAt: order.receivedAt,

@@ -647,3 +647,95 @@ test('aggregate observed exposure includes recovery cases and redirects excess r
     limits.maxPendingSats = 1000000000n
   }
 })
+
+// A tiny fake chain for source attribution: each payment is a THORChain outbound to the order address.
+const attribution = source => {
+  const signer = wallet(),
+    store = new OrderStore(':memory:', signer.xpub, limits),
+    cap = capability()
+  const order = store.create(randomUUID(), cap, { ...intent, source }, '200', 100)
+  const payments = new Map(),
+    seen = new Map()
+  const pay = (from, inbound, amount) => {
+    const hex = outboundTx({ to: hexToBin(order.binding.lockingBytecode), amount: BigInt(amount), memo: `OUT:${inbound}` })
+    payments.set(txidOf(hex), { from, inbound, hex, amount, spent: false })
+    return txidOf(hex)
+  }
+  const gateway = {
+    history: async () => [...payments.keys()],
+    raw: async id => payments.get(id)?.hex,
+    tip: async () => 100,
+    coin: async (id, vout) =>
+      vout === 0 && payments.has(id) && !payments.get(id).spent ? { output: decodeTx(payments.get(id).hex).outputs[0], confirmations: 1 } : undefined,
+    thorStatus: async inbound => {
+      const [id, payment] = [...payments].find(([, p]) => p.inbound.toLowerCase() === inbound.toLowerCase()) ?? []
+      if (!payment) return undefined
+      return {
+        tx: { id: payment.inbound, chain: 'ETH', from_address: payment.from, coins: [{ asset: 'ETH.ETH', amount: '100000000' }], memo: `=:BCH.BCH:${order.binding.cashAddress}:0` },
+        stages: { swap_finalised: { completed: true }, swap_status: { pending: false } },
+        planned_out_txs: [{ chain: 'BCH', to_address: order.binding.cashAddress, coin: { asset: 'BCH.BCH', amount: payment.amount }, refund: false }],
+        out_txs: [{ id, chain: 'BCH', to_address: order.binding.cashAddress, coins: [{ asset: 'BCH.BCH', amount: payment.amount }], memo: `OUT:${payment.inbound}` }]
+      }
+    },
+    observe: async id => seen.get(id) ?? { seen: false, confirmations: 0 },
+    broadcast: async attempt => {
+      for (const input of decodeTx(attempt.hex).inputs) payments.get(binToHex(input.outpointTransactionHash)).spent = true
+      seen.set(attempt.txid, { seen: true, confirmations: 6 })
+    }
+  }
+  const policy = { minConfirmations: 1, zeroConfMaxSats: 0n, maxWaitMs: 60000 }
+  const noTrade = async () => {
+    throw new Error('Synthetic unavailable trade')
+  }
+  const run = at => processOrder(store, gateway, signer, store.get(order.id), policy, noTrade, () => at)
+  return { store, order, cap, pay, run }
+}
+
+test('a known source settles only itself; another THORChain inbound to the address is kept for recovery', async () => {
+  const user = '0x' + '11'.repeat(20),
+    env = attribution({ chain: 'ETH', asset: 'ETH.ETH', amount: '1', address: user })
+  const source = 'ab'.repeat(32)
+  try {
+    env.store.update(env.order.id, env.order.version, { sourceHash: source })
+    // Someone else's finished swap reaches the address before the customer's own status is available.
+    const other = env.pay('0x' + '22'.repeat(20), inboundHash, '10000')
+    await env.run(1000)
+    assert.equal(env.store.get(env.order.id).state, 'awaiting_deposit')
+    assert.equal(env.store.get(env.order.id).inboundHash, undefined)
+    assert.equal(env.store.public(env.order.id, env.cap).sourceHash, source)
+    assert.equal(env.store.public(env.order.id, env.cap).recoverySats, '10000')
+    const own = env.pay(user, source, '1000000')
+    await env.run(2000)
+    assert.equal(env.store.get(env.order.id).inboundHash, source)
+    assert.deepEqual(env.store.get(env.order.id).funding.map(coin => coin.txid), [own])
+    await env.run(70000)
+    const [attempt] = env.store.attempts(env.order.id)
+    assert.equal(attempt.kind, 'refund')
+    assert.deepEqual(decodeTx(attempt.hex).inputs.map(input => binToHex(input.outpointTransactionHash)), [own])
+    await env.run(70001)
+    assert.equal(env.store.get(env.order.id).state, 'refunded')
+    assert.equal(env.store.public(env.order.id, env.cap).sourceHash, source)
+    assert.equal(env.store.public(env.order.id, env.cap).recoverySats, '10000')
+    assert.ok(!decodeTx(attempt.hex).inputs.some(input => binToHex(input.outpointTransactionHash) === other))
+  } finally {
+    env.store.close()
+  }
+})
+
+test('without a source hint only an inbound from the order sender, chain and asset is discovered', async () => {
+  const user = '0xAbCd' + '11'.repeat(18),
+    env = attribution({ chain: 'ETH', asset: 'ETH.ETH', amount: '1', address: user })
+  try {
+    env.pay('0x' + '22'.repeat(20), inboundHash, '10000')
+    await env.run(1000)
+    assert.equal(env.store.get(env.order.id).state, 'awaiting_deposit')
+    assert.equal(env.store.get(env.order.id).inboundHash, undefined)
+    // The customer's own inbound is found from its memo; the sender's case differs as on EVM.
+    const own = env.pay(user.toLowerCase(), 'cd'.repeat(32), '1000000')
+    await env.run(2000)
+    assert.equal(env.store.get(env.order.id).inboundHash, 'cd'.repeat(32))
+    assert.deepEqual(env.store.get(env.order.id).funding.map(coin => coin.txid), [own])
+  } finally {
+    env.store.close()
+  }
+})
