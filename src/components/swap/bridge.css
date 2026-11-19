@@ -565,6 +565,11 @@
   user-select: all;
   overflow-wrap: anywhere;
 }
+.blaze-note {
+  margin-top: 6px;
+  color: #a9bbc2;
+  font-size: 12px;
+}
 
 
 @media (max-width: 480px) {

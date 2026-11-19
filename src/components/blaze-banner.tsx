@@ -49,6 +49,9 @@ export function BlazeBanner() {
           </span>
         )}
       </div>
+      <p className="blaze-note">
+        Pre-existing project: our partnership and integration with THORChain began before the BLAZE build period opened on 14 November 2026.
+      </p>
     </aside>
   )
 }
