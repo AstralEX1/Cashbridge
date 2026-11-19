@@ -187,16 +187,17 @@ test('a failed durable authorization write never opens the wallet', async () => 
   }
 })
 
-test('receipt uses the observed exact output and fallback net of fee; unsupported modes stay manual', () => {
+test('receipt uses the observed exact output and fallback net of fee; reverse and plain BCH stay manual', () => {
   const order = { sourceHash: 'AB'.repeat(32) + '-2', source: { chain: 'GAIA' }, settlement: { kind: 'swap', seen: true, txid: 'cd'.repeat(32), pusdAmount: '1234', bchAmount: '12345' } }
   assert.equal(automaticCompletion({ ...order, settlement: { ...order.settlement, seen: false } }), undefined)
   assert.deepEqual(automaticCompletion(order), { amount: '12.34', ticker: 'PUSD', refund: false, change: '0.00012345' })
   assert.equal(automaticCompletion({ ...order, settlement: { ...order.settlement, kind: 'refund' } }).amount, '0.00012345')
   assert.equal(automaticTransactions(order).at(-1).hash, 'cd'.repeat(32))
-  assert.equal(automaticEligible(false, 'pusd', 'pusd'), true)
-  assert.equal(automaticEligible(true, 'pusd', 'pusd'), false)
-  assert.equal(automaticEligible(false, undefined, 'pusd'), false)
-  assert.equal(automaticEligible(false, 'another-token', 'pusd'), false)
+  assert.deepEqual(automaticCompletion(order, { ticker: 'GOLD', decimals: 3 }).amount, '1.234')
+  assert.equal(automaticEligible(false, 'pusd'), true)
+  assert.equal(automaticEligible(false, 'another-token'), true, 'every Cauldron token goes through the Router')
+  assert.equal(automaticEligible(true, 'pusd'), false)
+  assert.equal(automaticEligible(false, undefined), false)
 })
 
 test('wrong order destination is refused and source callback failure does not erase a successful source hash', async () => {

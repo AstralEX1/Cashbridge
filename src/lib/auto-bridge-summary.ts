@@ -3,15 +3,16 @@ import type { PublicOrder } from '@/lib/auto-bridge-contract'
 import type { CompletionTransaction } from '@/lib/bridge-completion'
 import { formatBaseUnits } from '@/lib/bridge'
 import { isTxid } from '@/lib/bch'
+import { PUSD_TOKEN, type CauldronToken } from '@/lib/cauldron-tokens'
 
-export const automaticCompletion = (order: PublicOrder) => {
+export const automaticCompletion = (order: PublicOrder, token: Pick<CauldronToken, 'ticker' | 'decimals'> = PUSD_TOKEN) => {
   const settlement = order.settlement
   if (!settlement?.seen) return undefined
   const refund = settlement.kind === 'refund'
   const amount = refund ? settlement.bchAmount : settlement.pusdAmount
   if (!/^[1-9]\d*$/.test(amount)) return undefined
   return {
-    amount: formatBaseUnits(amount, refund ? 8 : 2), ticker: refund ? 'BCH' : 'PUSD', refund,
+    amount: formatBaseUnits(amount, refund ? 8 : token.decimals), ticker: refund ? 'BCH' : token.ticker, refund,
     change: !refund && /^[1-9]\d*$/.test(settlement.bchAmount) ? formatBaseUnits(settlement.bchAmount, 8) : undefined
   }
 }

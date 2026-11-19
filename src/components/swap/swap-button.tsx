@@ -97,6 +97,7 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
       if (automatic) {
         const prepared = await prepareAutomatic({
           source: { chain: assetFrom.chain, asset: assetFrom.identifier, amount: valueFrom.toSignificant(), address: selectedAccount.address },
+          token: bchToken!,
           recipient,
           expectedBuyAmount: quote.expectedBuyAmount,
           provider,

@@ -15,7 +15,7 @@ import { bchAddressProblem } from '@/lib/bch'
 
 const ROUTER_HINT_ID = 'bridge-router-hint'
 
-// Cashbridge Router selector: Router, the service executes the BCH-to-PUSD step (and plain BCH runs as
+// Cashbridge Router selector: Router, the service executes the BCH-to-token step (and plain BCH runs as
 // before); Manual, every step is signed in the user's own wallets. The choice keeps its position on plain BCH.
 export const RouterSelector = () => {
   const t = useTranslations('automatic')
@@ -43,7 +43,7 @@ export const RouterSelector = () => {
   return routerAvailable ? selector : <Tooltip content={t('routerUnavailable')}>{selector}</Tooltip>
 }
 
-// What the Router does for the user, shown under the selector while it converts to PUSD
+// What the Router does for the user, shown under the selector while it converts to a token
 // (plain BCH has no second transaction to talk about).
 export const RouterHint = () => {
   const t = useTranslations('automatic')
@@ -157,7 +157,8 @@ export const BchDestinationMenu = () => {
 export const DestinationAddressInput = () => {
   const t = useTranslations('automatic')
   const id = useId()
-  const { pasteAllowed, automatic, pastedProblem } = useAutomaticBridge()
+  const { pasteAllowed, automatic, pastedProblem, token } = useAutomaticBridge()
+  const ticker = { ticker: token?.ticker ?? 'BCH' }
   const value = automaticPreference(state => state.recipient)
   const setRecipient = automaticPreference(state => state.setRecipient)
   const open = usePasteField(state => state.open)
@@ -170,7 +171,7 @@ export const DestinationAddressInput = () => {
   }
   return (
     <div className="bridge-auto-recipient">
-      <label htmlFor={id}>{t(automatic ? 'recipient' : 'recipientBch')}</label>
+      <label htmlFor={id}>{t(automatic ? 'recipient' : 'recipientBch', ticker)}</label>
       <div className="bridge-paste-field">
         <Input
           id={id}
@@ -189,10 +190,10 @@ export const DestinationAddressInput = () => {
       </div>
       {pastedProblem ? (
         <p id={`${id}-error`} className="bridge-paste-error" role="alert">
-          {t(pastedProblem === 'notTokenAware' ? 'addressNotTokenAware' : automatic ? 'addressInvalidToken' : 'addressInvalid')}
+          {t(pastedProblem === 'notTokenAware' ? 'addressNotTokenAware' : automatic ? 'addressInvalidToken' : 'addressInvalid', ticker)}
         </p>
       ) : (
-        <p className="bridge-input-meta">{t(automatic ? 'pasteRecipient' : 'pasteRecipientBch')}</p>
+        <p className="bridge-input-meta">{t(automatic ? 'pasteRecipient' : 'pasteRecipientBch', ticker)}</p>
       )}
     </div>
   )
