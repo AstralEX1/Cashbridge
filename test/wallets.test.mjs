@@ -432,7 +432,7 @@ test('the source badge shows a connect action while disconnected and a short add
   controls.account = account()
   const connected = render(BridgeWalletBadge, { kind: 'other' })
   assert.match(connected.html, /0x1111…1111/)
-  assert.match(connected.html, /bridge-wallet-dot/)
+  assert.match(connected.html, /<img[^>]+src="\/networks\/eth\.svg"/)
   assert.match(connected.html, /Copy|copy/)
   assert.match(connected.html, /etherscan.io/)
   assert.doesNotMatch(connected.html, /Connect wallet/)
@@ -476,7 +476,7 @@ test('disconnecting one provider keeps another provider on the same chain usable
 test('the BCH badge shows the connected destination and removes the connect action', () => {
   controls.bch = { state: 'connected', binding: { cashAddress: 'bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a' } }
   const { html } = render(BridgeWalletBadge, { kind: 'bch' })
-  assert.match(html, /bridge-wallet-dot/)
+  assert.match(html, /<img[^>]+src="\/networks\/bch\.svg"/)
   assert.match(html, /qpm2qs…dx6a/)
   assert.doesNotMatch(html, /Connect BCH wallet/)
 })
