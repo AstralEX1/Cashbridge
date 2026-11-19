@@ -154,6 +154,22 @@ test('an explorer that is down, rate-limited or failing hands the call to the ne
   assert.equal(body.data[btc].address.balance, 12, 'the third explorer answered')
 })
 
+test('a CDN block page is the explorer turning us away, so the next explorer is asked', async () => {
+  const blocked = () => new Response('<!DOCTYPE html>\n<html class="no-js" lang="en-US"><title>Attention Required! | Cloudflare</title></html>', { status: 403, headers: { 'content-type': 'text/html' } })
+  upstreams({
+    [`${DOGE1}/tx/${hashA}`]: blocked(),
+    [`https://doge2.trezor.io/api/v2/tx/${hashA}`]: json({ txid: hashA, blockHeight: 5_000_001, vout: [] })
+  })
+  const { status, body } = await call(['dogecoin', 'dashboards', 'transaction', hashA])
+  assert.equal(status, 200)
+  assert.equal(body.data[hashA].transaction.block_id, 5_000_001)
+
+  upstreams(Object.fromEntries(['doge1', 'doge2', 'doge3'].map(h => [`https://${h}.trezor.io/api/v2/tx/${hashA}`, blocked()])))
+  const failed = await call(['dogecoin', 'dashboards', 'transaction', hashA])
+  assert.equal(failed.status, 502, 'every explorer blocking us is an outage, not a bad request')
+  assert.doesNotMatch(JSON.stringify(failed.body), /DOCTYPE/)
+})
+
 test('every explorer failing is a 502 and a refused request is a 400 that stops at the first explorer', async () => {
   upstreams({ ...Object.fromEntries(['doge1', 'doge2', 'doge3'].flatMap(h => [[`https://${h}.trezor.io/api/v2/address/${doge}?details=basic`, down()], [`https://${h}.trezor.io/api/v2/utxo/${doge}`, down()]])) })
   const failed = await call(['dogecoin', 'dashboards', 'address', doge])

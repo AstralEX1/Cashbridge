@@ -49,8 +49,11 @@ async function ask(url: string, init?: RequestInit): Promise<string | null> {
   const text = await res.text()
   if (res.ok) return text
   if (res.status === 404) return null
-  if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) throw new Rejected(text.slice(0, 300) || `HTTP ${res.status}`)
-  throw new Error(`${url} answered ${res.status}`)
+  // An HTML page is the explorer's CDN turning this server away (a Cloudflare block page), not the
+  // explorer judging the request, so the next explorer may still answer.
+  const page = /^\s*</.test(text) || !!res.headers.get('content-type')?.includes('text/html')
+  if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429 && !page) throw new Rejected(text.slice(0, 300) || `HTTP ${res.status}`)
+  throw new Error(`${url} answered ${res.status}${page ? ' with an HTML page' : ''}`)
 }
 
 const askJson = async (url: string, init?: RequestInit) => {
