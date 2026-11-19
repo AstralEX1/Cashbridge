@@ -26,7 +26,8 @@ export const DOCS_SECTIONS: DocsSection[] = [
     pages: [
       { href: '/docs/wallets', title: 'Wallets' },
       { href: '/docs/fees', title: 'Fees and limits' },
-      { href: '/docs/security', title: 'Security and custody' }
+      { href: '/docs/security', title: 'Security and custody' },
+      { href: '/docs/agents', title: 'AI agents (MCP)' }
     ]
   },
   {
