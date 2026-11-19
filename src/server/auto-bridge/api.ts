@@ -7,7 +7,7 @@ import { isSameOrigin } from '@/lib/same-origin'
 import { BCH_DUST_THRESHOLD, checkInbound, type InboundAddress } from '@/lib/thorchain-deposit'
 import { REFUND_FEE_CAP } from '@/lib/router-contract'
 import { OrderError, orderCategory, positiveAmount, type OrderIntent } from '@/server/auto-bridge/types'
-import type { SaleIntent } from '@/lib/auto-bridge-contract'
+import { SALE_KEYS, type SaleIntent } from '@/lib/auto-bridge-contract'
 import type { OrderStore } from '@/server/auto-bridge/store'
 
 type Service = {
@@ -18,7 +18,6 @@ type Service = {
   inbound?: () => Promise<InboundAddress[]>
   admit?: () => boolean
 }
-const SALE_KEYS = ['category', 'tokenAmount', 'buyAsset', 'destination', 'memo', 'vaultAddress'] as const
 const headers = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }
 const reply = (body: unknown, status = 200) => NextResponse.json(body, { status, headers })
 const errorReply = (error: unknown) =>
