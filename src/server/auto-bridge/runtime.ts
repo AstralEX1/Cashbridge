@@ -2,7 +2,7 @@ import { loadConfig, readCredential } from '@/server/auto-bridge/config'
 import { OrderStore } from '@/server/auto-bridge/store'
 
 export async function runWorker() {
-  const [{ WorkerWallet }, { BchGateway }, { processOrder, reasonOf }] = await Promise.all([
+  const [{ WorkerWallet }, { BchGateway }, { processOrder, processSale, reasonOf }] = await Promise.all([
     import('@/server/auto-bridge/wallet'),
     import('@/server/auto-bridge/gateway'),
     import('@/server/auto-bridge/worker')
@@ -10,14 +10,19 @@ export async function runWorker() {
   const config = loadConfig()
   const wallet = new WorkerWallet(readCredential(process.env.AUTO_BRIDGE_KEY_FILE, true))
   if (wallet.xpub !== config.xpub) throw new Error('Worker key does not match the deposit wallet')
-  const orders = new OrderStore(config.database, config.xpub, config.limits, config.maxWaitMs, config.guardFile, config.contractOrders),
+  const orders = new OrderStore(config.database, config.xpub, config.limits, config.maxWaitMs, config.guardFile, config.contractOrders, config.saleOrders),
     gateway = new BchGateway()
-  const { startOrderServer } = await import('@/server/auto-bridge/http')
+  const { startOrderServer, socketPath } = await import('@/server/auto-bridge/http')
   const { quoteToken } = await import('@/lib/cauldron')
-  const server = await startOrderServer(orders, async (amount, category) => {
-    await gateway.assertReady()
-    return quoteToken({ category, side: 'buy', amount })
-  })
+  const server = await startOrderServer(
+    orders,
+    async (amount, category, side = 'buy') => {
+      await gateway.assertReady()
+      return quoteToken({ category, side, amount })
+    },
+    socketPath(),
+    () => gateway.inbound()
+  )
   let stopping = false
   const stop = () => {
     stopping = true
@@ -42,7 +47,7 @@ export async function runWorker() {
       for (const order of orders.nextWork()) {
         if (stopping) break
         try {
-          await processOrder(orders, gateway, wallet, order, config)
+          await (order.sale ? processSale : processOrder)(orders, gateway, wallet, order, config)
         } catch (error) {
           console.warn('Order observation unavailable; retrying on the next pass')
           console.warn(`Order ${order.id.slice(0, 8)} observation failed: ${reasonOf(error)}`)

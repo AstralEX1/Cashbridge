@@ -3,8 +3,9 @@ import type { TxStatusResponse } from '@/lib/api'
 import { checkOutbound, decodeTx, isTxid, normalizeTxid, opReturnText, txidOf } from '@/lib/bch'
 import { inboundMatchesBinding, interpretTxStatus } from '@/lib/bridge'
 import { BroadcastRejected, buildTokenTrade, type BuildIntent, type BuildResult } from '@/lib/cauldron'
+import { checkInbound, type InboundAddress } from '@/lib/thorchain-deposit'
 import { OrderStore } from '@/server/auto-bridge/store'
-import { isTerminal, orderCategory, type Attempt, type Order } from '@/server/auto-bridge/types'
+import { isTerminal, orderCategory, type Attempt, type Order, type SaleCoin } from '@/server/auto-bridge/types'
 import { orderUnlockBytes, WorkerWallet } from '@/server/auto-bridge/wallet'
 import { sourceIdFromMemo, sourceTransactionId, sameSourceTransaction } from '@/lib/source-transaction'
 
@@ -16,6 +17,8 @@ export interface Gateway {
   thorStatus(inbound: string): Promise<TxStatusResponse | undefined>
   observe(txid: string): Promise<{ seen: boolean; confirmations: number }>
   broadcast(attempt: Attempt): Promise<void>
+  // THORNode's inbound addresses; sale orders deposit only while their vault is current and trading is open.
+  inbound?(): Promise<InboundAddress[]>
 }
 export interface Policy {
   minConfirmations: number
@@ -90,15 +93,14 @@ export const reasonOf = (error: unknown) => (error instanceof Error ? error.mess
 // Definite refusals of a resent attempt, each in its own pass, before it counts as rejected.
 export const FINAL_REFUSALS = 3
 
-async function submit(store: OrderStore, gateway: Gateway, order: Order, attempt: Attempt, clock: () => number) {
+// Broadcasts saved bytes and records what the network said: accepted, unknown, or (finally) rejected.
+async function send(store: OrderStore, gateway: Gateway, attempt: Attempt): Promise<Attempt['status']> {
   // Durable before the first network write: a crash here must leave acceptance unknown.
   const firstSend = store.beginBroadcast(attempt.txid)
   try {
     await gateway.broadcast(attempt)
     store.attemptStatus(attempt.txid, 'accepted')
-    const current = store.get(order.id)!
-    if (isTerminal(current.state)) return
-    store.update(order.id, current.version, { state: 'submitted', payoutTxid: attempt.txid, error: undefined }, clock())
+    return 'accepted'
   } catch (error) {
     // After a lost first answer one refusal proves nothing (a node may have taken it meanwhile), but
     // every RPC refusing the same bytes several times running means no node holds them: the attempt
@@ -106,8 +108,17 @@ async function submit(store: OrderStore, gateway: Gateway, order: Order, attempt
     const refused = error instanceof BroadcastRejected
     const rejected = refused && (firstSend || store.noteRefusal(attempt.txid) >= FINAL_REFUSALS)
     store.attemptStatus(attempt.txid, rejected ? 'rejected' : 'unknown')
-    const current = store.get(order.id)!
-    if (isTerminal(current.state)) return
+    return rejected ? 'rejected' : 'unknown'
+  }
+}
+
+async function submit(store: OrderStore, gateway: Gateway, order: Order, attempt: Attempt, clock: () => number) {
+  const status = await send(store, gateway, attempt)
+  const current = store.get(order.id)!
+  if (isTerminal(current.state)) return
+  if (status === 'accepted') store.update(order.id, current.version, { state: 'submitted', payoutTxid: attempt.txid, error: undefined }, clock())
+  else {
+    const rejected = status === 'rejected'
     store.update(
       order.id,
       current.version,
@@ -393,4 +404,191 @@ export async function observeDeposit(store: OrderStore, gateway: Gateway, origin
     }
   }
   store.update(order.id, order.version, { observedFunding: observed }, now)
+}
+
+// --- Sale orders (back from BCH, contracts/router-sale.cash) ------------------------------------------------
+// The customer sends the tokens to the order's contract. The Router sells them on Cauldron back into the contract and
+// deposits that BCH, alone, to THORChain's vault with the order memo; both are signed and saved before either is sent.
+// Anything else at the contract (a second coin, a THORChain refund, coins after the deadline) goes back to the customer.
+
+export type SaleBuilder = (order: Order) => Promise<{ build: BuildResult; intent: BuildIntent }>
+
+export const buildSaleTrade: SaleBuilder = async order => {
+  const [coin] = order.funding as SaleCoin[]
+  return buildTokenTrade({
+    category: order.sale!.category,
+    side: 'sell',
+    funding: [{ txid: coin.txid, vout: coin.vout, value: coin.value, token: { category: coin.token!.category, amount: coin.token!.amount } }],
+    lockingBytecode: order.binding.lockingBytecode,
+    tokenAddress: order.binding.tokenAddress,
+    cashAddress: order.binding.cashAddress,
+    sell: BigInt(coin.token!.amount),
+    minOutput: BigInt(order.minPusd),
+    ownUnlockBytes: orderUnlockBytes(order)
+  })
+}
+
+// The unspent coins at the contract, as the node reports them (a coin spent in its mempool is not listed).
+async function contractCoins(gateway: Gateway, order: Order): Promise<SaleCoin[]> {
+  const coins: SaleCoin[] = []
+  for (const id of new Set((await gateway.history(order.binding.lockingBytecode)).map(normalizeTxid))) {
+    if (!isTxid(id)) continue
+    const hex = await gateway.raw(id)
+    if (!hex) throw new Error('Deposit history is incomplete')
+    if (txidOf(hex) !== id) throw new Error('BCH transaction hash mismatch')
+    const tx = decodeTx(hex)
+    for (let vout = 0; vout < tx.outputs.length; vout++) {
+      if (binToHex(tx.outputs[vout].lockingBytecode) !== order.binding.lockingBytecode) continue
+      const coin = await gateway.coin(id, vout)
+      if (!coin) continue
+      if (!binsAreEqual(coin.output.lockingBytecode, tx.outputs[vout].lockingBytecode) || coin.output.valueSatoshis !== tx.outputs[vout].valueSatoshis)
+        throw new Error('Deposit UTXO does not match the raw transaction')
+      const token = coin.output.token
+      coins.push({
+        txid: id,
+        vout,
+        value: coin.output.valueSatoshis.toString(),
+        confirmations: coin.confirmations,
+        unspent: true,
+        ...(token && {
+          token: {
+            category: binToHex(token.category),
+            amount: token.amount.toString(),
+            ...(token.nft && { nft: { capability: token.nft.capability, commitment: binToHex(token.nft.commitment) } })
+          }
+        })
+      })
+    }
+  }
+  return coins
+}
+
+// The fee rate for the deposit while THORChain takes BCH at the order's vault and pays the asked chain; else undefined.
+async function depositFeeRate(gateway: Gateway, order: Order) {
+  try {
+    const inbounds = await gateway.inbound?.()
+    return inbounds ? checkInbound(inbounds, order.sale!.vaultAddress, order.sale!.buyAsset.split('.')[0].toUpperCase()).feeRate : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export async function processSale(
+  store: OrderStore,
+  gateway: Gateway,
+  signer: WorkerWallet,
+  original: Order,
+  policy: Policy,
+  build: SaleBuilder = buildSaleTrade,
+  clock: () => number = Date.now
+) {
+  store.assertWritable()
+  let order = store.get(original.id)
+  if (!order?.sale) return
+  const coins = await contractCoins(gateway, order)
+  const set = (patch: Parameters<OrderStore['update']>[2]) => {
+    store.update(order!.id, order!.version, patch, clock())
+    order = store.get(order!.id)!
+  }
+  set({ observedFunding: coins })
+  const attempts = store.attempts(order.id)
+  const seen = new Map<string, { seen: boolean; confirmations: number }>()
+  for (const attempt of attempts) {
+    const observed = await gateway.observe(attempt.txid)
+    if (!observed.seen) continue
+    seen.set(attempt.txid, observed)
+    if (attempt.status !== 'accepted') store.attemptStatus(attempt.txid, 'accepted')
+  }
+  const terminal = isTerminal(order.state)
+  const progress = (patch: Parameters<OrderStore['update']>[2]) => !terminal && set(patch)
+
+  // The coins back to the customer, resending the same give-back while it covers exactly these coins.
+  const giveBack = async (error?: string) => {
+    const attempt = signer.signGiveBack(order!, coins)
+    const prior = attempts.find(previous => previous.txid === attempt.txid)
+    if (!prior && !store.saveAttempt(order!, attempt, clock())) return
+    order = store.get(order!.id)!
+    const status = await send(store, gateway, prior ?? attempt)
+    progress({ state: status === 'rejected' ? 'retrying' : 'submitted', error: error ?? 'Returning the coins to the customer.' })
+  }
+
+  const deposit = attempts.find(attempt => attempt.kind === 'deposit' && seen.has(attempt.txid))
+  if (deposit) {
+    // THORChain has the BCH; what comes back to the contract is its refund.
+    set({ payoutTxid: deposit.txid, observation: { txid: deposit.txid, ...seen.get(deposit.txid)! } })
+    if (coins.length) return giveBack('THORChain returned the BCH; sending it back to the customer.')
+    // shortcut: THORNode's status only decides when the order stops; the page proves the payout on the destination chain.
+    const status = await gateway.thorStatus(deposit.txid).catch(() => undefined)
+    const outs = status?.out_txs ?? []
+    const settled = status?.stages?.swap_status?.pending !== true
+    const memo = (prefix: string) => outs.some(out => out.memo?.toUpperCase().startsWith(prefix))
+    if (settled && memo('OUT:')) progress({ state: 'completed', error: undefined })
+    else if (settled && memo('REFUND:') && !(status?.planned_out_txs ?? []).some(out => !out.refund) && attempts.some(a => a.kind === 'refund' && seen.has(a.txid)))
+      progress({ state: 'refunded', error: undefined })
+    else progress({ state: 'streaming', error: undefined })
+    return
+  }
+
+  const sale = [...attempts].reverse().find(attempt => attempt.kind === 'swap' && attempt.status !== 'rejected')
+  const child = sale && attempts.find(attempt => attempt.kind === 'deposit' && attempt.parent === sale.txid)
+  if (sale && seen.has(sale.txid)) {
+    // Sold: deposit that BCH while THORChain still takes it at the order's vault, else give it back.
+    const feeRate = terminal ? undefined : await depositFeeRate(gateway, order)
+    if (feeRate === undefined) return coins.length ? giveBack('THORChain is not taking the deposit; returning the BCH.') : undefined
+    let next = child
+    if (!next) {
+      // Signed with the sale, unless the worker stopped between saving the two.
+      next = signer.signDeposit(order, sale, feeRate)
+      if (!store.saveAttempt(order, next, clock())) return
+      order = store.get(order.id)!
+    }
+    await send(store, gateway, next)
+    progress({ state: 'submitted', payoutTxid: next.txid, error: undefined })
+    return
+  }
+  if (sale && !terminal) {
+    if (await conflicted(gateway, order, sale)) {
+      store.attemptStatus(sale.txid, 'rejected', true)
+      if (child) store.attemptStatus(child.txid, 'rejected', true)
+      progress({ state: 'retrying', error: 'A pool input was spent by another trade; rebuilding the sale.' })
+      return
+    }
+    if ((await send(store, gateway, sale)) !== 'rejected' && child) await send(store, gateway, child)
+    return
+  }
+
+  const returned = attempts.find(attempt => attempt.kind === 'refund' && seen.has(attempt.txid))
+  if (!coins.length) {
+    // Nothing left at the contract: given back by the Router or, after the refund time, by anyone.
+    if (returned || order.funding.length) progress({ state: returned && seen.get(returned.txid)!.confirmations < 1 ? 'submitted' : 'refunded', error: undefined })
+    return
+  }
+  if (terminal) return giveBack()
+
+  const now = clock()
+  if (!order.receivedAt) set({ receivedAt: now, deadline: now + Math.min(order.maxWaitMs, policy.maxWaitMs) })
+  set({ funding: coins })
+  const [coin] = coins
+  const sellable = coins.length === 1 && coin.token?.category === order.sale.category && !coin.token.nft && BigInt(coin.token.amount) >= BigInt(order.sale.tokenAmount)
+  const feeRate = sellable && now < order.deadline! ? await depositFeeRate(gateway, order) : undefined
+  if (feeRate === undefined) return giveBack(sellable && now < order.deadline! ? 'THORChain is not taking BCH at this vault; returning the tokens.' : undefined)
+  try {
+    const trade = await build(order)
+    const { reviewBuild, sourcesOf } = await import('@/lib/cauldron')
+    const reviewed = reviewBuild(trade.build, { ...trade.intent, lockingBytecode: order.binding.lockingBytecode, side: 'sell', minOutput: BigInt(order.minPusd) })
+    await assertInputsLive(gateway, reviewed.unsignedHex, sourcesOf(reviewed))
+    const sold = signer.signSale(order, trade.build)
+    const deposited = signer.signDeposit(order, sold, feeRate)
+    if (clock() >= order.deadline!) return giveBack()
+    if (!store.saveAttempt(order, sold, now)) return
+    order = store.get(order.id)!
+    if (!store.saveAttempt(order, deposited, now)) return
+    order = store.get(order.id)!
+    if ((await send(store, gateway, sold)) === 'rejected') return progress({ state: 'retrying', error: 'The sale was rejected; rebuilding it.' })
+    await send(store, gateway, deposited)
+    progress({ state: 'submitted', payoutTxid: deposited.txid, error: undefined })
+  } catch (error) {
+    console.warn(`Order ${order.id.slice(0, 8)} sale attempt failed: ${reasonOf(error)}`)
+    progress({ state: 'retrying', error: 'A sale meeting the original minimum is unavailable; retrying before the deadline, then the tokens go back.' })
+  }
 }

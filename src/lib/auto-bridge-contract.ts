@@ -7,16 +7,30 @@ export interface AutomaticSource {
   amount: string
   address: string
 }
+// A transfer back from BCH: the customer sends `tokenAmount` of the token to the order's sale contract, and the
+// Router sells it and pays the BCH to THORChain's vault with `memo`, which swaps it to `buyAsset` for `destination`.
+export interface SaleIntent {
+  category: string
+  tokenAmount: string
+  buyAsset: string
+  destination: string
+  memo: string
+  vaultAddress: string
+}
 export interface OrderIntent {
+  // The customer's BCH address. For a sale it is also where unsold tokens or returned BCH go, equal to the refund address.
   recipientAddress: string
   refundAddress: string
+  // The BCH the first leg brings: THORChain's payout, or for a sale what selling the tokens is quoted at.
   expectedBchSats: string
   // The Cauldron token the Router buys (hex category); PUSD when absent.
   category?: string
   source?: AutomaticSource
+  sale?: SaleIntent
 }
 export interface Settlement {
-  kind: 'swap' | 'refund'
+  // A sale settles with its THORChain deposit, or a refund of the coins.
+  kind: 'swap' | 'refund' | 'deposit'
   txid: string
   seen: boolean
   confirmations: number
@@ -55,7 +69,7 @@ export interface PublicOrder extends OrderIntent {
   recoveryRequired?: boolean
   recoverySats?: string
   error?: string
-  attempts: { txid: string; kind: 'swap' | 'refund'; pusdOut: string; status: 'signed' | 'unknown' | 'rejected' | 'accepted' }[]
+  attempts: { txid: string; kind: 'swap' | 'refund' | 'deposit'; pusdOut: string; status: 'signed' | 'unknown' | 'rejected' | 'accepted' }[]
 }
 export const isTerminal = (state: OrderState) => ['completed', 'refunded', 'source_refunded', 'manual_review'].includes(state)
 // The Router buys any Cauldron token on a forward transfer.

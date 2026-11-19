@@ -3,6 +3,7 @@ import { normalizeTxid, txidOf, WsRpc } from '@/lib/bch'
 import { toBaseUnits } from '@/lib/bridge'
 import { BroadcastRejected, BroadcastUnknown, broadcastViaCauldron } from '@/lib/cauldron'
 import type { TxStatusResponse } from '@/lib/api'
+import type { InboundAddress } from '@/lib/thorchain-deposit'
 import type { Attempt } from '@/server/auto-bridge/types'
 import type { Gateway } from '@/server/auto-bridge/worker'
 import { readCredential } from '@/server/auto-bridge/config'
@@ -212,6 +213,13 @@ export class BchGateway implements Gateway {
     if (response.status === 404) return undefined
     if (!response.ok) throw new Error('THORChain status unavailable')
     return response.json()
+  }
+  async inbound(): Promise<InboundAddress[]> {
+    const base = this.thornode.toString().replace(/\/?$/, '/')
+    const response = await fetch(new URL('thorchain/inbound_addresses', base), { signal: AbortSignal.timeout(15000), cache: 'no-store' })
+    const inbounds = response.ok ? await response.json() : undefined
+    if (!Array.isArray(inbounds)) throw new Error('THORChain inbound addresses unavailable')
+    return inbounds
   }
   async observe(id: string) {
     try {

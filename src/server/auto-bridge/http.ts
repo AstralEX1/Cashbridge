@@ -6,10 +6,16 @@ import { timingSafeEqual } from 'node:crypto'
 import { NextRequest } from 'next/server'
 import { attachSource, createOrder, getOrder } from '@/server/auto-bridge/api'
 import type { OrderStore } from '@/server/auto-bridge/store'
+import type { InboundAddress } from '@/lib/thorchain-deposit'
 
 export const socketPath = () => process.env.AUTO_BRIDGE_SOCKET ?? '/run/cashbridge/worker.sock'
 
-export async function startOrderServer(store: OrderStore, quote: (amount: bigint, category: string) => Promise<{ output: bigint }>, path = socketPath()) {
+export async function startOrderServer(
+  store: OrderStore,
+  quote: (amount: bigint, category: string, side?: 'buy' | 'sell') => Promise<{ output: bigint }>,
+  path = socketPath(),
+  inbound?: () => Promise<InboundAddress[]>
+) {
   if (!isAbsolute(path)) throw new Error('Worker socket path must be absolute')
   mkdirSync(dirname(path), { recursive: true, mode: 0o750 })
   if (existsSync(path)) {
@@ -32,7 +38,7 @@ export async function startOrderServer(store: OrderStore, quote: (amount: bigint
       })
     })
   }
-  const service = { store, quote }
+  const service = { store, quote, inbound }
   const server = createServer(async (incoming, outgoing) => {
     try {
       const serviceToken = process.env.AUTO_BRIDGE_SERVICE_TOKEN
