@@ -24,25 +24,25 @@
     { "name": "expire", "inputs": [] }
   ],
   "bytecode": "OP_6 OP_PICK OP_0 OP_NUMEQUAL OP_IF OP_7 OP_ROLL OP_SWAP OP_CHECKSIGVERIFY OP_INPUTINDEX OP_DUP OP_OUTPUTBYTECODE OP_ROT OP_EQUALVERIFY OP_DUP OP_OUTPUTTOKENCATEGORY OP_3 OP_ROLL OP_EQUALVERIFY OP_OUTPUTTOKENAMOUNT OP_ROT OP_GREATERTHANOREQUAL OP_NIP OP_NIP OP_NIP OP_ELSE OP_6 OP_PICK OP_1 OP_NUMEQUAL OP_IF OP_7 OP_ROLL OP_SWAP OP_CHECKSIGVERIFY OP_INPUTINDEX OP_DUP OP_OUTPUTBYTECODE OP_3 OP_ROLL OP_EQUALVERIFY OP_DUP OP_OUTPUTTOKENCATEGORY OP_0 OP_EQUALVERIFY OP_DUP OP_OUTPUTVALUE d007 OP_ADD OP_SWAP OP_UTXOVALUE OP_GREATERTHANOREQUAL OP_VERIFY OP_2DROP OP_2DROP OP_DROP OP_1 OP_ELSE OP_6 OP_ROLL OP_2 OP_NUMEQUALVERIFY OP_5 OP_ROLL OP_CHECKLOCKTIMEVERIFY OP_DROP OP_INPUTINDEX OP_DUP OP_OUTPUTBYTECODE OP_4 OP_ROLL OP_EQUALVERIFY OP_DUP OP_OUTPUTTOKENCATEGORY OP_0 OP_EQUALVERIFY OP_DUP OP_OUTPUTVALUE d007 OP_ADD OP_SWAP OP_UTXOVALUE OP_GREATERTHANOREQUAL OP_VERIFY OP_2DROP OP_2DROP OP_1 OP_ENDIF OP_ENDIF",
-  "source": "pragma cashscript ^0.14.0;\n\n// Escrow for one Cashbridge Router order.\n//\n// The order's THORChain swap pays its BCH here. Nobody, the Router included, can move a coin anywhere but to\n// the customer: as the ordered CashToken (at least the quoted minimum) or back as BCH. Each check looks at the output with the\n// same index as the coin being spent, so one output can never settle two coins.\ncontract RouterOrder(\n    // The Router's public key for this order.\n    pubkey router,\n    // Locking bytecode of the customer's token address.\n    bytes payoutLock,\n    // Locking bytecode of the customer's BCH fallback address.\n    bytes fallbackLock,\n    // The ordered token's category, in the byte order the VM uses (explorers show it reversed).\n    bytes32 token,\n    // The quoted minimum, in the token's base units.\n    int minTokens,\n    // Unix time after which anyone may send the BCH back (compared with the chain's median time).\n    int refundTime\n) {\n    // The Router buys the token with the coin on Cauldron; the trade must pay the customer at least the quoted minimum.\n    function convert(sig routerSig) {\n        require(checkSig(routerSig, router));\n        int i = this.activeInputIndex;\n        require(tx.outputs[i].lockingBytecode == payoutLock);\n        require(tx.outputs[i].tokenCategory == token);\n        require(tx.outputs[i].tokenAmount >= minTokens);\n    }\n\n    // The Router gives up on converting and returns the BCH, keeping at most 2,000 sats for the miner.\n    function giveBack(sig routerSig) {\n        require(checkSig(routerSig, router));\n        int i = this.activeInputIndex;\n        require(tx.outputs[i].lockingBytecode == fallbackLock);\n        require(tx.outputs[i].tokenCategory == 0x);\n        require(tx.outputs[i].value + 2000 >= tx.inputs[i].value);\n    }\n\n    // Once the refund time has passed, anyone can return the BCH on the same terms, so a stopped Router\n    // cannot strand it.\n    function expire() {\n        require(tx.time >= refundTime);\n        int i = this.activeInputIndex;\n        require(tx.outputs[i].lockingBytecode == fallbackLock);\n        require(tx.outputs[i].tokenCategory == 0x);\n        require(tx.outputs[i].value + 2000 >= tx.inputs[i].value);\n    }\n}\n",
+  "source": "// SPDX-License-Identifier: MIT\n// Copyright (c) Cash Bridge\n\npragma cashscript ^0.14.0;\n\n// Escrow for one Cashbridge Router order.\n//\n// The order's THORChain swap pays its BCH here. Nobody, the Router included, can move a coin anywhere but to\n// the customer: as the ordered CashToken (at least the quoted minimum) or back as BCH. Each check looks at the output with the\n// same index as the coin being spent, so one output can never settle two coins.\ncontract RouterOrder(\n    // The Router's public key for this order.\n    pubkey router,\n    // Locking bytecode of the customer's token address.\n    bytes payoutLock,\n    // Locking bytecode of the customer's BCH fallback address.\n    bytes fallbackLock,\n    // The ordered token's category, in the byte order the VM uses (explorers show it reversed).\n    bytes32 token,\n    // The quoted minimum, in the token's base units.\n    int minTokens,\n    // Unix time after which anyone may send the BCH back (compared with the chain's median time).\n    int refundTime\n) {\n    // The Router buys the token with the coin on Cauldron; the trade must pay the customer at least the quoted minimum.\n    function convert(sig routerSig) {\n        require(checkSig(routerSig, router));\n        int i = this.activeInputIndex;\n        require(tx.outputs[i].lockingBytecode == payoutLock);\n        require(tx.outputs[i].tokenCategory == token);\n        require(tx.outputs[i].tokenAmount >= minTokens);\n    }\n\n    // The Router gives up on converting and returns the BCH, keeping at most 2,000 sats for the miner.\n    function giveBack(sig routerSig) {\n        require(checkSig(routerSig, router));\n        int i = this.activeInputIndex;\n        require(tx.outputs[i].lockingBytecode == fallbackLock);\n        require(tx.outputs[i].tokenCategory == 0x);\n        require(tx.outputs[i].value + 2000 >= tx.inputs[i].value);\n    }\n\n    // Once the refund time has passed, anyone can return the BCH on the same terms, so a stopped Router\n    // cannot strand it.\n    function expire() {\n        require(tx.time >= refundTime);\n        int i = this.activeInputIndex;\n        require(tx.outputs[i].lockingBytecode == fallbackLock);\n        require(tx.outputs[i].tokenCategory == 0x);\n        require(tx.outputs[i].value + 2000 >= tx.inputs[i].value);\n    }\n}\n",
   "fingerprint": "ed6be08c3d647cdc215ccdbdaf44d601b02d944dc96e00746e8fc20a75ebcb3d",
   "debug": {
     "bytecode": "5679009c63577a7cadc076cd7b8876d1537a88d37ba2777777675679519c63577a7cadc076cd537a8876d1008876cc02d007937cc6a2696d6d755167567a529d557ab175c076cd547a8876d1008876cc02d007937cc6a2696d6d516868",
-    "sourceMap": "23:4:29:5;;;;;24:25:24:34;;:36::42;:8::45:1;25:16:25:37:0;26:27:26:28;:16::45:1;:49::59:0;:8::61:1;27:27:27:28:0;:16::43:1;:47::52:0;;:8::54:1;28:16:28:41;:45::54:0;:8::56:1;23:36:29:5;;;:4;32::38::0;;;;;33:25:33:34;;:36::42;:8::45:1;34:16:34:37:0;35:27:35:28;:16::45:1;:49::61:0;;:8::63:1;36:27:36:28:0;:16::43:1;:47::49:0;:8::51:1;37:27:37:28:0;:16::35:1;:38::42:0;:16:::1;:56::57:0;:46::64:1;:16;:8::66;32:37:38:5;;;;:4;42::48::0;;;;43:27:43:37;;:8::39:1;;44:16:44:37:0;45:27:45:28;:16::45:1;:49::61:0;;:8::63:1;46:27:46:28:0;:16::43:1;:47::49:0;:8::51:1;47:27:47:28:0;:16::35:1;:38::42:0;:16:::1;:56::57:0;:46::64:1;:16;:8::66;42:22:48:5;;;8:0:49:1;",
+    "sourceMap": "26:4:32:5;;;;;27:25:27:34;;:36::42;:8::45:1;28:16:28:37:0;29:27:29:28;:16::45:1;:49::59:0;:8::61:1;30:27:30:28:0;:16::43:1;:47::52:0;;:8::54:1;31:16:31:41;:45::54:0;:8::56:1;26:36:32:5;;;:4;35::41::0;;;;;36:25:36:34;;:36::42;:8::45:1;37:16:37:37:0;38:27:38:28;:16::45:1;:49::61:0;;:8::63:1;39:27:39:28:0;:16::43:1;:47::49:0;:8::51:1;40:27:40:28:0;:16::35:1;:38::42:0;:16:::1;:56::57:0;:46::64:1;:16;:8::66;35:37:41:5;;;;:4;45::51::0;;;;46:27:46:37;;:8::39:1;;47:16:47:37:0;48:27:48:28;:16::45:1;:49::61:0;;:8::63:1;49:27:49:28:0;:16::43:1;:47::49:0;:8::51:1;50:27:50:28:0;:16::35:1;:38::42:0;:16:::1;:56::57:0;:46::64:1;:16;:8::66;45:22:51:5;;;11:0:52:1;",
     "logs": [],
     "requires": [
-      { "ip": 14, "line": 24 },
-      { "ip": 19, "line": 26 },
-      { "ip": 24, "line": 27 },
-      { "ip": 28, "line": 28 },
-      { "ip": 40, "line": 33 },
-      { "ip": 46, "line": 35 },
-      { "ip": 50, "line": 36 },
-      { "ip": 58, "line": 37 },
-      { "ip": 70, "line": 43 },
-      { "ip": 77, "line": 45 },
-      { "ip": 81, "line": 46 },
-      { "ip": 89, "line": 47 }
+      { "ip": 14, "line": 27 },
+      { "ip": 19, "line": 29 },
+      { "ip": 24, "line": 30 },
+      { "ip": 28, "line": 31 },
+      { "ip": 40, "line": 36 },
+      { "ip": 46, "line": 38 },
+      { "ip": 50, "line": 39 },
+      { "ip": 58, "line": 40 },
+      { "ip": 70, "line": 46 },
+      { "ip": 77, "line": 48 },
+      { "ip": 81, "line": 49 },
+      { "ip": 89, "line": 50 }
     ],
     "sourceTags": "22:24:sc"
   },
@@ -54,5 +54,5 @@
       "enforceLocktimeGuard": true
     }
   },
-  "updatedAt": "2026-11-19T05:07:43.023Z"
+  "updatedAt": "2026-11-19T07:12:32.611Z"
 }
