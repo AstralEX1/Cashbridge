@@ -7,6 +7,10 @@ export const ThorchainMark = ({ size = 20 }: { size?: number }) => (
   <img src="/providers/thorchain.svg" width={size} height={size} alt="THORChain" className="bridge-mark" />
 )
 
+export const NearMark = ({ size = 20 }: { size?: number }) => (
+  <img src="/providers/near.svg" width={size} height={size} alt="NEAR Intents" className="bridge-mark" />
+)
+
 // Cauldron's own logo (app.cauldron.quest favicon, see public/tokens/README.md).
 export const CauldronMark = ({ size = 20 }: { size?: number }) => (
   <img src="/providers/cauldron.png" width={size} height={size} alt="Cauldron" className="bridge-mark" />

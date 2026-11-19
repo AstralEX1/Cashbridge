@@ -7,6 +7,7 @@ import { referralHeaders } from '@/lib/referral'
 import { aggregatorApiUrl, BridgeConfig } from '@/config'
 import { addressToLockingBytecode } from '@/lib/bch'
 import { swapMemoPays } from '@/lib/bridge'
+import { isNearRoute } from '@/lib/near-intents'
 import { BelowMinimumError, minimumFromProviderErrors } from '@/lib/errors'
 import { sourceTransactionId } from '@/lib/source-transaction'
 
@@ -177,7 +178,8 @@ export const assertBridgeQuoteRequest = (json: Pick<QuoteRequest, 'buyAsset' | '
   if (!json.providers?.length || json.providers.some(p => p !== ProviderName.THORCHAIN)) throw new BridgeRouteError('Only the THORChain provider is supported')
 }
 
-// A returned route is only usable if it is still the bridge's: THORChain, trading exactly the asked
+// A returned route is only usable if it is still the bridge's: THORChain (or a NEAR Intents route this app built
+// itself, see near-intents.ts), trading exactly the asked
 // pair and (for an executable quote) paying the destination that was asked for.
 export const isBridgeRoute = (route: QuoteResponseRoute, request: Pick<QuoteRequest, 'sellAsset' | 'destinationAddress'> & { buyAsset?: string }) => {
   const reverse = isReverseBridgeRequest(request)
@@ -187,7 +189,7 @@ export const isBridgeRoute = (route: QuoteResponseRoute, request: Pick<QuoteRequ
     route.buyAsset?.toUpperCase() === buyAsset.toUpperCase() &&
     route.sellAsset?.toUpperCase() === request.sellAsset.toUpperCase() &&
     route.providers?.length === 1 &&
-    BridgeConfig.providers.includes(route.providers[0]) &&
+    (BridgeConfig.providers.includes(route.providers[0]) || isNearRoute(route)) &&
     (!request.destinationAddress ||
       (reverse
         ? route.destinationAddress?.toLowerCase() === request.destinationAddress.toLowerCase()

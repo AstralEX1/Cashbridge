@@ -21,7 +21,8 @@ import { BridgeConfig } from '@/config'
 import { useQuote } from '@/hooks/use-quote'
 import { useRates } from '@/hooks/use-rates'
 import { getMidgardActions, getTrack, getTxStatus } from '@/lib/api'
-import { checkUnspent, findThorchainOutbound, getTransactionState, historyIncludes, verifyThorchainOutbound } from '@/lib/bch'
+import { checkUnspent, findThorchainOutbound, getTransactionState, historyIncludes, verifyPayments, verifyThorchainOutbound } from '@/lib/bch'
+import { getNearStatus, interpretNearStatus, nearExplorerUrl } from '@/lib/near-intents'
 import { sourceTransactionId } from '@/lib/source-transaction'
 import { getTransferStatus } from '@/lib/transfer-status'
 import { firstLegFromChain, formatStepTime, type SourceReceipt, stepTime } from '@/lib/bridge-tracking'
@@ -50,6 +51,7 @@ import { formatAmount, formatMinutes, formatUsd, PUSD_LEG_SECONDS } from '@/lib/
 import { useSwapStore } from '@/store/swap-store'
 import {
   type BridgeOperation,
+  type NearLeg,
   type SwapTransaction,
   transactionStore,
   useSetTransactionDetails,
@@ -174,9 +176,43 @@ const sourceReceipt = async (tx: BridgeTx): Promise<SourceReceipt | undefined> =
   return { confirmations: Math.max(1, head - receipt.blockNumber + 1), failed: receipt.status === 0 }
 }
 
+// A NEAR Intents leg: 1Click's status names the BCH payout (there is no memo to find it by), and the chain decides
+// whether that payout reached the bound address with at least the quoted minimum.
+const syncNearFirstLeg = async (tx: BridgeTx, near: NearLeg, update: ReturnType<typeof useUpdateBridge>) => {
+  const op = tx.bridge
+  const [source, status] = await Promise.all([sourceReceipt(tx).catch(() => undefined), getNearStatus(near.depositAddress).catch(() => undefined)])
+  const view = status && interpretNearStatus(status)
+  const outbound = view?.kind === 'paid' ? await verifyPayments(view.txids, op.binding.lockingBytecode, BigInt(near.minAmountOut)).catch(() => undefined) : undefined
+  const fromChain = firstLegFromChain(op, { source, outbound })
+  const nearStatus = status?.status ?? near.status
+  if (fromChain) return update(tx.uid, () => ({ ...fromChain, near: { ...near, status: nearStatus } }))
+  if (!view) return
+  if (outbound?.kind === 'invalid') return update(tx.uid, () => ({ error: outbound.reason, near: { ...near, status: nearStatus } }))
+  if (view.kind === 'refunded')
+    return update(tx.uid, current => ({
+      stage: 'refunded',
+      near: { ...near, status: nearStatus },
+      refunds: [{ asset: tx.assetFrom.identifier, amount: view.amount ?? '0', pending: false }],
+      firstLeg: { ...current.firstLeg, result: 'refunded' }
+    }))
+  const error = view.kind === 'failed' ? view.reason : view.kind === 'pending' ? view.detail : undefined
+  if (nearStatus !== near.status || error !== op.error) update(tx.uid, () => ({ error, near: { ...near, status: nearStatus } }))
+}
+
+// The source transactions NEAR Intents has seen at a leg's deposit address: the deposit address is one-use, so
+// these are this operation's own, and a lost wallet answer recovers from them.
+const nearDeposits = async (near: NearLeg) =>
+  ((await getNearStatus(near.depositAddress)).swapDetails?.originChainTxHashes ?? []).map(t => t.hash).filter(Boolean)
+
+const syncUnknownFirstLeg = async (tx: BridgeTx, near: NearLeg, update: ReturnType<typeof useUpdateBridge>) => {
+  const [hash] = await nearDeposits(near)
+  if (hash) update(tx.uid, () => ({ stage: 'first_leg_pending', hash, error: undefined }))
+}
+
 const syncFirstLeg = async (tx: BridgeTx, update: ReturnType<typeof useUpdateBridge>, setDetails: ReturnType<typeof useSetTransactionDetails>) => {
   const op = tx.bridge
   if (!tx.hash) return
+  if (op.near) return syncNearFirstLeg(tx, op.near, update)
   let timing: Partial<BridgeOperation['firstLeg']> = {}
 
   // The chains decide: the source receipt on its own chain, and the BCH at the bound address
@@ -322,6 +358,9 @@ const BridgeSync = ({ tx }: { tx: BridgeTx }) => {
         return Date.now()
       }
       switch (tx.bridge.stage) {
+        case 'first_leg_unknown':
+          if (tx.bridge.near) await syncUnknownFirstLeg(tx, tx.bridge.near, update)
+          break
         case 'first_leg_pending':
           await syncFirstLeg(tx, update, setDetails)
           break
@@ -811,7 +850,7 @@ const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => 
   }
   // Each bar opens its step's transaction: the THORChain swap (followed through to the BCH
   // outbound on THORChain's explorer), then the token swap on the BCH explorer.
-  const bridgeHref = active.hash ? thorchainTxUrl(active.hash) : undefined
+  const bridgeHref = op.near ? nearExplorerUrl(op.near.depositAddress) : active.hash ? thorchainTxUrl(active.hash) : undefined
   const swapHref = op.secondLeg?.txid ? chainTxUrl(Chain.BitcoinCash, op.secondLeg.txid) : undefined
   const firstBar: FlowBar = firstDone
     ? { fill: 1, done: true, href: bridgeHref }
@@ -1063,8 +1102,13 @@ const UnknownFirstLeg = ({ tx }: { tx: BridgeTx }) => {
     if (!bare) return setError(t('unknown.badHash'))
     setChecking(true)
     try {
-      const status = await getTxStatus(bare)
-      if (!inboundMatchesBinding(status, tx.bridge.binding.lockingBytecode)) return setError(t('unknown.notOurs'))
+      if (tx.bridge.near) {
+        const seen = await nearDeposits(tx.bridge.near)
+        if (!seen.some(id => id.toLowerCase() === hash.trim().toLowerCase())) return setError(t('unknown.notOursNear'))
+      } else {
+        const status = await getTxStatus(bare)
+        if (!inboundMatchesBinding(status, tx.bridge.binding.lockingBytecode)) return setError(t('unknown.notOurs'))
+      }
       update(tx.uid, () => ({ stage: 'first_leg_pending', hash: hash.trim(), error: undefined }))
     } catch {
       setError(t('unknown.lookupFailed'))

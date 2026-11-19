@@ -14,7 +14,7 @@ import { InstantSwapDialog } from '@/components/swap/instant-swap-dialog'
 import { SwapDialog } from '@/components/swap/swap-dialog'
 import { useBalance } from '@/hooks/use-balance'
 import { useIsLimitSwapPaused, useIsMemolessHalted, useMimir } from '@/hooks/use-mimir'
-import { useQuote } from '@/hooks/use-quote'
+import { nearSlippageBps, useQuote } from '@/hooks/use-quote'
 import { useSimulation } from '@/hooks/use-simulation'
 import { useAssetFrom, useAssetTo, useSlippage, useSwap } from '@/hooks/use-swap'
 import { useConnectedAccount, useExternalWalletMode, useSetExternalWalletMode } from '@/hooks/use-wallets'
@@ -30,6 +30,7 @@ import { RouterUnavailable } from '@/components/swap/router-unavailable'
 import { RouterUnavailableError } from '@/lib/auto-bridge-client'
 import { addressToLockingBytecode } from '@/lib/bch'
 import { getQuotes } from '@/lib/api'
+import { getNearQuote, isNearRoute } from '@/lib/near-intents'
 import { USwapError } from '@tcswap/helpers'
 
 interface SwapButtonProps {
@@ -109,6 +110,23 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
       }
       const binding = destination.binding
       if (!binding) return
+      if (isNearRoute(quote)) {
+        // A fresh quote with a one-use deposit address, paying the bound wallet's plain address (1Click refuses z…)
+        // and refunding the source wallet.
+        const route = await getNearQuote({
+          sellAsset: assetFrom.identifier,
+          buyAsset: assetTo!.identifier,
+          sellAmount: valueFrom.toSignificant(),
+          sourceAddress: selectedAccount.address,
+          recipient: binding.cashAddress,
+          refundTo: selectedAccount.address,
+          dry: false,
+          slippageBps: nearSlippageBps(slippage)
+        })
+        if (!route) throw new Error(t('button.noValidQuotes'))
+        openDialog(SwapDialog, { provider, quote: route, binding, walletName: destination.pasted ? undefined : (bchWallet.walletName ?? undefined) })
+        return
+      }
       const quotes = await getQuotes({
         buyAsset: assetTo!.identifier,
         sellAsset: assetFrom.identifier,

@@ -157,8 +157,24 @@ export interface ReverseDetails {
   signing?: { inputs: { txid: string; vout: number }[]; sentAt: number }
 }
 
+// A leg carried by NEAR Intents instead of THORChain: the one-use deposit address its status is read by, and the
+// signed quote 1Click asks integrators to keep. Amounts are base units of the asset each side names.
+export interface NearLeg {
+  depositAddress: string
+  correlationId: string
+  signature: string
+  quotedAt: string
+  deadline?: string
+  amountIn: string
+  amountOut: string
+  minAmountOut: string
+  status?: string
+}
+
 export interface BridgeOperation {
   id: string
+  // Set when NEAR Intents carries the bridge leg; THORChain otherwise.
+  near?: NearLeg
   stage: BridgeStage
   // Absent on older (forward) operations.
   direction?: 'forward' | 'reverse'

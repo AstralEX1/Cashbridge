@@ -834,7 +834,7 @@
     "stage": {
       "first_leg_signing": "Waiting for your source wallet",
       "first_leg_unknown": "Source transaction status unknown",
-      "first_leg_pending": "THORChain swap to BCH in progress",
+      "first_leg_pending": "Bridge to BCH in progress",
       "bch_unconfirmed": "BCH received, waiting for confirmation",
       "bch_ready": "BCH received: ready for the token swap",
       "second_leg_signed": "Token swap signed",
@@ -842,7 +842,7 @@
       "second_leg_pending": "Token swap broadcast, waiting for confirmation",
       "completed": "Completed",
       "kept_bch": "Finished: you kept the BCH",
-      "refunded": "Refunded by THORChain",
+      "refunded": "Refunded to your source wallet",
       "failed": "Stopped"
     },
     "panel": {
@@ -864,6 +864,7 @@
       "dismissed": "Closed: no source transaction was sent",
       "badHash": "That is not a transaction hash.",
       "notOurs": "THORChain does not show that transaction as a BCH swap to your bound address.",
+      "notOursNear": "NEAR Intents has not seen that transaction at this transfer’s deposit address yet. Try again in a minute.",
       "lookupFailed": "Could not look the transaction up. Try again shortly."
     },
     "second": {
@@ -902,9 +903,11 @@
       "routeTransactions": "{count, plural, one {# transaction} other {# transactions}} to sign",
       "routeBridge": "1/2 · Bridge {from} → BCH",
       "routeBridgeDetail": "THORChain · sign now in your {chain} wallet · ≈ {minutes} min",
+      "routeBridgeDetailNear": "NEAR Intents · sign now in your {chain} wallet · ≈ {minutes} min",
       "routeSwap": "2/2 · Swap BCH → {ticker}",
       "routeSwapDetail": "Cauldron · sign in your BCH wallet once the BCH arrives · ≈ {minutes} min",
       "routeSingle": "Bridge {from} → BCH via THORChain, signed in your {chain} wallet.",
+      "routeSingleNear": "Bridge {from} → BCH via NEAR Intents, signed in your {chain} wallet.",
       "time": "Estimated time",
       "minimumReceived": "Minimum received",
       "gas": "Gas",
@@ -915,6 +918,8 @@
       "impactTotal": "Total price impact",
       "impactTooltip": "Value difference across the full route, including THORChain and any Cauldron swap fees and pool price impact. Gas is shown separately on Confirm.",
       "thorFee": "THORChain bridge fee",
+      "nearFee": "NEAR Intents fee",
+      "nearFeeIncluded": "In the rate",
       "cauldronFee": "Cauldron swap fee",
       "poolImpact": "Pool price impact",
       "learnFees": "Learn more about the fees",

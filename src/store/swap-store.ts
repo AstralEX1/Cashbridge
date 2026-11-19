@@ -30,7 +30,12 @@ export const INITIAL_CUSTOM_QUANTITY = 0
 // The reverse bridge pays out only where its arrival can be checked on that chain's own node.
 export const isReverseTargetAsset = (asset?: Asset) => isBridgeSellAsset(asset) && isPayoutChain(asset!.chain)
 
+// Which bridge carries the first leg: the better quote ('auto'), or the one the user picked.
+export type RouteChoice = 'auto' | 'thorchain' | 'near'
+
 interface SwapState {
+  routeChoice: RouteChoice
+  setRouteChoice: (choice: RouteChoice) => void
   // The BCH side of the bridge: native BCH (null) or a Cauldron token, bought or sold through Cauldron.
   bchToken: CauldronToken | null
   setBchToken: (token: CauldronToken | null) => void
@@ -60,6 +65,8 @@ interface SwapState {
 export const useSwapStore = create<SwapState>()(
   persist(
     (set, get) => ({
+      routeChoice: 'auto',
+      setRouteChoice: routeChoice => set({ routeChoice }),
       bchToken: PUSD_TOKEN,
       setBchToken: token => {
         if (token === null || isCauldronToken(token)) set({ bchToken: token })

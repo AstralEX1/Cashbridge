@@ -54,6 +54,8 @@ export const BridgeConfig = {
   // Transfers back from BCH through the Cashbridge Router's sale contract, which the Router admits with
   // AUTO_BRIDGE_SALE_ORDERS. On by default; NEXT_PUBLIC_ROUTER_SALES=false hides the option.
   routerSales: process.env.NEXT_PUBLIC_ROUTER_SALES !== 'false',
+  // NEAR Intents (1Click) quoted beside THORChain on manual forward transfers; 'false' leaves THORChain alone.
+  nearIntents: process.env.NEXT_PUBLIC_NEAR_INTENTS !== 'false',
   cauldronBroadcastUrl: process.env.NEXT_PUBLIC_CAULDRON_BROADCAST_URL || 'https://broadcast.cauldron.quest/broadcast',
   // Cauldron's public pool indexer: the PUSD pools the second leg trades against. Each pool a trade
   // picks is checked unspent on a Fulcrum server first, since the list can lag the chain.

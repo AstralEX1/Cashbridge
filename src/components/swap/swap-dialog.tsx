@@ -17,6 +17,7 @@ import { readableError } from '@/lib/errors'
 import { isHoudiniProvider, resolvePriceImpact } from '@/lib/swap-helpers'
 import { getUSwap } from '@/lib/wallets'
 import { isBridgeRoute } from '@/lib/api'
+import { isNearRoute, nearLegOf, submitNearDeposit } from '@/lib/near-intents'
 import { addressPaysScript, type BchBinding } from '@/lib/bch'
 import { toBaseUnits } from '@/lib/bridge'
 import { firstLegSeconds } from '@/lib/bridge-summary'
@@ -99,8 +100,10 @@ export const SwapDialog = ({ provider, quote: prepared, binding: destination, wa
       quotedBchSats = undefined
     }
 
+    const near = isNearRoute(quote) ? nearLegOf(quote) : undefined
     const broadcast = startBridgeFirstLeg({
       binding,
+      near,
       walletName: bchWalletName ?? undefined,
       quotedBchSats,
       destinationAsset: bchToken ? 'TOKEN' : 'BCH',
@@ -123,7 +126,8 @@ export const SwapDialog = ({ provider, quote: prepared, binding: destination, wa
 
     const toastId = toast.loading(t('toast.submittingTransaction'))
     broadcast.then(
-      () => {
+      hash => {
+        if (near) void submitNearDeposit(near.depositAddress, hash)
         // A hash exists: the swap is sent. Nothing after this point may hand Confirm back, so a
         // failure tidying the form is logged, never routed to the submission-error path below.
         toast.success(t('toast.transactionSubmitted'), { id: toastId })
