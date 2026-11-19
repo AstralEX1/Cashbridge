@@ -8,3 +8,4 @@ belong to their owners; no licence is stated at the source.
   (BCMR record via https://bcmr.paytaca.com/api/tokens/2469acc5afa4b10cb5b5c04afb89c3a3ffd61c5da9c01e26d00951cae2a02544/).
 - `../providers/cauldron.png`: Cauldron DEX, the favicon of https://app.cauldron.quest (https://app.cauldron.quest/favicon.png),
   fetched on 2026-10-27.
+- `usdc.svg`, `usdt.svg`: plain coin marks drawn here for the scanner (each issuer's colour and symbol), not the issuers' own artwork.

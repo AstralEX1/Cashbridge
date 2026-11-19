@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { RUNS } from '../src/lib/mainnet-runs.ts'
-import { hashLookups, matchesQuery, rowFromOrder, rowFromRun, scanRows } from '../src/lib/scanner.ts'
+import { explorerIcon, hashLookups, matchesQuery, rowFromOrder, rowFromRun, scanRows } from '../src/lib/scanner.ts'
 import { FEATURED_TOKENS } from '../src/lib/cauldron-tokens.ts'
 
 const PUSD = FEATURED_TOKENS[0]
@@ -45,6 +45,29 @@ test('a Router order shows source, THORChain, BCH and payout legs with chain-spe
   const refunded = rowFromOrder({ ...order, state: 'refunded', settlement: { kind: 'refund', txid: 'ef'.repeat(32), tokenAmount: '0', bchAmount: '99000' } })
   assert.equal(refunded.status, 'refunded')
   assert.deepEqual([refunded.to.ticker, refunded.to.amount, refunded.legs.at(-1).label], ['BCH', '0.00099', 'BCH refund'])
+})
+
+test('a Router order whose first leg went through NEAR Intents links no THORChain record', () => {
+  const row = rowFromOrder({ ...order, near: true })
+  assert.deepEqual(
+    row.legs.map(leg => leg.label),
+    ['Base deposit', 'BCH to order', 'PUSD payout']
+  )
+})
+
+test('each end shows its coin with the chain mark only where the coin does not name the chain, and each step its explorer chain', () => {
+  const row = rowFromOrder(order)
+  assert.deepEqual([row.from.icon, row.from.badge], ['/tokens/usdc.svg', '/networks/base.svg'])
+  assert.deepEqual([row.to.icon, row.to.badge], [PUSD.icon, '/networks/bch.svg'])
+  assert.deepEqual(
+    row.legs.map(leg => leg.icon),
+    ['/networks/base.svg', '/networks/thor.svg', '/networks/bch.svg', '/networks/bch.svg']
+  )
+  const bnb = rowFromRun(RUNS.find(run => run.amounts.startsWith('0.0062 BNB')))
+  assert.deepEqual([bnb.from.icon, bnb.from.badge], ['/networks/bsc.svg', undefined], 'a native coin carries no extra chain mark')
+  assert.equal(explorerIcon('https://optimistic.etherscan.io/tx/0x1'), '/networks/op.svg')
+  assert.equal(explorerIcon('https://etherscan.io/tx/0x1'), '/networks/eth.svg')
+  assert.equal(explorerIcon('https://example.com/tx/1'), undefined)
 })
 
 test('scanner lists Router orders first and drops a verified run the feed already has', () => {
