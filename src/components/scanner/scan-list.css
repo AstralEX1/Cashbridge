@@ -1,0 +1,203 @@
+/* Transfer list shared by the scanner and the landing page. On narrow screens each row becomes a card. */
+.scan-list {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: #f8fdff;
+  font-size: 14px;
+}
+.scan-list th {
+  padding: 14px 18px;
+  border-bottom: 1px solid #ffffff1a;
+  color: #a9bbc2;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.scan-list td {
+  padding: 16px 18px;
+  border-bottom: 1px solid #ffffff12;
+  vertical-align: top;
+}
+.scan-list tbody tr:last-child td {
+  border-bottom: 0;
+}
+.scan-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 140px;
+}
+.scan-side strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.scan-amount {
+  font-variant-numeric: tabular-nums;
+}
+.scan-side small {
+  display: block;
+  margin-top: 2px;
+  color: #a9bbc2;
+  font-size: 12px;
+}
+.scan-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #ffffff14;
+  color: #a9bbc2;
+  font-size: 13px;
+  font-weight: 600;
+}
+.scan-icon::before {
+  content: attr(data-initial);
+}
+.scan-icon img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.scan-legs {
+  display: grid;
+  gap: 5px;
+  min-width: 220px;
+}
+.scan-legs li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.scan-legs li > span {
+  color: #a9bbc2;
+  font-size: 13px;
+}
+.scan-legs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 4px;
+  color: #3fe0b4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.scan-legs a:focus-visible {
+  outline: 2px solid #0ac18e;
+  outline-offset: 2px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .scan-legs a:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+.scan-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.scan-status::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.scan-status[data-status='completed'] {
+  background: #0ac18e1f;
+  color: #3fe0b4;
+}
+.scan-status[data-status='pending'] {
+  background: #f5c4511f;
+  color: #f5c451;
+}
+.scan-status[data-status='refunded'] {
+  background: #ffffff14;
+  color: #c7d4d9;
+}
+.scan-status[data-status='review'] {
+  background: #ff7a6a1f;
+  color: #ff9a8a;
+}
+.scan-mode {
+  display: block;
+  margin-top: 7px;
+  color: #a9bbc2;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.scan-time {
+  color: #a9bbc2;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.scan-verified {
+  display: block;
+  margin-top: 5px;
+  color: #3fe0b4;
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .scan-list thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .scan-list tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 14px 12px;
+    padding: 16px;
+    border-bottom: 1px solid #ffffff12;
+  }
+  .scan-list tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .scan-list td {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+  .scan-list td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 6px;
+    color: #a9bbc2;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .scan-list td[data-label='Transactions'] {
+    grid-column: 1 / -1;
+  }
+  .scan-side,
+  .scan-legs {
+    min-width: 0;
+  }
+  .scan-side strong {
+    white-space: normal;
+  }
+}

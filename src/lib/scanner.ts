@@ -1,0 +1,182 @@
+import { getExplorerTxUrl, type Chain } from '@tcswap/core'
+import type { FeedOrder, OrderState } from '@/lib/auto-bridge-contract'
+import { formatBaseUnits } from '@/lib/bridge'
+import { FEATURED_TOKENS } from '@/lib/cauldron-tokens'
+import type { Run } from '@/lib/mainnet-runs'
+import { isEvmChain } from '@/lib/payout-chains'
+
+// The scanner's view of one transfer, from a Cashbridge Router order or from a run verified by hand.
+export type ScanStatus = 'completed' | 'pending' | 'refunded' | 'review'
+export interface ScanSide {
+  amount?: string
+  ticker: string
+  chain: string
+  icon?: string
+}
+export interface ScanLeg {
+  label: string
+  url: string
+  hash: string
+}
+export interface ScanRow {
+  key: string
+  // Router orders carry the time they were created; a verified run carries its date as written in the proof table.
+  time?: number
+  date?: string
+  router: boolean
+  verified: boolean
+  from: ScanSide
+  to: ScanSide
+  status: ScanStatus
+  legs: ScanLeg[]
+}
+
+// Chains with a logo in public/networks.
+const CHAIN_ICONS = new Set(['avax', 'base', 'bch', 'bsc', 'btc', 'doge', 'eth', 'gaia', 'ltc', 'sol', 'thor', 'tron', 'xrp', 'zec'])
+export const chainIcon = (chain: string) => (CHAIN_ICONS.has(chain.toLowerCase()) ? `/networks/${chain.toLowerCase()}.svg` : undefined)
+
+const CHAIN_NAMES: Record<string, string> = {
+  AVAX: 'Avalanche',
+  BASE: 'Base',
+  BCH: 'Bitcoin Cash',
+  BSC: 'BNB Chain',
+  BTC: 'Bitcoin',
+  DOGE: 'Dogecoin',
+  ETH: 'Ethereum',
+  GAIA: 'Cosmos',
+  LTC: 'Litecoin',
+  SOL: 'Solana',
+  THOR: 'THORChain',
+  TRON: 'TRON',
+  XRP: 'XRP Ledger',
+  ZEC: 'Zcash'
+}
+export const chainName = (chain: string) => CHAIN_NAMES[chain.toUpperCase()] ?? chain
+
+const tokenOf = (category: string) => FEATURED_TOKENS.find(token => token.category === category)
+const bchSide = (category: string, amount?: string): ScanSide => {
+  const token = tokenOf(category)
+  return {
+    ticker: token?.ticker ?? `${category.slice(0, 6)}…`,
+    chain: 'BCH',
+    icon: token?.icon ?? chainIcon('BCH'),
+    // A token outside the pinned list has unknown decimals here, so its amount is left to the explorer.
+    ...(token && amount !== undefined && { amount: formatBaseUnits(amount, token.decimals) })
+  }
+}
+// THORChain asset ids: CHAIN.TICKER or CHAIN.TICKER-CONTRACT.
+const assetSide = (asset: string, amount?: string): ScanSide => {
+  const [chain, rest = ''] = asset.split('.')
+  const ticker = rest.split('-')[0] || chain
+  return { ticker, chain, icon: chainIcon(chain), ...(amount !== undefined && { amount }) }
+}
+
+export const thorchainTxUrl = (hash: string) => `https://thorchain.net/tx/${hash.replace(/^0x/i, '').toLowerCase()}`
+export const bchTxUrl = (txid: string) => getExplorerTxUrl({ chain: 'BCH' as Chain, txHash: txid })
+const sourceTxUrl = (chain: string, hash: string) =>
+  getExplorerTxUrl({ chain: chain as Chain, txHash: isEvmChain(chain) && /^[0-9a-f]{64}$/i.test(hash) ? `0x${hash}` : hash }) || thorchainTxUrl(hash)
+
+const STATUS: Partial<Record<OrderState, ScanStatus>> = {
+  completed: 'completed',
+  refunded: 'refunded',
+  source_refunded: 'refunded',
+  manual_review: 'review'
+}
+
+export const rowFromOrder = (order: FeedOrder): ScanRow => {
+  const legs: ScanLeg[] = []
+  const paid = order.settlement
+  if (order.kind === 'forward') {
+    if (order.sourceHash && order.source) {
+      legs.push({ label: `${chainName(order.source.chain)} deposit`, url: sourceTxUrl(order.source.chain, order.sourceHash), hash: order.sourceHash })
+      legs.push({ label: 'THORChain swap', url: thorchainTxUrl(order.sourceHash), hash: order.sourceHash })
+    }
+    for (const receipt of order.bchReceipts) legs.push({ label: 'BCH to order', url: bchTxUrl(receipt.txid), hash: receipt.txid })
+    if (paid)
+      legs.push({
+        label: paid.kind === 'refund' ? 'BCH refund' : `${bchSide(order.category).ticker} payout`,
+        url: bchTxUrl(paid.txid),
+        hash: paid.txid
+      })
+  } else {
+    for (const receipt of order.bchReceipts) legs.push({ label: 'Tokens to contract', url: bchTxUrl(receipt.txid), hash: receipt.txid })
+    if (paid?.kind === 'deposit') {
+      legs.push({ label: 'Sale and THORChain deposit', url: bchTxUrl(paid.txid), hash: paid.txid })
+      legs.push({ label: 'THORChain swap', url: thorchainTxUrl(paid.txid), hash: paid.txid })
+    } else if (paid) legs.push({ label: 'Refund', url: bchTxUrl(paid.txid), hash: paid.txid })
+  }
+  const bch = (sats: string): ScanSide => ({ ticker: 'BCH', chain: 'BCH', icon: chainIcon('BCH'), amount: formatBaseUnits(sats, 8) })
+  // An order saved without its source starts at the BCH that reached the Router.
+  const from =
+    order.kind === 'sale' && order.sale
+      ? bchSide(order.category, order.sale.tokenAmount)
+      : order.source
+        ? assetSide(order.source.asset, order.source.amount)
+        : bch(order.expectedBchSats)
+  const to =
+    order.kind === 'sale' && order.sale
+      ? assetSide(order.sale.buyAsset)
+      : paid?.kind === 'refund'
+        ? bch(paid.bchAmount)
+        : bchSide(order.category, paid?.tokenAmount)
+  return { key: order.ref, time: order.createdAt, router: true, verified: false, from, to, status: STATUS[order.state] ?? 'pending', legs }
+}
+
+const side = (text: string): ScanSide => {
+  const [amount, ticker = ''] = text.trim().split(/\s+/)
+  const token = FEATURED_TOKENS.find(t => t.ticker === ticker)
+  const chain = token || ticker === 'BCH' ? 'BCH' : ticker === 'BNB' ? 'BSC' : ticker
+  return { amount, ticker, chain, icon: token?.icon ?? chainIcon(chain) }
+}
+
+// A proof-table run: its amounts read "0.0062 BNB → 0.01639004 BCH → 3.39 PUSD", first and last are the two ends.
+export const rowFromRun = (run: Run): ScanRow => {
+  const amounts = run.amounts.split('→')
+  return {
+    key: run.links[0][1],
+    date: run.date,
+    router: !!run.router,
+    verified: true,
+    from: side(amounts[0]),
+    to: side(amounts[amounts.length - 1]),
+    status: 'completed',
+    legs: run.links.map(([label, url]) => ({ label, url, hash: url.slice(url.lastIndexOf('/') + 1) }))
+  }
+}
+
+// Router orders first (newest first), then the verified runs, newest last-added first; a run the Router feed also lists is kept once.
+export const scanRows = (orders: FeedOrder[], runs: Run[]) => {
+  const live = orders.map(rowFromOrder).sort((a, b) => (b.time ?? 0) - (a.time ?? 0))
+  const seen = new Set(live.flatMap(row => row.legs.map(leg => normalHash(leg.hash))))
+  return [
+    ...live,
+    ...runs
+      .map(rowFromRun)
+      .reverse()
+      .filter(row => !row.legs.some(leg => seen.has(normalHash(leg.hash))))
+  ]
+}
+
+const normalHash = (hash: string) => hash.replace(/^0x/i, '').toLowerCase()
+
+export const matchesQuery = (row: ScanRow, query: string) => {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  const hash = normalHash(q)
+  return (
+    row.legs.some(leg => normalHash(leg.hash).includes(hash)) ||
+    [row.from, row.to].some(s => s.ticker.toLowerCase() === q || s.chain.toLowerCase() === q || chainName(s.chain).toLowerCase().includes(q))
+  )
+}
+
+// Where to look up a hash the list does not have.
+export const hashLookups = (query: string): ScanLeg[] => {
+  const q = query.trim()
+  if (!/^(0x)?[0-9a-fA-F]{64}$/.test(q)) return []
+  return [
+    { label: 'THORChain explorer', url: thorchainTxUrl(q), hash: q },
+    ...(q.startsWith('0x') ? [] : [{ label: 'Bitcoin Cash explorer', url: bchTxUrl(q), hash: q }])
+  ]
+}
+
+export const shortHash = (hash: string) => (hash.length > 14 ? `${hash.slice(0, 6)}…${hash.slice(-4)}` : hash)
