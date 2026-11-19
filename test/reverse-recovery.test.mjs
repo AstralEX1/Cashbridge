@@ -8,7 +8,7 @@ import { pubkey, otherPubkey, privateKey, PUSD, signBuild, swapBuild } from './f
 
 const data = new Map()
 globalThis.localStorage = { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) }
-const { broadcastDeposit, broadcastSale } = await import('../src/lib/reverse-bridge.ts')
+const { broadcastDeposit, broadcastSale, OPEN_REQUEST_MS, signingInputs, unsignedOutcome } = await import('../src/lib/reverse-bridge.ts')
 const { transactionStore } = await import('../src/store/transaction-store.ts')
 const binding = bindingFromPubkey(pubkey, 0)
 const vault = bindingFromPubkey(otherPubkey, 0).lockingBytecode
@@ -112,6 +112,30 @@ test('a definitely absent reverse deposit can be rebuilt only while every wallet
   assert.equal(current().stage, 'failed')
   assert.equal(current().reverse.sale, undefined, 'a sale that never reached the network must not show as sent')
   assert.ok(decodeTx(signedHex).inputs.length > funding.length, 'pool inputs need not remain available after a pool rejection')
+})
+
+test('a first transaction whose signature never came back is called unsent only once its inputs outlive the request', async t => {
+  const signing = signingInputs(reviewed)
+  assert.deepEqual(signing.inputs, funding.map(({ txid, vout }) => ({ txid, vout })), 'only the bound wallet\'s own inputs are watched')
+  const unknown = reverse => ({ stage: 'first_leg_unknown', binding, reverse: { buyAsset: 'BTC.BTC', destination: 'synthetic-destination', ...reverse } })
+
+  node(t)
+  assert.equal(await unsignedOutcome(unknown({ signing }), signing.sentAt + 1000), undefined, 'the wallet may still answer')
+  const expired = await unsignedOutcome(unknown({ signing }), signing.sentAt + OPEN_REQUEST_MS + 1)
+  assert.equal(expired.stage, 'failed')
+  assert.match(expired.error, /nothing was sent/)
+
+  t.mock.restoreAll()
+  node(t, { unspent: 'partial' })
+  // A wallet that broadcasts on its own (older Paytaca) sent it after the request was withdrawn here.
+  const spent = await unsignedOutcome(unknown({ signing }), signing.sentAt + 1000)
+  assert.equal(spent.stage, 'failed')
+  assert.match(spent.error, /may have sent it/)
+  assert.doesNotMatch(spent.error, /nothing was sent/i)
+
+  // A record saved before the inputs were kept proves nothing either way.
+  const legacy = await unsignedOutcome(unknown({}))
+  assert.doesNotMatch(legacy.error, /nothing was sent/i)
 })
 
 test('an old retry cannot erase a newer deposit stored while its network check was running', async t => {

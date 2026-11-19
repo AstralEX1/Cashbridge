@@ -61,11 +61,14 @@ import {
   prepareBchDeposit,
   prepareDeposit,
   prepareSale,
+  OPEN_REQUEST_MS,
   type PreparedDeposit,
   ReverseBlocked,
+  signingInputs,
   signInWallet,
   startReverseOperation,
-  tokenAsset
+  tokenAsset,
+  unsignedOutcome
 } from '@/lib/reverse-bridge'
 import { DEPOSIT_FEE_RESERVE } from '@/lib/thorchain-deposit'
 import { resolveFees } from '@/lib/swap-helpers'
@@ -94,6 +97,7 @@ type Update = ReturnType<typeof useUpdateBridge>
 const formatBch = (sats: bigint | string) => formatBaseUnits(sats, 8)
 // How long the payout is looked for in the router's logs alone before THORNode's report is also read.
 const REPORTED_PAYOUT_AFTER_MS = 3 * 60_000
+const OPEN_REQUEST_NOTE = `Your BCH wallet still has this request: reject it there. If it is approved, the wallet may send it; this transfer waits up to ${Math.ceil(OPEN_REQUEST_MS / 60_000)} minutes to see.`
 const toNumber = (value?: USwapNumber) => (value ? Number(value.toSignificant(12)) : undefined)
 const usdText = (value?: number) => (value === undefined || !Number.isFinite(value) ? undefined : formatUsd(value))
 
@@ -161,6 +165,7 @@ const syncRouterOrder = async (tx: BridgeTx, update: Update) => {
   const reverse = op.reverse!
   const router = reverse.router!
   const before = ['first_leg_pending', 'first_leg_unknown'].includes(op.stage)
+  const requestEnded = Date.now() - (reverse.signing?.sentAt ?? 0) > OPEN_REQUEST_MS
   if (router.sendTxid && router.signedHex && before && !(await getTransactionState(router.sendTxid)).seen)
     await broadcastRouterSend(tx.uid, router.signedHex, router.sendTxid, update)
   const order = await orderRequest({ id: router.id, capability: router.capability }, 'GET')
@@ -189,8 +194,9 @@ const syncRouterOrder = async (tx: BridgeTx, update: Update) => {
           }
         }
       }))
-    } else if (order.state === 'refunded' || (!router.sendTxid && order.receivedSats === '0' && !order.attempts.length)) {
-      // Given back before any deposit (or never sent: the page went away mid-signing and the contract got nothing).
+    } else if (order.state === 'refunded' || (!router.sendTxid && order.receivedSats === '0' && !order.attempts.length && requestEnded)) {
+      // Given back before any deposit (or never sent: the page went away mid-signing and the contract got nothing while
+      // the wallet could still answer).
       update(tx.uid, () => ({ stage: 'failed', error: router.sendTxid ? 'The Cashbridge Router sent the coins back to your wallet' : 'Nothing was signed, so nothing was sent' }))
     } else if (order.state === 'manual_review') {
       update(tx.uid, () => ({ error: 'The Cashbridge Router stopped this order for a manual check' }))
@@ -217,8 +223,10 @@ export const syncReverse = async (tx: BridgeTx, update: Update) => {
   const deposit = reverse.deposit
   switch (op.stage) {
     case 'first_leg_unknown': {
-      // Mid-signing when the page went away: this app broadcasts only what it saved, so nothing was sent.
-      if (!sale?.txid) return update(tx.uid, () => ({ stage: 'failed', error: 'Nothing was signed, so nothing was sent' }))
+      if (!sale?.txid) {
+        const outcome = await unsignedOutcome(op)
+        return outcome && update(tx.uid, () => outcome)
+      }
       const state = await getTransactionState(sale.txid)
       if (state.seen) update(tx.uid, () => ({ stage: 'bch_ready', error: undefined }))
       return
@@ -590,6 +598,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
             walletName: wallet.walletName ?? undefined,
             reverse: {
               ...reverse,
+              signing: signingInputs(routed.send),
               sale: { attempt: generateId(), sellTokens: routed.sellTokens.toString(), minOutput: routed.minSats.toString(), bchOut: routed.bchOut.toString(), minerFeeSats: routed.send.feeSats.toString() },
               router: { id, capability, depositAddress: order!.depositAddress, payoutRouter: routed.payoutRouter, startBlock: routed.startBlock }
             }
@@ -617,6 +626,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
           walletName: wallet.walletName ?? undefined,
           reverse: {
             ...reverse,
+            signing: signingInputs(reviewed),
             sale: {
               attempt: generateId(),
               sellTokens: reviewed.tokensSold.toString(),
@@ -643,7 +653,13 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
         }))
         await broadcastSale(id, signedHex, txid, update)
       } else if (!token && ready.deposit) {
-        uid = await startReverseOperation(record, { stage: 'first_leg_signing', destinationAsset: 'BCH', binding, walletName: wallet.walletName ?? undefined, reverse })
+        uid = await startReverseOperation(record, {
+          stage: 'first_leg_signing',
+          destinationAsset: 'BCH',
+          binding,
+          walletName: wallet.walletName ?? undefined,
+          reverse: { ...reverse, signing: signingInputs(ready.deposit.built) }
+        })
         setPhase('signing')
         await sendDeposit(uid, ready.deposit, update, wallet, controller.signal)
       } else {
@@ -653,13 +669,19 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
       setAmountFrom('')
       onOpenChange(false)
     } catch (error) {
-      // Nothing was signed: the record goes, and a fresh transaction is prepared for the next try.
+      // Nothing was signed: the record goes, and a fresh transaction is prepared for the next try. A request the wallet
+      // still has keeps it, and the progress screen follows it until its coins or its expiry settle it (unsignedOutcome).
+      const open = (error instanceof SignCancelled || error instanceof SignTimedOut) && error.stillOpen
       if (uid) {
         const id = uid
         const op = transactionStore.getState().transactions.find(x => x.uid === id)
-        if (op && op.kind !== 'send' && op.bridge?.stage === 'first_leg_signing') transactionStore.getState().removeTransaction(id)
+        if (op && op.kind !== 'send' && op.bridge?.stage === 'first_leg_signing') {
+          if (open) update(id, () => ({ stage: 'first_leg_unknown', error: OPEN_REQUEST_NOTE }))
+          else transactionStore.getState().removeTransaction(id)
+        }
       }
-      if (error instanceof SignCancelled) setNote(tReverse('signCancelled'))
+      if (open && uid) onOpenChange(false)
+      else if (error instanceof SignCancelled) setNote(tReverse('signCancelled'))
       else if (error instanceof SignDeclined) setNote(tReverse('signDeclined', { wallet: walletName }))
       else if (error instanceof SignTimedOut) setNote(tReverse('signTimedOut', { wallet: walletName }))
       else if (error instanceof SignSessionLost) setNote(tReverse('signSessionLost', { wallet: walletName }))

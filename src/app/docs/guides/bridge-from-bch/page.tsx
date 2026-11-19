@@ -46,7 +46,7 @@ export default function Page() {
 
         <Step title="Approve in your BCH wallet">
           <p>
-            Your BCH wallet app asks you to approve the Cauldron swap. Keep it open, because the request waits there. If you decline, cancel, or the wallet does not answer in time, nothing is sent and you can try again.
+            Your BCH wallet app asks you to approve the Cauldron swap. Keep it open, because the request waits there. If you decline, cancel, or the wallet does not answer in time, nothing is sent and you can try again. A WalletConnect wallet keeps a cancelled request for five minutes, so reject it there as well.
           </p>
         </Step>
 

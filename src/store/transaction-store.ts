@@ -152,6 +152,9 @@ export interface ReverseDetails {
   // Set when the Cashbridge Router runs the sale and the deposit: its order (id and capability), the signed send of
   // the tokens to the order's contract, and what the payout search needs.
   router?: { id: string; capability: string; depositAddress: string; sendTxid?: string; signedHex?: string; payoutRouter?: string; startBlock?: number }
+  // The bound wallet's own inputs of the first transaction, and when it went to the wallet: an answer that never came
+  // back is settled by whether they get spent.
+  signing?: { inputs: { txid: string; vout: number }[]; sentAt: number }
 }
 
 export interface BridgeOperation {

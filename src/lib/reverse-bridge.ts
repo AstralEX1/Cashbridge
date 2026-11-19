@@ -18,7 +18,9 @@ import { BLOCKCHAIR_CHAINS } from '@/lib/blockchair'
 import { postJson, rpcBase, XRPL_RPC_URL } from '@/lib/transfer-status'
 import { generateId } from '@/lib/utils'
 import { blockchairProxyUrl, getUSwap } from '@/lib/wallets'
-import { type BridgeOperation, getActiveBridge, type SwapTransaction, transactionStore } from '@/store/transaction-store'
+import type { Signable } from '@/lib/bch-signing'
+import { SIGN_REQUEST_EXPIRY_S } from '@/lib/bch-walletconnect'
+import { type BridgeOperation, getActiveBridge, type ReverseDetails, type SwapTransaction, transactionStore } from '@/store/transaction-store'
 
 // The reverse bridge: (token -> BCH on Cauldron, step 1) then a BCH deposit to THORChain paying an
 // THORChain asset's address (step 2). Both transactions are built here, checked, signed in the bound BCH wallet
@@ -53,6 +55,34 @@ export { signInWallet, type Signable } from '@/lib/bch-signing'
 
 type Update = ReturnType<typeof transactionStore.getState>['updateBridge']
 
+const allUnspent = async (lockingBytecode: string, outpoints: { txid: string; vout: number }[]) => {
+  const { utxos } = await listWalletCoins(lockingBytecode)
+  return outpoints.every(p => utxos.some(coin => coin.txid === p.txid && coin.vout === p.vout))
+}
+
+// What the first transaction spends from the bound wallet, saved before it goes to the wallet.
+export const signingInputs = ({ unsignedHex, ownIndexes }: Signable): NonNullable<ReverseDetails['signing']> => ({
+  inputs: decodeTx(unsignedHex)
+    .inputs.filter((_, index) => ownIndexes.includes(index))
+    .map(input => ({ txid: binToHex(input.outpointTransactionHash), vout: input.outpointIndex })),
+  sentAt: Date.now()
+})
+
+// How long a wallet may still answer a request this app stopped waiting for: WalletConnect's request expiry, plus a
+// minute for the steps between saving the inputs and sending the request.
+export const OPEN_REQUEST_MS = SIGN_REQUEST_EXPIRY_S * 1000 + 60_000
+
+// A first transaction whose signature never came back (the page went away, or the request was withdrawn while the
+// wallet still had it). This app broadcasts only what it saved, but a wallet that broadcasts on its own may have sent
+// it: nothing counts as sent or not until the inputs are spent or the request has expired.
+export const unsignedOutcome = async (op: BridgeOperation, now = Date.now()): Promise<Partial<BridgeOperation> | undefined> => {
+  const signing = op.reverse?.signing
+  if (!signing?.inputs.length) return { stage: 'failed', error: 'The wallet returned no signed transaction. Check your BCH wallet before trying again' }
+  if (!(await allUnspent(op.binding.lockingBytecode, signing.inputs)))
+    return { stage: 'failed', error: 'Your BCH wallet spent the coins of this transfer after the request, so it may have sent it. Check its history before trying again' }
+  if (now - signing.sentAt > OPEN_REQUEST_MS) return { stage: 'failed', error: 'Nothing was signed, so nothing was sent' }
+}
+
 const rejectedFundingIntact = async (uid: string, signedHex: string, txid: string) => {
   if ((await getTransactionState(txid)).seen) return false
   const tx = transactionStore.getState().transactions.find(item => item.uid === uid)
@@ -63,8 +93,7 @@ const rejectedFundingIntact = async (uid: string, signedHex: string, txid: strin
     return unlock && binToHex(unlock.pubkey) === binding.pubkey
   })
   if (!inputs.length) return false
-  const { utxos } = await listWalletCoins(binding.lockingBytecode)
-  return inputs.every(input => utxos.some(coin => coin.txid === binToHex(input.outpointTransactionHash) && coin.vout === input.outpointIndex))
+  return allUnspent(binding.lockingBytecode, inputs.map(input => ({ txid: binToHex(input.outpointTransactionHash), vout: input.outpointIndex })))
 }
 
 export const broadcastSale = async (uid: string, signedHex: string, txid: string, update: Update) => {

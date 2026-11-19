@@ -157,6 +157,9 @@ export default function Page() {
           <p>
             You rejected the request in the wallet, or pressed Cancel on the page. Nothing was broadcast. Start the step again.
           </p>
+          <p>
+            A WalletConnect wallet (Paytaca, Cashonize) keeps a request cancelled on the page until it expires after five minutes, so reject it there too. Until then the transfer stays open and watches whether the wallet sends it.
+          </p>
         </div>
       </details>
 
@@ -164,7 +167,7 @@ export default function Page() {
         <summary>The wallet did not answer in time</summary>
         <div>
           <p>
-            Your BCH wallet is given three minutes, then the request is withdrawn from it. Nothing was sent. Open the wallet app first, then try again.
+            Your BCH wallet is given three minutes, then the request is withdrawn from it. Nothing was sent. Open the wallet app first, then try again. A WalletConnect wallet keeps the request until it expires after five minutes, and the transfer watches it until then, as after a Cancel.
           </p>
         </div>
       </details>
