@@ -2,8 +2,8 @@
 
 Bridge THORChain assets to Bitcoin Cash and Cauldron CashTokens, and back. Live at https://www.cashbridge.space.
 
-By default the user signs every step in their own wallets. For forward transfers to PUSD, the **Cashbridge Router** switch lets the user sign
-once in the source wallet: the service briefly takes custody of the BCH, buys PUSD on Cauldron and pays it straight to the recipient, with a
+By default the user signs every step in their own wallets. For forward transfers to a Cauldron token, the **Cashbridge Router** switch lets the user sign
+once in the source wallet: the service briefly takes custody of the BCH, buys the token on Cauldron and pays it straight to the recipient, with a
 fixed minimum and a BCH fallback. ERC-20 approval may still need a separate transaction. See the
 [transaction flows](docs/how-it-works.md).
 
