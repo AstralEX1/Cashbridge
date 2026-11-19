@@ -21,7 +21,7 @@ export default function DocsLayout({ children }: Readonly<{ children: React.Reac
         <a href={AppConfig.repoUrl} className="docs-repo" target="_blank" rel="noopener noreferrer">
           GitHub
         </a>
-        <Link href="/" className="docs-launch">
+        <Link href="/bridge" className="docs-launch">
           Launch app
         </Link>
       </header>
