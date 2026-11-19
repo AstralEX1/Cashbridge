@@ -12,7 +12,7 @@ import { formatBaseUnits, minOutputFor, secondLegSellAmount, toBaseUnits } from 
 import { quoteToken } from '@/lib/cauldron'
 import { FEATURED_TOKENS, fetchCauldronTokens, readTokenSlug, searchCauldronTokens, type CauldronToken } from '@/lib/cauldron-tokens'
 import { resolveQuoteError } from '@/lib/errors'
-import { getNearQuote, getNearStatus, interpretNearStatus, isNearChain, nearExplorerUrl, submitNearDeposit, type NearRoute, type NearQuoteRequest } from '@/lib/near-intents'
+import { getNearQuote, getNearStatus, interpretNearStatus, isNearChain, nearExplorerUrl, nearSlippageBps, submitNearDeposit, type NearRoute, type NearQuoteRequest } from '@/lib/near-intents'
 import { sourceTransactionId } from '@/lib/source-transaction'
 import { DEPOSIT_FEE_RESERVE, checkDepositMemo, checkInbound, type InboundAddress } from '@/lib/thorchain-deposit'
 import { callWorker } from '@/server/auto-bridge/proxy'
@@ -128,7 +128,7 @@ const tokenQuote = async (category: string, side: 'buy' | 'sell', amount: bigint
   }
 }
 
-// --- NEAR Intents leg (into BCH only) --------------------------------------------------------------
+// --- NEAR Intents leg (plain BCH, either direction) ------------------------------------------------
 
 const nearAvailable = (asset: string) => BridgeConfig.nearIntents && isNearChain(asset.split('.')[0])
 
@@ -140,11 +140,13 @@ const nearQuote = async (request: NearQuoteRequest & { sourceAddress?: string })
   }
 }
 
+const unit = (asset: string) => (asset === BridgeConfig.buyAsset ? 'BCH' : asset)
+
 const nearLeg = (route: NearRoute) => ({
   provider: 'NEAR Intents',
-  sell: `${route.sellAmount} ${route.sellAsset}`,
-  buy: `${route.expectedBuyAmount} BCH`,
-  minimum: `${route.expectedBuyAmountMaxSlippage} BCH`,
+  sell: `${route.sellAmount} ${unit(route.sellAsset)}`,
+  buy: `${route.expectedBuyAmount} ${unit(route.buyAsset)}`,
+  minimum: `${route.expectedBuyAmountMaxSlippage} ${unit(route.buyAsset)}`,
   estimated_seconds: route.estimatedTime?.total
 })
 
@@ -170,7 +172,7 @@ const listSupportedAssets = async (args: Args) => {
     directions: {
       to_bch: 'Any other_side asset to BCH.BCH or to a bch_side token.',
       from_bch: 'BCH.BCH to any other_side asset. Selling a token back is only in the web app for now.',
-      near_intents: 'Into BCH.BCH, NEAR Intents also takes assets on ARB, AVAX, BASE, BSC, BTC, DOGE, ETH, LTC, OP, POL, SOL, TRON and ZEC, named the same way (CHAIN.SYMBOL-CONTRACT).'
+      near_intents: 'Between BCH.BCH and assets on ARB, AVAX, BASE, BSC, BTC, DOGE, ETH, LTC, OP, POL, SOL, TRON and ZEC, both ways, NEAR Intents is quoted too; name them the same way (CHAIN.SYMBOL-CONTRACT).'
     }
   }
 }
@@ -182,11 +184,12 @@ const getBridgeQuote = async (args: Args) => {
   const { reverse, external, side } = await pair(args)
   const percent = slippage(args)
   const token = side.token
-  if (!reverse && !token) {
-    // Plain BCH: THORChain and NEAR Intents side by side, as the page shows them; either one quoting is enough.
+  if (!token) {
+    // Plain BCH, either way: THORChain and NEAR Intents side by side, as the page shows them; either one quoting is enough.
+    const [sellAsset, buyAsset] = reverse ? [BridgeConfig.buyAsset, external] : [external, BridgeConfig.buyAsset]
     const [thor, near] = await Promise.allSettled([
-      thorchainRoute({ sellAsset: external, buyAsset: BridgeConfig.buyAsset, sellAmount: amount, slippage: percent }),
-      nearAvailable(external) ? nearQuote({ sellAsset: external, buyAsset: BridgeConfig.buyAsset, sellAmount: amount, dry: true, slippageBps: Math.round(percent * 100) }) : Promise.resolve(undefined)
+      thorchainRoute({ sellAsset, buyAsset, sellAmount: amount, slippage: percent }),
+      nearAvailable(external) ? nearQuote({ sellAsset, buyAsset, sellAmount: amount, dry: true, slippageBps: nearSlippageBps(percent) }) : Promise.resolve(undefined)
     ])
     const routes = [
       ...(thor.status === 'fulfilled' ? [{ route: 'thorchain', expected_output: thor.value.expectedBuyAmount, estimated_seconds: thor.value.estimatedTime?.total, legs: [legOf(thor.value)] }] : []),
@@ -195,10 +198,10 @@ const getBridgeQuote = async (args: Args) => {
         : [])
     ]
     if (!routes.length) throw thor.status === 'rejected' ? thor.reason : new ToolError('No route for this pair and amount right now')
-    const best = routes.reduce((a, b) => (toBaseUnits(b.expected_output, 8) > toBaseUnits(a.expected_output, 8) ? b : a))
+    const best = routes.reduce((a, b) => (Number(b.expected_output) > Number(a.expected_output) ? b : a))
     return {
-      from: { asset: external, amount },
-      to: { asset: BridgeConfig.buyAsset, decimals: 8 },
+      from: { asset: sellAsset, amount },
+      to: reverse ? { asset: external } : { asset: BridgeConfig.buyAsset, decimals: 8 },
       best: best.route,
       expected_output: best.expected_output,
       routes,
@@ -207,7 +210,7 @@ const getBridgeQuote = async (args: Args) => {
         ...(near.status === 'rejected' ? [{ route: 'near_intents', reason: near.reason instanceof Error ? near.reason.message : 'no quote' }] : [])
       ],
       cash_bridge_fee: '0',
-      next_step: 'Show the routes to the user. If they agree, call prepare_bridge with the same assets and amount, their source and destination addresses, and route set to the one they chose (best by default).'
+      next_step: 'Show the routes to the user. If they agree, call prepare_bridge with the same assets and amount, the sending address as source_address (their BCH address when BCH is sold), the receiving address as destination_address, and route set to the one they chose (best by default).'
     }
   }
   if (!reverse) {
@@ -231,28 +234,19 @@ const getBridgeQuote = async (args: Args) => {
       next_step: 'Show this to the user. If they agree, call prepare_bridge with the same assets and amount plus their source and destination addresses.'
     }
   }
-  // Back from BCH: a token is first sold for BCH on Cauldron, then the BCH goes through THORChain.
-  let bch = amount
-  const legs: unknown[] = []
-  if (token) {
-    const sale = await tokenQuote(token.category, 'sell', toBaseUnits(amount, token.decimals))
-    if (sale.output <= DEPOSIT_FEE_RESERVE) throw new ToolError('This amount sells for too little BCH to bridge')
-    bch = formatBaseUnits(sale.output - DEPOSIT_FEE_RESERVE, 8)
-    legs.push({ provider: 'Cauldron', sell: `${formatBaseUnits(sale.sell, token.decimals)} ${token.ticker}`, buy: `${formatBaseUnits(sale.output, 8)} BCH`, pool_fee_sats: sale.tradeFeeSats.toString() })
-  }
-  const route = await thorchainRoute({ sellAsset: BridgeConfig.buyAsset, buyAsset: external, sellAmount: bch, slippage: percent })
-  legs.push(legOf(route))
+  // A token back from BCH: first sold for BCH on Cauldron, then the BCH goes through THORChain.
+  const sale = await tokenQuote(token.category, 'sell', toBaseUnits(amount, token.decimals))
+  if (sale.output <= DEPOSIT_FEE_RESERVE) throw new ToolError('This amount sells for too little BCH to bridge')
+  const route = await thorchainRoute({ sellAsset: BridgeConfig.buyAsset, buyAsset: external, sellAmount: formatBaseUnits(sale.output - DEPOSIT_FEE_RESERVE, 8), slippage: percent })
   return {
-    from: token ? { ...tokenInfo(token), amount } : { asset: BridgeConfig.buyAsset, amount },
+    from: { ...tokenInfo(token), amount },
     to: { asset: external },
-    route: token ? 'Cauldron, then THORChain' : 'THORChain',
+    route: 'Cauldron, then THORChain',
     expected_output: route.expectedBuyAmount,
     estimated_seconds: route.estimatedTime?.total,
-    legs,
+    legs: [{ provider: 'Cauldron', sell: `${formatBaseUnits(sale.sell, token.decimals)} ${token.ticker}`, buy: `${formatBaseUnits(sale.output, 8)} BCH`, pool_fee_sats: sale.tradeFeeSats.toString() }, legOf(route)],
     cash_bridge_fee: '0',
-    next_step: token
-      ? `Selling ${token.ticker} back is not prepared through this endpoint yet; send the user to ${AppConfig.baseUrl}.`
-      : 'Show this to the user. If they agree, call prepare_bridge with their BCH address as source_address and their payout address as destination_address.'
+    next_step: `Selling ${token.ticker} back is not prepared through this endpoint yet; send the user to ${AppConfig.baseUrl}.`
   }
 }
 
@@ -356,8 +350,8 @@ const depositOf = async (route: QuoteResponseRoute, destination: string, reverse
 
 const SAFETY = 'Show the user the amounts, the destination and the deposit before they sign. Never ask for a seed phrase or private key. Do not reuse this deposit after expires_at: prepare a new one.'
 
-const plainBchAddress = (address: string) => {
-  if (bchAddressProblem(address, false)) throw new ToolError('"destination_address" must be a mainnet Bitcoin Cash address (bitcoincash:q… or z…)')
+const plainBchAddress = (address: string, field = 'destination_address') => {
+  if (bchAddressProblem(address, false)) throw new ToolError(`"${field}" must be a mainnet Bitcoin Cash address (bitcoincash:q… or z…)`)
   return bindingFromAddress(address)!.cashAddress
 }
 
@@ -396,9 +390,12 @@ const prepareBridge = async (args: Args, context: ToolContext) => {
   const percent = slippage(args)
   const source = text(args, 'source_address')!
   const destination = text(args, 'destination_address')!
+  const via = text(args, 'route', false) ?? 'thorchain'
+  if (!['thorchain', 'near_intents'].includes(via)) throw new ToolError('"route" must be thorchain or near_intents')
   if (reverse) {
     if (side.token) throw new ToolError(`Selling ${side.token.ticker} back is not prepared through this endpoint yet; send the user to ${AppConfig.baseUrl}`)
-    const from = plainBchAddress(source)
+    const from = plainBchAddress(source, 'source_address')
+    if (via === 'near_intents') return prepareNear(BridgeConfig.buyAsset, external, amount, from, destination, percent)
     const route = await thorchainRoute({
       sellAsset: BridgeConfig.buyAsset,
       buyAsset: external,
@@ -417,11 +414,9 @@ const prepareBridge = async (args: Args, context: ToolContext) => {
   const executable = (to: string) =>
     thorchainRoute({ sellAsset: external, buyAsset: BridgeConfig.buyAsset, sellAmount: amount, slippage: percent, dry: false, sourceAddress: source, destinationAddress: to, refundAddress: source })
 
-  const via = text(args, 'route', false) ?? 'thorchain'
-  if (!['thorchain', 'near_intents'].includes(via)) throw new ToolError('"route" must be thorchain or near_intents')
   if (via === 'near_intents') {
     if (side.token) throw new ToolError('NEAR Intents pays plain BCH only; use route thorchain for a CashToken')
-    return prepareNear(external, amount, source, plainBchAddress(destination), percent)
+    return prepareNear(external, BridgeConfig.buyAsset, amount, source, plainBchAddress(destination), percent)
   }
 
   if (!side.token) {
@@ -472,28 +467,32 @@ const prepareBridge = async (args: Args, context: ToolContext) => {
 
 const TRANSFER_ABI = new Interface(['function transfer(address to, uint256 amount)'])
 
-// NEAR Intents into BCH: a one-use deposit address on the source chain, paid by a plain transfer (no memo, no
-// approval). 1Click pays plain BCH addresses only.
-const prepareNear = async (external: string, amount: string, source: string, to: string, percent: number) => {
-  if (!nearAvailable(external)) throw new ToolError(`NEAR Intents does not take ${external.split('.')[0]} deposits here; use route thorchain`)
-  const route = await nearQuote({ sellAsset: external, buyAsset: BridgeConfig.buyAsset, sellAmount: amount, sourceAddress: source, recipient: to, refundTo: source, dry: false, slippageBps: Math.round(percent * 100) })
+// NEAR Intents, to or from plain BCH: a one-use deposit address on the source chain, paid by a plain transfer (no
+// memo, no approval). 1Click pays plain BCH addresses only and refunds to the sending address.
+const prepareNear = async (sellAsset: string, buyAsset: string, amount: string, source: string, to: string, percent: number) => {
+  const external = sellAsset === BridgeConfig.buyAsset ? buyAsset : sellAsset
+  if (!nearAvailable(external)) throw new ToolError(`NEAR Intents does not carry ${external.split('.')[0]} here; use route thorchain`)
+  const route = await nearQuote({ sellAsset, buyAsset, sellAmount: amount, sourceAddress: source, recipient: to, refundTo: source, dry: false, slippageBps: nearSlippageBps(percent) })
   if (!route?.near.quote.depositAddress) throw new ToolError(`NEAR Intents does not list ${external}; use route thorchain`)
   const deposit = route.near.quote.depositAddress
-  const chain = external.split('.')[0].toUpperCase()
+  const chain = sellAsset.split('.')[0].toUpperCase()
+  // Out of BCH, as the page checks: the deposit is a BCH address and the quote is for exactly the amount asked.
+  if (chain === 'BCH' && (bchAddressProblem(deposit, false) || !new USwapNumber(route.sellAmount).eqValue(amount)))
+    throw new ToolError('NEAR Intents quoted a deposit that does not match this transfer; nothing was sent, ask for a new quote')
   const units = BigInt(route.near.quote.amountIn)
-  const token = external.split('-')[1]?.toLowerCase()
+  const token = sellAsset.split('-')[1]?.toLowerCase()
   const evm = (EVMChains as readonly string[]).includes(chain)
   const chainId = evm ? Number(getChainConfig(chain as Chain).chainId) : undefined
   return {
     route: 'NEAR Intents',
     deposit: {
       chain,
-      asset: external,
+      asset: sellAsset,
       amount: route.sellAmount,
       amount_base_units: units.toString(),
       deposit_address: deposit,
       expires_at: route.near.quote.deadline,
-      how_to_send: 'Send exactly the amount to deposit_address in a plain transfer from source_address: no memo and no approval. The address is for this one transfer only.'
+      how_to_send: 'Send exactly the amount to deposit_address in a plain transfer from source_address: no memo, no OP_RETURN and no approval. The address is for this one transfer only.'
     },
     ...(evm && {
       transactions: [
@@ -502,8 +501,8 @@ const prepareNear = async (external: string, amount: string, source: string, to:
           : { step: 'transfer', to: deposit, from: source, data: '0x', value: units.toString(), chain_id: chainId }
       ]
     }),
-    expected_output: `${route.expectedBuyAmount} BCH`,
-    minimum_output: `${route.expectedBuyAmountMaxSlippage} BCH`,
+    expected_output: `${route.expectedBuyAmount} ${unit(buyAsset)}`,
+    minimum_output: `${route.expectedBuyAmountMaxSlippage} ${unit(buyAsset)}`,
     destination_address: to,
     refund_address: source,
     // 1Click asks integrators to keep these: the signature settles any dispute about the deposit address.
@@ -580,7 +579,7 @@ const getBridgeStatus = async (args: Args, context: ToolContext) => {
   if (near) {
     const status = await getNearStatus(near).catch(() => undefined)
     if (!status) throw new ToolError('NEAR Intents did not answer for this deposit address; try again shortly')
-    return { near_deposit_address: near, status: status.status, ...interpretNearStatus(status), explorer: nearExplorerUrl(near), note: 'NEAR Intents reports this state; check the BCH payout on the Bitcoin Cash chain before treating the transfer as done.' }
+    return { near_deposit_address: near, status: status.status, ...interpretNearStatus(status), explorer: nearExplorerUrl(near), note: 'NEAR Intents reports this state; check the payout on the destination chain before treating the transfer as done.' }
   }
   const hash = sourceTransactionId(text(args, 'source_tx')!)
   if (!hash) throw new ToolError('"source_tx" is not a transaction hash')
@@ -625,7 +624,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'get_bridge_quote',
     title: 'Quote a bridge transfer',
-    description: 'Quotes a transfer to Bitcoin Cash (THORChain and NEAR Intents compared) or to a CashToken (THORChain, then Cauldron through the Cashbridge Router), or back from BCH. Indicative only; nothing is reserved.',
+    description: 'Quotes a transfer between another chain and Bitcoin Cash, either way (THORChain and NEAR Intents compared), or to a CashToken (THORChain, then Cauldron through the Cashbridge Router). Selling a CashToken back is priced too. Indicative only; nothing is reserved.',
     inputSchema: { type: 'object', properties: assetProps, required: ['from_asset', 'to_asset', 'amount'] },
     annotations: { readOnlyHint: true, idempotentHint: false, openWorldHint: true },
     run: getBridgeQuote
@@ -634,14 +633,14 @@ export const TOOLS: Tool[] = [
     name: 'prepare_bridge',
     title: 'Prepare a bridge deposit',
     description:
-      "Prepares a transfer for the user's own wallet to sign: an unsigned EVM transaction (with the token approval when needed) or deposit instructions (THORChain vault, amount and memo). For a CashToken it opens a Cashbridge Router order and returns its id and token. Never signs or sends anything.",
+      "Prepares a transfer for the user's own wallet to sign: an unsigned EVM transaction (with the token approval when needed) or deposit instructions (THORChain vault, amount and memo, or a NEAR Intents deposit address). For a CashToken it opens a Cashbridge Router order and returns its id and token. Never signs or sends anything.",
     inputSchema: {
       type: 'object',
       properties: {
         ...assetProps,
-        source_address: { type: 'string', description: 'The address that sends the funds; THORChain refunds to it.' },
+        source_address: { type: 'string', description: 'The address that sends the funds (a BCH address when BCH is sold); refunds go to it.' },
         destination_address: { type: 'string', description: 'Where the user receives: a BCH address (token-aware bitcoincash:z… for CashTokens), or the payout address back from BCH.' },
-        route: { type: 'string', enum: ['thorchain', 'near_intents'], description: 'Into plain BCH only: which route to use, as get_bridge_quote compared them (default thorchain).' }
+        route: { type: 'string', enum: ['thorchain', 'near_intents'], description: 'Plain BCH only, either way: which route to use, as get_bridge_quote compared them (default thorchain).' }
       },
       required: ['from_asset', 'to_asset', 'amount', 'source_address', 'destination_address']
     },

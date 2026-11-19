@@ -24,6 +24,8 @@ const routerKey = bindingFromPubkey(otherPubkey, 1).pubkey
 const quotes = []
 const nearQuotes = []
 const NEAR_DEPOSIT = '0x6666666666666666666666666666666666666666'
+const NEAR_BCH_DEPOSIT = bindingFromPubkey(otherPubkey, 2).cashAddress
+let nearBchDeposit = NEAR_BCH_DEPOSIT
 let tamper = route => route
 const evmTx = (asset, memo, amount, value = '0') => ({ to: ROUTER, from: SOURCE, value, data: DEPOSIT.encodeFunctionData('depositWithExpiry', [VAULT, asset, amount, memo, 1_900_000_000n]) })
 const aggregator = request => {
@@ -93,7 +95,7 @@ before(async () => {
         correlationId: 'c-1',
         timestamp: '2030-01-01T00:00:00.000Z',
         signature: 'ed25519:sig',
-        quote: { ...(!body.dry && { depositAddress: NEAR_DEPOSIT }), amountIn: body.amount, amountInFormatted: '25', minAmountIn: body.amount, amountOut: '6000000', amountOutFormatted: '0.06', minAmountOut: '5900000', deadline: '2030-01-01T01:00:00.000Z', timeEstimate: 40 }
+        quote: { ...(!body.dry && { depositAddress: body.originAsset === 'nep141:bch.omft.near' ? nearBchDeposit : NEAR_DEPOSIT }), amountIn: body.amount, amountInFormatted: '25', minAmountIn: body.amount, amountOut: '6000000', amountOutFormatted: '0.06', minAmountOut: '5900000', deadline: '2030-01-01T01:00:00.000Z', timeEstimate: 40 }
       })
     }
     if (url.endsWith('/thorchain/inbound_addresses'))
@@ -242,4 +244,31 @@ test('plain BCH compares THORChain with NEAR Intents, and a NEAR deposit is a pl
 
   const token = await call('prepare_bridge', { from_asset: USDC, to_asset: 'PUSD', amount: '25', source_address: SOURCE, destination_address: recipient.tokenAddress, route: 'near_intents' })
   assert.match(token.content[0].text, /plain BCH only/)
+})
+
+test('selling plain BCH compares both routes too, and a NEAR deposit out of BCH is checked before it is handed out', async () => {
+  const quote = await call('get_bridge_quote', { from_asset: 'BCH.BCH', to_asset: USDC, amount: '0.1' })
+  assert.equal(quote.isError, undefined, quote.content[0].text)
+  assert.deepEqual(quote.structuredContent.routes.map(r => [r.route, r.expected_output]), [['thorchain', '20'], ['near_intents', '6']])
+  assert.equal(quote.structuredContent.best, 'thorchain')
+
+  nearQuotes.length = 0
+  const args = { from_asset: 'BCH.BCH', to_asset: USDC, amount: '0.1', source_address: recipient.tokenAddress, destination_address: SOURCE, route: 'near_intents' }
+  const result = await call('prepare_bridge', args)
+  assert.equal(result.isError, undefined, result.content[0].text)
+  const data = result.structuredContent
+  assert.equal(nearQuotes[0].refundTo, recipient.cashAddress, 'refunds go to the plain sending address')
+  assert.equal(nearQuotes[0].recipient, SOURCE)
+  assert.equal(data.deposit.deposit_address, NEAR_BCH_DEPOSIT)
+  assert.equal(data.deposit.amount_base_units, '10000000')
+  assert.equal(data.transactions, undefined)
+
+  nearBchDeposit = NEAR_DEPOSIT
+  try {
+    const bad = await call('prepare_bridge', args)
+    assert.equal(bad.isError, true)
+    assert.match(bad.content[0].text, /nothing was sent/)
+  } finally {
+    nearBchDeposit = NEAR_BCH_DEPOSIT
+  }
 })
