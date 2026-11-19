@@ -9,7 +9,7 @@ import type { OrderStore } from '@/server/auto-bridge/store'
 
 export const socketPath = () => process.env.AUTO_BRIDGE_SOCKET ?? '/run/cashbridge/worker.sock'
 
-export async function startOrderServer(store: OrderStore, quote: (amount: bigint) => Promise<{ output: bigint }>, path = socketPath()) {
+export async function startOrderServer(store: OrderStore, quote: (amount: bigint, category: string) => Promise<{ output: bigint }>, path = socketPath()) {
   if (!isAbsolute(path)) throw new Error('Worker socket path must be absolute')
   mkdirSync(dirname(path), { recursive: true, mode: 0o750 })
   if (existsSync(path)) {

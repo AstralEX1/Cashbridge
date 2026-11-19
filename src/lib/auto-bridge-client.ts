@@ -6,6 +6,7 @@ import { isUserRejection } from '@/lib/errors'
 import { sourceTransactionId } from '@/lib/source-transaction'
 import { addressToLockingBytecode } from '@/lib/bch'
 import { orderBinding } from '@/lib/router-contract'
+import { BridgeConfig } from '@/config'
 import { autoBridgeStore, type SavedAutoOrder } from '@/store/auto-bridge-store'
 import { isTerminal, type PublicOrder } from '@/lib/auto-bridge-contract'
 
@@ -50,7 +51,8 @@ export async function orderRequest(reference: SavedAutoOrder, method: 'GET' | 'P
     throw new Error('The automatic order response is invalid')
   if (reference.intent && (order.expectedBchSats !== reference.intent.expectedBchSats ||
     addressToLockingBytecode(order.recipientAddress) !== addressToLockingBytecode(reference.intent.recipientAddress) ||
-    addressToLockingBytecode(order.refundAddress) !== addressToLockingBytecode(reference.intent.refundAddress)))
+    addressToLockingBytecode(order.refundAddress) !== addressToLockingBytecode(reference.intent.refundAddress) ||
+    order.category !== reference.intent.category))
     throw new Error('The automatic order does not match the confirmed transfer')
   // The deposit must be the contract of exactly these terms, so the Router can only pay the customer from it.
   if (order.contract) {
@@ -58,6 +60,7 @@ export async function orderRequest(reference: SavedAutoOrder, method: 'GET' | 'P
       ...order.contract,
       recipientScript: addressToLockingBytecode(order.recipientAddress) ?? '',
       refundScript: addressToLockingBytecode(order.refundAddress) ?? '',
+      category: order.category ?? BridgeConfig.pusd.category,
       minPusd: order.minPusd
     }
     if (orderBinding(terms, 0).cashAddress !== order.depositAddress) throw new Error('The automatic order address is not its contract')

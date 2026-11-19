@@ -4,10 +4,10 @@ import { sourceTransactionId, sameSourceTransaction } from '@/lib/source-transac
 import { minOutputFor, secondLegSellAmount } from '@/lib/bridge'
 import { rateLimit } from '@/lib/rate-limit'
 import { isSameOrigin } from '@/lib/same-origin'
-import { OrderError, positiveAmount, type OrderIntent } from '@/server/auto-bridge/types'
+import { OrderError, orderCategory, positiveAmount, type OrderIntent } from '@/server/auto-bridge/types'
 import type { OrderStore } from '@/server/auto-bridge/store'
 
-type Service = { store: OrderStore; quote: (sats: bigint) => Promise<{ output: bigint }>; admit?: () => boolean }
+type Service = { store: OrderStore; quote: (sats: bigint, category: string) => Promise<{ output: bigint }>; admit?: () => boolean }
 const headers = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }
 const reply = (body: unknown, status = 200) => NextResponse.json(body, { status, headers })
 const errorReply = (error: unknown) =>
@@ -69,6 +69,10 @@ export async function createOrder(req: NextRequest, service: Service) {
       refundAddress: input.refundAddress.trim(),
       expectedBchSats: positiveAmount(input.expectedBchSats)
     }
+    if (input.category !== undefined) {
+      if (typeof input.category !== 'string' || !/^[0-9a-f]{64}$/.test(input.category)) throw new OrderError(400, 'Invalid token category')
+      intent.category = input.category
+    }
     if (input.source !== undefined) {
       const source = input.source as Record<string, unknown>
       if (!source || typeof source !== 'object' ||
@@ -89,8 +93,8 @@ export async function createOrder(req: NextRequest, service: Service) {
     if (BigInt(intent.expectedBchSats) > store.limits.maxOrderSats) throw new OrderError(400, 'Amount exceeds the order limit')
     const amount = secondLegSellAmount(BigInt(intent.expectedBchSats))
     if (amount <= 0n) throw new OrderError(400, 'Amount is too small for the automatic bridge')
-    const floor = minOutputFor((await quote(amount)).output)
-    if (floor <= 0n) throw new OrderError(400, 'No executable PUSD quote for this amount')
+    const floor = minOutputFor((await quote(amount, orderCategory(intent))).output)
+    if (floor <= 0n) throw new OrderError(400, 'No executable token quote for this amount')
     const order = store.create(input.id, cap, intent, floor.toString())
     return reply(store.public(order.id, cap), 201)
   } catch (error) {

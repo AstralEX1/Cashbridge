@@ -21,7 +21,7 @@ const routerKey = generatePrivateKey()
 const routerPub = binToHex(secp256k1.derivePublicKeyCompressed(routerKey))
 const recipient = bindingFromPubkey(pubkey, 0)
 const refund = bindingFromPubkey(otherPubkey, 0)
-const baseTerms = { routerKey: routerPub, recipientScript: recipient.lockingBytecode, refundScript: refund.lockingBytecode, minPusd: '200', refundAfter: 1_800_000_000 }
+const baseTerms = { routerKey: routerPub, recipientScript: recipient.lockingBytecode, refundScript: refund.lockingBytecode, category: BridgeConfig.pusd.category, minPusd: '200', refundAfter: 1_800_000_000 }
 const vm = createVirtualMachineBch2026(true)
 
 const sign = (transaction, sourceOutputs, inputIndex, terms, key = routerKey) => {
@@ -87,6 +87,7 @@ test('the redeem script carries the compiled contract and its address is a P2SH2
   assert.match(binding.cashAddress, /^bitcoincash:p[a-z0-9]{41}$/)
   assert.match(binding.lockingBytecode, /^a914[0-9a-f]{40}87$/)
   assert.notEqual(orderBinding({ ...baseTerms, minPusd: '201' }, 3).cashAddress, binding.cashAddress)
+  assert.notEqual(orderBinding({ ...baseTerms, category: 'ab'.repeat(32) }, 3).cashAddress, binding.cashAddress)
 })
 
 test('the Router can trade the coin on Cauldron for at least the floor to the recipient, pool covenants included', () => {
