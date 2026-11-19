@@ -1,4 +1,3 @@
-import { BridgeConfig } from '@/config'
 import { loadConfig, readCredential } from '@/server/auto-bridge/config'
 import { OrderStore } from '@/server/auto-bridge/store'
 
@@ -15,9 +14,9 @@ export async function runWorker() {
     gateway = new BchGateway()
   const { startOrderServer } = await import('@/server/auto-bridge/http')
   const { quoteToken } = await import('@/lib/cauldron')
-  const server = await startOrderServer(orders, async amount => {
+  const server = await startOrderServer(orders, async (amount, category) => {
     await gateway.assertReady()
-    return quoteToken({ category: BridgeConfig.pusd.category, side: 'buy', amount })
+    return quoteToken({ category, side: 'buy', amount })
   })
   let stopping = false
   const stop = () => {

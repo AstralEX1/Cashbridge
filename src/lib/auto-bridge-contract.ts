@@ -11,6 +11,8 @@ export interface OrderIntent {
   recipientAddress: string
   refundAddress: string
   expectedBchSats: string
+  // The Cauldron token the Router buys (hex category); PUSD when absent.
+  category?: string
   source?: AutomaticSource
 }
 export interface Settlement {

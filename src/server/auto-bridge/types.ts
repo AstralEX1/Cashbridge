@@ -3,6 +3,9 @@ import type { BchBinding, VerifiedOutput } from '@/lib/bch'
 import type { OrderIntent, OrderState, SourceRefund } from '@/lib/auto-bridge-contract'
 export type { OrderIntent, OrderState, PublicOrder } from '@/lib/auto-bridge-contract'
 export { isTerminal } from '@/lib/auto-bridge-contract'
+import { BridgeConfig } from '@/config'
+
+export const orderCategory = (intent: Pick<OrderIntent, 'category'>) => intent.category ?? BridgeConfig.pusd.category
 
 export interface Order extends OrderIntent {
   id: string

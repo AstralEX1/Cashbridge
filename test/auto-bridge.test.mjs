@@ -246,10 +246,30 @@ test('a contract order deposits into the contract of its own terms, which the br
       ...view.contract,
       recipientScript: addressToLockingBytecode(view.recipientAddress),
       refundScript: addressToLockingBytecode(view.refundAddress),
+      category: BridgeConfig.pusd.category,
       minPusd: view.minPusd
     }
     assert.equal(orderBinding(terms, 0).cashAddress, view.depositAddress)
     assert.notEqual(orderBinding({ ...terms, minPusd: '1' }, 0).cashAddress, view.depositAddress)
+  } finally {
+    store.close()
+  }
+})
+
+test('an order for another Cauldron token keeps its category, and its contract buys that token', () => {
+  const signer = wallet(),
+    store = new OrderStore(':memory:', signer.xpub, limits, undefined, undefined, true)
+  try {
+    const token = capability(), category = 'ab'.repeat(32)
+    const order = store.create(randomUUID(), token, { ...intent, category }, '200', 1_000_000)
+    const view = store.public(order.id, token)
+    assert.equal(view.category, category)
+    const pusdToken = capability()
+    assert.equal(store.public(store.create(randomUUID(), pusdToken, intent, '200', 1_000_000).id, pusdToken).category, undefined)
+    const terms = { ...view.contract, recipientScript: addressToLockingBytecode(view.recipientAddress), refundScript: addressToLockingBytecode(view.refundAddress), category, minPusd: view.minPusd }
+    assert.equal(orderBinding(terms, 0).cashAddress, view.depositAddress)
+    assert.notEqual(orderBinding({ ...terms, category: BridgeConfig.pusd.category }, 0).cashAddress, view.depositAddress)
+    assert.throws(() => store.create(randomUUID(), capability(), { ...intent, category: 'PUSD' }, '200', 1_000_000))
   } finally {
     store.close()
   }

@@ -4,9 +4,8 @@ import { checkOutbound, decodeTx, isTxid, normalizeTxid, opReturnText, txidOf } 
 import { inboundMatchesBinding, interpretTxStatus } from '@/lib/bridge'
 import { BroadcastRejected, buildTokenTrade, type BuildIntent, type BuildResult } from '@/lib/cauldron'
 import { OrderStore } from '@/server/auto-bridge/store'
-import { isTerminal, type Attempt, type Order } from '@/server/auto-bridge/types'
+import { isTerminal, orderCategory, type Attempt, type Order } from '@/server/auto-bridge/types'
 import { orderUnlockBytes, WorkerWallet } from '@/server/auto-bridge/wallet'
-import { BridgeConfig } from '@/config'
 import { sourceIdFromMemo, sourceTransactionId, sameSourceTransaction } from '@/lib/source-transaction'
 
 export interface Gateway {
@@ -28,7 +27,7 @@ export type TradeBuilder = (order: Order) => Promise<{ build: BuildResult; inten
 // Sells as much of the order's BCH as pays for the trade's own miner fee and dust; no reserve is held back.
 export const buildOrderTrade: TradeBuilder = async order =>
   buildTokenTrade({
-    category: BridgeConfig.pusd.category,
+    category: orderCategory(order),
     side: 'buy',
     funding: order.funding,
     lockingBytecode: order.binding.lockingBytecode,
@@ -330,7 +329,7 @@ export async function processOrder(
         ...trade.intent,
         funding: order.funding,
         lockingBytecode: order.binding.lockingBytecode,
-        category: BridgeConfig.pusd.category,
+        category: orderCategory(order),
         side: 'buy',
         payout: { tokenScript: order.recipientScript, changeScript: order.refundScript },
         minOutput: BigInt(order.minPusd)

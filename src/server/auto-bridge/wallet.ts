@@ -1,4 +1,3 @@
-import { BridgeConfig } from '@/config'
 import {
   binToHex,
   decodeHdPrivateKey,
@@ -18,13 +17,14 @@ import {
 import { bindingFromPubkey, decodeTx, addressPaysScript } from '@/lib/bch'
 import { checkPoolCovenants, checkSigned, parseP2pkhUnlock, reviewBuild, sourcesOf, type BuildResult } from '@/lib/cauldron'
 import { orderBinding, orderRedeemScript, orderUnlock, parseOrderUnlock, type ContractFunction, type OrderTerms } from '@/lib/router-contract'
-import type { Attempt, Order } from '@/server/auto-bridge/types'
+import { orderCategory, type Attempt, type Order } from '@/server/auto-bridge/types'
 
-type ContractOrder = Pick<Order, 'contract' | 'recipientScript' | 'refundScript' | 'minPusd'>
+type ContractOrder = Pick<Order, 'contract' | 'recipientScript' | 'refundScript' | 'minPusd' | 'category'>
 const termsOf = (order: ContractOrder, routerKey: string): OrderTerms => ({
   routerKey,
   recipientScript: order.recipientScript,
   refundScript: order.refundScript,
+  category: orderCategory(order),
   minPusd: order.minPusd,
   refundAfter: order.contract!.refundAfter
 })
@@ -140,7 +140,7 @@ export class WorkerWallet extends PublicWallet {
     // The contract binds each coin to the payout at its own index, so a contract order swaps exactly one coin.
     if (order.contract && order.funding.length !== 1) throw new Error('A contract order swaps one coin')
     const reviewed = reviewBuild(build, {
-      category: BridgeConfig.pusd.category,
+      category: orderCategory(order),
       side: 'buy',
       funding: order.funding,
       lockingBytecode: order.binding.lockingBytecode,

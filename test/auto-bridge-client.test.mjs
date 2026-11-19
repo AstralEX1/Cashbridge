@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { bindingFromPubkey } from '../src/lib/bch.ts'
 import { pubkey, otherPubkey } from './fixtures/bridge-fixtures.mjs'
+import { BridgeConfig } from '../src/config.ts'
 
 const data = new Map()
 globalThis.localStorage = {
@@ -236,13 +237,16 @@ test('a contract order is accepted only when its deposit is the contract of the 
   const recipient = bindingFromPubkey(pubkey, 0), refund = bindingFromPubkey(otherPubkey, 0)
   const intent = { recipientAddress: recipient.tokenAddress, refundAddress: refund.cashAddress, expectedBchSats: '1000000' }
   const contract = { routerKey: bindingFromPubkey(otherPubkey, 1).pubkey, refundAfter: 1_800_000_000 }
-  const terms = { ...contract, recipientScript: recipient.lockingBytecode, refundScript: refund.lockingBytecode, minPusd: '123' }
+  const terms = { ...contract, recipientScript: recipient.lockingBytecode, refundScript: refund.lockingBytecode, category: BridgeConfig.pusd.category, minPusd: '123' }
   const reference = { id: randomUUID(), capability: randomBytes(32).toString('hex'), intent }
   const oldFetch = globalThis.fetch
-  let depositAddress = orderBinding(terms, 0).cashAddress
-  globalThis.fetch = async () => Response.json({ id: reference.id, ...intent, contract, depositAddress, minPusd: '123' })
+  let depositAddress = orderBinding(terms, 0).cashAddress, category
+  globalThis.fetch = async () => Response.json({ id: reference.id, ...intent, contract, depositAddress, minPusd: '123', ...(category && { category }) })
   try {
     assert.equal((await restoreAutomaticOrder(reference)).depositAddress, depositAddress)
+    category = 'ab'.repeat(32)
+    await assert.rejects(restoreAutomaticOrder(reference), /does not match/, 'a PUSD order answered with another token')
+    category = undefined
     depositAddress = orderBinding({ ...terms, recipientScript: refund.lockingBytecode }, 0).cashAddress
     await assert.rejects(restoreAutomaticOrder(reference), /not its contract/)
     depositAddress = refund.cashAddress

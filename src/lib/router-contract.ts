@@ -1,10 +1,9 @@
 import { bigIntToVmNumber, binToHex, encodeCashAddress, encodeDataPush, hash160, hexToBin } from '@bitauth/libauth'
-import { BridgeConfig } from '@/config'
 import { BCH_PREFIX, type BchBinding } from '@/lib/bch'
 
 // The per-order contract of the Cashbridge Router (contracts/router-order.cash): THORChain pays the order's BCH to
-// it, and the Router can only buy at least the quoted PUSD for the recipient or send the BCH back to the fallback
-// address. Browser-safe, so the page can check a deposit address against the order's public terms.
+// it, and the Router can only buy at least the quoted amount of the ordered token for the recipient or send the BCH
+// back to the fallback address. Browser-safe, so the page can check a deposit address against the order's public terms.
 
 // contracts/router-order.json `debug.bytecode`, compiled by cashc 0.14.0 (npm run contract:compile).
 const CONTRACT_BYTECODE = hexToBin(
@@ -21,7 +20,8 @@ export interface OrderTerms {
   routerKey: string
   recipientScript: string
   refundScript: string
-  // The quote's minimum PUSD (base units).
+  // The ordered token's category (hex, as explorers show it) and the quote's minimum of it in base units.
+  category: string
   minPusd: string
   // Unix time after which anyone may send the BCH to the fallback.
   refundAfter: number
@@ -38,7 +38,7 @@ export const orderRedeemScript = (terms: OrderTerms) =>
     ...pushInt(BigInt(terms.refundAfter)),
     ...pushInt(BigInt(terms.minPusd)),
     // The VM reads a token category in transaction byte order, reversed from how explorers show it.
-    ...encodeDataPush(hexToBin(BridgeConfig.pusd.category).reverse()),
+    ...encodeDataPush(hexToBin(terms.category).reverse()),
     ...encodeDataPush(hexToBin(terms.refundScript)),
     ...encodeDataPush(hexToBin(terms.recipientScript)),
     ...encodeDataPush(hexToBin(terms.routerKey)),

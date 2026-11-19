@@ -4,17 +4,17 @@ import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { addressToLockingBytecode, decodeTx } from '@/lib/bch'
 import { binToHex } from '@bitauth/libauth'
-import { BridgeConfig } from '@/config'
 import { REFUND_AFTER_SECONDS } from '@/lib/router-contract'
 import { PublicWallet } from '@/server/auto-bridge/wallet'
-import { OrderError, positiveAmount, type Attempt, type Limits, type Order, type OrderIntent, type PublicOrder } from '@/server/auto-bridge/types'
+import { OrderError, orderCategory, positiveAmount, type Attempt, type Limits, type Order, type OrderIntent, type PublicOrder } from '@/server/auto-bridge/types'
 
 const hash = (text: string) => createHash('sha256').update(text).digest('hex')
 const capabilityHash = (capability: string) => {
   if (!/^[a-f0-9]{64}$/.test(capability)) throw new OrderError(401, 'Order authorization required')
   return hash(capability)
 }
-const intentHash = (intent: OrderIntent) => hash(JSON.stringify([intent.recipientAddress, intent.refundAddress, intent.expectedBchSats, ...(intent.source ? [intent.source] : [])]))
+const intentHash = (intent: OrderIntent) =>
+  hash(JSON.stringify([intent.recipientAddress, intent.refundAddress, intent.expectedBchSats, ...(intent.source ? [intent.source] : []), ...(intent.category ? [{ category: intent.category }] : [])]))
 type Patch = Partial<Pick<Order, 'state' | 'inboundHash' | 'sourceHash' | 'funding' | 'receivedAt' | 'deadline' | 'payoutTxid' | 'error' | 'observedFunding' | 'lastCheckedAt' | 'observation' | 'sourceRefunds'>>
 const terminal = new Set(['completed', 'refunded', 'source_refunded', 'manual_review'])
 const coinsHeld = (order: Order) => [...new Map([
@@ -171,6 +171,7 @@ export class OrderStore {
     const auth = capabilityHash(capability)
     positiveAmount(intent.expectedBchSats)
     positiveAmount(minPusd)
+    if (intent.category !== undefined && !/^[0-9a-f]{64}$/.test(intent.category)) throw new OrderError(400, 'Invalid token category')
     const recipientScript = addressToLockingBytecode(intent.recipientAddress)
     const refundScript = addressToLockingBytecode(intent.refundAddress)
     if (!recipientScript || !refundScript) throw new OrderError(400, 'Valid mainnet BCH recipient and fallback addresses are required')
@@ -324,6 +325,7 @@ export class OrderStore {
       recipientAddress: order.recipientAddress,
       refundAddress: order.refundAddress,
       expectedBchSats: order.expectedBchSats,
+      ...(order.category && { category: order.category }),
       source: order.source,
       depositAddress: order.binding.cashAddress,
       contract: order.contract && { routerKey: order.binding.pubkey, refundAfter: order.contract.refundAfter },
@@ -347,7 +349,7 @@ export class OrderStore {
       settlement: winner ? {
         kind: winner.kind, txid: winner.txid, seen: !!seen,
         confirmations: seen ? order.observation!.confirmations : 0,
-        pusdAmount: outputs.filter(out => out.token && !out.token.nft && binToHex(out.token.category) === BridgeConfig.pusd.category && binToHex(out.lockingBytecode) === order.recipientScript)
+        pusdAmount: outputs.filter(out => out.token && !out.token.nft && binToHex(out.token.category) === orderCategory(order) && binToHex(out.lockingBytecode) === order.recipientScript)
           .reduce((sum, out) => sum + out.token!.amount, 0n).toString(),
         bchAmount: outputs.filter(out => !out.token && binToHex(out.lockingBytecode) === order.refundScript).reduce((sum, out) => sum + out.valueSatoshis, 0n).toString(),
         recipientAddress: order.recipientAddress, refundAddress: order.refundAddress
