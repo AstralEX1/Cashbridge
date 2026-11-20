@@ -7,7 +7,8 @@ import { isNearOnlyAsset } from '@/hooks/use-assets'
 import { useAssetFrom, useAssetTo, useCustomInterval, useCustomQuantity, useSlippage, useSwap } from '@/hooks/use-swap'
 import { getNetworkQuotes, getQuotes, QuoteTimeoutError } from '@/lib/api'
 import { BelowMinimumError, isTradingHaltedError, resolveQuoteError } from '@/lib/errors'
-import { isHoudiniProvider } from '@/lib/swap-helpers'
+import { isHoudiniProvider, thorchainPayoutsHalted } from '@/lib/swap-helpers'
+import { useMimir } from '@/hooks/use-mimir'
 import { useIsPrivateSend, useIsPrivateSwap } from '@/store/private-swap-store'
 import { useTokenSale } from '@/hooks/use-token-sale'
 import { useSwapStore } from '@/store/swap-store'
@@ -90,6 +91,8 @@ export const useQuote = (): UseQuote => {
     : assetFrom && (reverse ? { sellDecimals: 8, buyDecimals: assetFrom.decimals } : { sellDecimals: assetFrom.decimals, buyDecimals: 8 })
   // On the bridge form `assetFrom` is the non-BCH side; NEAR-only rows must never ask THORChain for a deposit.
   const nearOnly = !openNetworks && isNearOnlyAsset(assetFrom)
+  const { mimir } = useMimir()
+  const payoutsHalted = thorchainPayoutsHalted(mimir, [sellAsset, buyAsset])
   const choice = useSwapStore(state => state.routeChoice)
 
   const queryKey = [
@@ -108,7 +111,8 @@ export const useQuote = (): UseQuote => {
     nearAllowed,
     shapeshiftAllowed,
     shapeshiftAmount,
-    nearOnly
+    nearOnly,
+    payoutsHalted
   ]
 
   const {
@@ -158,7 +162,7 @@ export const useQuote = (): UseQuote => {
           : undefined
       const thorchain = nearOnly
         ? Promise.resolve(undefined)
-        : (openNetworks ? getNetworkQuotes : getQuotes)(
+        : (payoutsHalted ? payoutsHeld : openNetworks ? getNetworkQuotes : getQuotes)(
             {
               buyAsset,
               sellAsset,
@@ -238,6 +242,11 @@ export const useQuote = (): UseQuote => {
 export const fundsTokenSale = (route?: { expectedBuyAmount: string }) => !route || secondLegSellAmount(toBaseUnits(route.expectedBuyAmount, 8)) > 0n
 
 // The route paying most of the bought asset; THORChain, then NEAR, win a tie.
+// A THORChain quote still comes back while it holds payouts, so the route is dropped here and another one is taken.
+const payoutsHeld = async (): Promise<QuoteResponseRoute[]> => {
+  throw new Error('THORChain is holding payouts on this network right now')
+}
+
 export const bestRoute = (routes?: BridgeRoutes): RouteKey | undefined => {
   let best: RouteKey | undefined
   for (const key of ['thorchain', 'near', 'shapeshift'] as const) {

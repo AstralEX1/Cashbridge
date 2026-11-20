@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { Chain } from '@tcswap/core'
 import { ProviderName } from '@tcswap/helpers'
-import { isAssetHalted } from '../src/lib/swap-helpers.ts'
+import { isAssetHalted, thorchainPayoutsHalted } from '../src/lib/swap-helpers.ts'
 
 const baseUsdc = (providers) => ({
   chain: Chain.Base,
@@ -35,4 +35,12 @@ test('THOR-only free-pair halt checks preserve the canonical NEAR bridge fallbac
   assert.equal(isAssetHalted({ ...asset, providers: [ProviderName.THORCHAIN] }, halted, clear), true)
   assert.equal(isAssetHalted(asset, halted, clear), false)
   assert.deepEqual(asset.providers, [ProviderName.THORCHAIN, ProviderName.NEAR])
+})
+
+test('a signing or outbound halt on either end holds THORChain payouts', () => {
+  assert.equal(thorchainPayoutsHalted({ HALTSIGNINGBCH: 1 }, ['BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913', 'BCH.BCH']), true)
+  assert.equal(thorchainPayoutsHalted({ HALTOUTBOUNDBASE: 1 }, ['BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913', 'BCH.BCH']), true)
+  assert.equal(thorchainPayoutsHalted({ HALTOUTBOUND: 1 }, ['ETH.ETH', 'BCH.BCH']), true)
+  assert.equal(thorchainPayoutsHalted({ HALTSIGNINGETH: 1, HALTBASETRADING: 1 }, ['BASE.ETH', 'BCH.BCH']), false)
+  assert.equal(thorchainPayoutsHalted({ HALTSIGNINGBTC: 0 }, ['BTC.BTC', undefined]), false)
 })
