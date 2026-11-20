@@ -23,6 +23,11 @@ export const getDexScreenerTokens = async (
   chainId: 'solana' | 'ethereum' | 'near' = 'solana'
 ): Promise<Record<string, { price?: number; logo?: string }>> => {
   if (tokenAddresses.length === 0) return {}
+  // The endpoint takes "up to 30 addresses" per call (DexScreener API reference).
+  if (tokenAddresses.length > 30) {
+    const chunks = Array.from({ length: Math.ceil(tokenAddresses.length / 30) }, (_, i) => tokenAddresses.slice(i * 30, i * 30 + 30))
+    return Object.assign({}, ...(await Promise.all(chunks.map(chunk => getDexScreenerTokens(chunk, chainId)))))
+  }
   const addresses = tokenAddresses.join(',')
   try {
     const res = await axios.get(`https://api.dexscreener.com/tokens/v1/${chainId}/${addresses}`)

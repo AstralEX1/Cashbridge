@@ -37,3 +37,18 @@ test('THORNode and Midgard tracking requests carry a finite timeout', async () =
     axios.defaults.adapter = original
   }
 })
+
+test('DexScreener is asked for at most 30 token addresses per call', async t => {
+  const { default: axios } = await import('axios')
+  const { getDexScreenerTokens } = await import('../src/lib/api.ts')
+  const asked = []
+  t.mock.method(axios, 'get', async url => {
+    const addresses = url.split('/').pop().split(',')
+    asked.push(addresses.length)
+    return { data: addresses.map(address => ({ baseToken: { address }, priceUsd: '1', liquidity: { usd: 1e9 } })) }
+  })
+  const tokens = Array.from({ length: 65 }, (_, i) => `0x${i.toString(16).padStart(40, '0')}`)
+  const prices = await getDexScreenerTokens(tokens, 'ethereum')
+  assert.deepEqual(asked, [30, 30, 5])
+  assert.equal(Object.keys(prices).length, 65)
+})
