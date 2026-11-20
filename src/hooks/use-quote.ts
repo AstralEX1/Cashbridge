@@ -13,7 +13,7 @@ import { useTokenSale } from '@/hooks/use-token-sale'
 import { useSwapStore } from '@/store/swap-store'
 import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
 import { getNearQuote, nearSlippageBps, type NearRoute } from '@/lib/near-intents'
-import { formatBaseUnits } from '@/lib/bridge'
+import { formatBaseUnits, secondLegSellAmount, toBaseUnits } from '@/lib/bridge'
 import { shapeShiftSaleSats } from '@/lib/router-contract'
 import { getShapeShiftQuote, type ShapeShiftRoute } from '@/lib/shapeshift'
 
@@ -187,7 +187,8 @@ export const useQuote = (): UseQuote => {
       const result = {
         thorchain: thor.status === 'fulfilled' ? thor.value : undefined,
         near: nearRoute.status === 'fulfilled' ? nearRoute.value : undefined,
-        shapeshift: shapeRoute.status === 'fulfilled' ? shapeRoute.value : undefined,
+        // ShapeShift's rates carry no minimum: forward, BCH too little to fund the token sale is no route.
+        shapeshift: shapeRoute.status === 'fulfilled' && (openNetworks || reverse || fundsTokenSale(shapeRoute.value)) ? shapeRoute.value : undefined,
         ...(thor.status === 'rejected' && isTradingHaltedError(resolveQuoteError(thor.reason).message ?? '') && { thorchainHalted: true })
       }
       if (!result.thorchain && !result.near && !result.shapeshift) throw thor.status === 'rejected' ? thor.reason : new Error('No route for this amount')
@@ -232,6 +233,9 @@ export const useQuote = (): UseQuote => {
     minimum: error instanceof BelowMinimumError ? error.minimum : undefined
   }
 }
+
+// Whether a forward first leg's BCH leaves anything to sell for the token after the second leg's reserve.
+export const fundsTokenSale = (route?: { expectedBuyAmount: string }) => !route || secondLegSellAmount(toBaseUnits(route.expectedBuyAmount, 8)) > 0n
 
 // The route paying most of the bought asset; THORChain, then NEAR, win a tie.
 export const bestRoute = (routes?: BridgeRoutes): RouteKey | undefined => {

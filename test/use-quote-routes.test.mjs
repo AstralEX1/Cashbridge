@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { BridgeConfig } from '../src/config.ts'
-import { bestRoute } from '../src/hooks/use-quote.ts'
+import { bestRoute, fundsTokenSale } from '../src/hooks/use-quote.ts'
 import { nearQuoteBody, NEAR_BCH } from '../src/lib/near-intents.ts'
 
 const quoteSource = readFileSync(new URL('../src/hooks/use-quote.ts', import.meta.url), 'utf8')
@@ -82,4 +82,12 @@ test('Automatic prepare keeps a selected NEAR or ShapeShift route on it (no sile
   assert.doesNotMatch(nearBranch, /quote\.deadline \?/, '1Click quote.deadline is the deposit address lifetime, not the refund deadline')
   assert.match(nearBranch, /openOrder\(\)/)
   assert.match(nearBranch, /return \{ reference: \{ \.\.\.ref, order: result\.order \}, route: result\.route \}/)
+})
+
+test('a forward route whose BCH cannot fund the token sale is not offered', () => {
+  // ShapeShift's answers for 0.00156 and 5 USDT on Ethereum: 760 sats and 2,442,631 sats.
+  assert.equal(fundsTokenSale({ expectedBuyAmount: '0.0000076' }), false)
+  assert.equal(fundsTokenSale({ expectedBuyAmount: '0.02442631' }), true)
+  assert.equal(fundsTokenSale(undefined), true)
+  assert.match(quoteSource, /shapeshift: shapeRoute\.status === 'fulfilled' && \(openNetworks \|\| reverse \|\| fundsTokenSale\(shapeRoute\.value\)\)/)
 })
