@@ -13,6 +13,7 @@ import { useAssetTo } from '@/hooks/use-swap'
 import { formatBaseUnits } from '@/lib/bridge'
 import { bridgeSummary, formatUsd, pusdUsdPrice } from '@/lib/bridge-summary'
 import { PUSD_TOKEN, sameToken } from '@/lib/cauldron-tokens'
+import { isDollarStable } from '@/lib/dollar-stable'
 import { useSwapStore } from '@/store/swap-store'
 import { BchDestinationMenu, DestinationAddressInput } from '@/components/swap/automatic-bridge-controls'
 import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
@@ -41,8 +42,8 @@ export const SwapInputTo = ({ selecting, onSelectOpenChange }: BridgeInputProps)
   const busy = isLoading || (!!token && estimate.isLoading)
   const previous = useLastValue(busy ? undefined : output)
 
-  // USD of what arrives: BCH at its pool price; a token at the live Cauldron price (BCH price × pool
-  // rate). PUSD falls back to its $1 peg, marked "≈", when BCH has no price.
+  // USD of what arrives: BCH at its pool price; dollar stables at $1; other tokens at the live
+  // Cauldron price (BCH price × pool rate). Non-stable tokens fall back to ≈$1 when BCH has no price.
   const bchUsd = rateTo ? Number(rateTo.toSignificant(12)) : undefined
   const leg = estimate.error ? undefined : estimate.quote
   const summary = quote && (!token || leg) ? bridgeSummary({
@@ -50,6 +51,7 @@ export const SwapInputTo = ({ selecting, onSelectOpenChange }: BridgeInputProps)
     sentUsd: rateFrom ? Number(quote.sellAmount) * Number(rateFrom.toSignificant(12)) : undefined,
     bch: Number(quote.expectedBuyAmount),
     bchUsd,
+    tokenTicker: token?.ticker,
     pusd: token && leg ? {
       output: Number(leg.output) / 10 ** token.decimals,
       spotOutput: leg.spotOutput / 10 ** token.decimals,
@@ -62,8 +64,8 @@ export const SwapInputTo = ({ selecting, onSelectOpenChange }: BridgeInputProps)
     if (busy || output === undefined || !quote) return undefined
     if (!token) return bchUsd === undefined ? undefined : formatUsd(Number(quote.expectedBuyAmount) * bchUsd)
     const leg = estimate.quote && { sell: Number(estimate.quote.sell) / 1e8, spotOutput: estimate.quote.spotOutput / 10 ** token.decimals }
-    if (!sameToken(token, PUSD_TOKEN) && (bchUsd === undefined || !leg)) return undefined
-    const { price, estimate: approx } = pusdUsdPrice(bchUsd, leg)
+    if (!isDollarStable(token.ticker) && !sameToken(token, PUSD_TOKEN) && (bchUsd === undefined || !leg)) return undefined
+    const { price, estimate: approx } = pusdUsdPrice(bchUsd, leg, token.ticker)
     return `${approx ? '≈ ' : ''}${formatUsd(Number(output) * price)}`
   })()
 

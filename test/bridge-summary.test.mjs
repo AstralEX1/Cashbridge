@@ -86,3 +86,29 @@ test('USD prices come from THORNode TOR prices, not drifted Midgard depths', () 
   assert.equal(torPoolPrices([{ asset: 'BCH.BCH', asset_tor_price: '0' }]), undefined)
   assert.ok(Number.isNaN(torPoolPrices(pools).runePrice))
 })
+
+test('dollar stables are always valued at $1', async () => {
+  const { isDollarStable, dollarTicker } = await import('../src/lib/dollar-stable.ts')
+  const { pusdUsdPrice } = await import('../src/lib/bridge-summary.ts')
+  assert.equal(dollarTicker('BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913'), 'USDC')
+  assert.equal(dollarTicker('ETH-USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7'), 'USDT')
+  assert.ok(isDollarStable('PUSD'))
+  assert.ok(isDollarStable('MUSD'))
+  assert.ok(isDollarStable('DAI'))
+  assert.ok(!isDollarStable('BCH.BCH'))
+  assert.ok(!isDollarStable('RES'))
+  assert.equal(pusdUsdPrice(400, { sell: 1, spotOutput: 50 }, 'PUSD').price, 1)
+  assert.equal(pusdUsdPrice(400, { sell: 1, spotOutput: 50 }, 'RES').price, 8)
+  // Pool marks PUSD at $1.02; the summary still values output at $1.
+  const summary = bridgeSummary({
+    sent: 100,
+    sentUsd: 100,
+    bch: 1,
+    bchUsd: 100,
+    tokenTicker: 'PUSD',
+    pusd: { output: 98, spotOutput: 98, sell: 1, tradeFee: 0.003 }
+  })
+  assert.equal(summary.pusdUsd, 1)
+  assert.equal(summary.receivedUsd, 98)
+  assert.equal(formatPercent(summary.impactPercent), '−2.00%')
+})

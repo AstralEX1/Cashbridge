@@ -1,6 +1,9 @@
+import { isDollarStable } from '@/lib/dollar-stable'
+
 // What the confirm screen states about a bridge, from live figures only: the THORChain quote, the
 // pool prices in USD, and for PUSD the Cauldron quote on the BCH the first leg is expected to deliver.
 // Display values, so plain numbers; amounts are in whole units (ETH, BCH, PUSD), prices in USD.
+// Dollar stables (USDC, USDT, PUSD, …) are always valued at $1.
 
 // The second leg's own time: one BCH confirmation is not waited for, the wallet signs and broadcasts.
 export const PUSD_LEG_SECONDS = 60
@@ -25,6 +28,8 @@ export interface BridgeSummaryInput {
   thorFeeUsd?: number
   sourceGasUsd?: number
   thorSeconds?: number
+  // Cauldron destination ticker; dollar stables (PUSD, MUSD, …) are valued at $1.
+  tokenTicker?: string
   pusd?: PusdLeg
 }
 
@@ -54,7 +59,7 @@ export const valueImpact = (sentUsd?: number, receivedUsd?: number) => {
 }
 
 export const bridgeSummary = (input: BridgeSummaryInput): BridgeSummary => {
-  const { sent, sentUsd, bch, bchUsd, thorFeeUsd, sourceGasUsd, thorSeconds, pusd } = input
+  const { sent, sentUsd, bch, bchUsd, thorFeeUsd, sourceGasUsd, thorSeconds, tokenTicker, pusd } = input
   const seconds = thorSeconds !== undefined && thorSeconds > 0 ? thorSeconds + (pusd ? PUSD_LEG_SECONDS : 0) : undefined
 
   if (!pusd) {
@@ -72,7 +77,8 @@ export const bridgeSummary = (input: BridgeSummaryInput): BridgeSummary => {
     }
   }
 
-  const pusdUsd = known(bchUsd) && pusd.spotOutput > 0 ? (pusd.sell * bchUsd!) / pusd.spotOutput : undefined
+  const pegged = !!tokenTicker && isDollarStable(tokenTicker)
+  const pusdUsd = pegged ? 1 : known(bchUsd) && pusd.spotOutput > 0 ? (pusd.sell * bchUsd!) / pusd.spotOutput : undefined
   const receivedUsd = known(pusdUsd) ? pusd.output * pusdUsd! : undefined
   // BCH the trade does not spend comes back to the wallet as change; the miner fee is gas.
   const changeUsd = known(bchUsd) ? Math.max(0, bch - pusd.sell - (pusd.minerFee ?? 0)) * bchUsd! : undefined
@@ -116,9 +122,10 @@ export const formatAmount = (value: number, significant = 6) => {
   return Number(value.toPrecision(significant)).toLocaleString('en-US', { maximumFractionDigits: 8 })
 }
 
-// One PUSD in USD: the live Cauldron pools' price (BCH sold per PUSD at spot) times BCH's USD
-// price. Without a BCH price only the $1 peg is left, which is an estimate and marked as one.
-export const pusdUsdPrice = (bchUsd: number | undefined, leg?: { sell: number; spotOutput: number }) => {
+// One token in USD. Dollar stables are always $1; other CashTokens use the Cauldron pools' price
+// (BCH sold per token at spot) times BCH's USD price. Without a BCH price only the $1 peg is left.
+export const pusdUsdPrice = (bchUsd: number | undefined, leg?: { sell: number; spotOutput: number }, ticker?: string) => {
+  if (ticker && isDollarStable(ticker)) return { price: 1, estimate: false }
   if (bchUsd !== undefined && Number.isFinite(bchUsd) && leg && leg.spotOutput > 0) return { price: (leg.sell * bchUsd) / leg.spotOutput, estimate: false }
   return { price: 1, estimate: true }
 }

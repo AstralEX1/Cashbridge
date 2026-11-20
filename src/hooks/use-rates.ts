@@ -6,8 +6,11 @@ import { QuoteResponseRoute } from '@tcswap/helpers/api'
 import { useQuote } from '@/hooks/use-quote'
 import { useAssetFrom, useAssetTo } from '@/hooks/use-swap'
 import { getDexScreenerTokens, getMayaMidgardCacaoPrice, getMayaMidgardPools, getMidgardPools, getMidgardRunePrice } from '@/lib/api'
+import { isDollarStable } from '@/lib/dollar-stable'
 import { isHoudiniProvider } from '@/lib/swap-helpers'
 import { getThorNetwork, getThorPools, torPoolPrices } from '@/lib/thorchain-api'
+
+const oneUsd = () => new USwapNumber(1)
 
 export type AssetRateMap = Record<string, USwapNumber>
 export type AssetLogoMap = Record<string, string>
@@ -194,6 +197,11 @@ export const useRates = (identifiers: string[], provider?: ProviderName): { rate
     })
   }
 
+  // Dollar stables (USDC, USDT, …) are always $1, even when Midgard/DexScreener drifts.
+  for (const id of identifiers) {
+    if (isDollarStable(id)) rates[id] = oneUsd()
+  }
+
   const dexScreenerPending = solanaMints.length > 0 && dexScreenerLoading
   const dexScreenerEthPending = ethAddresses.length > 0 && dexScreenerEthLoading
   const dexScreenerNearPending = nearAddresses.length > 0 && dexScreenerNearLoading
@@ -214,9 +222,11 @@ export const useSwapRates = () => {
   const houdiniRates = useMemo(() => (quote ? houdiniQuoteRates(quote) : {}), [quote])
   const isPrivate = isHoudiniProvider(quote?.providers[0])
 
+  const peg = (id: string | undefined, rate?: USwapNumber) => (id && isDollarStable(id) ? oneUsd() : rate)
+
   return {
-    rateFrom: assetFrom && preferRate(isPrivate, rates[assetFrom.identifier], houdiniRates.rateFrom),
-    rateTo: assetTo && preferRate(isPrivate, rates[assetTo.identifier], houdiniRates.rateTo)
+    rateFrom: assetFrom && peg(assetFrom.identifier, preferRate(isPrivate, rates[assetFrom.identifier], houdiniRates.rateFrom)),
+    rateTo: assetTo && peg(assetTo.identifier, preferRate(isPrivate, rates[assetTo.identifier], houdiniRates.rateTo))
   }
 }
 

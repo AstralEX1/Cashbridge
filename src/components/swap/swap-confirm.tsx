@@ -77,6 +77,7 @@ export const BridgeConfirm = ({ quote, token, bchAddress, automatic }: BridgeCon
     thorFeeUsd: toNumber(included),
     sourceGasUsd: inbound && toNumber(inbound.usd) ? toNumber(inbound.usd) : undefined,
     thorSeconds: firstLegSeconds(quote.estimatedTime),
+    tokenTicker: token?.ticker,
     pusd: leg && {
       output: Number(leg.output) / 10 ** token!.decimals,
       spotOutput: leg.spotOutput / 10 ** token!.decimals,

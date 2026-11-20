@@ -11,6 +11,7 @@ import { bchAddressProblem, bindingFromAddress } from '@/lib/bch'
 import { formatBaseUnits, minOutputFor, secondLegSellAmount, toBaseUnits } from '@/lib/bridge'
 import { quoteToken } from '@/lib/cauldron'
 import { FEATURED_TOKENS, fetchCauldronTokens, readTokenSlug, searchCauldronTokens, type CauldronToken } from '@/lib/cauldron-tokens'
+import { isDollarStable } from '@/lib/dollar-stable'
 import { resolveQuoteError } from '@/lib/errors'
 import { getNearQuote, getNearStatus, interpretNearStatus, isNearChain, nearExplorerUrl, nearSlippageBps, submitNearDeposit, type NearRoute, type NearQuoteRequest } from '@/lib/near-intents'
 import { sourceTransactionId } from '@/lib/source-transaction'
@@ -161,7 +162,7 @@ const listSupportedAssets = async (args: Args) => {
   const external = (pools ?? [])
     .filter(p => ((p as { status?: string }).status ?? 'available').toLowerCase() === 'available' && !p.asset.toUpperCase().startsWith('BCH.'))
     .filter(p => !search || p.asset.toLowerCase().includes(search))
-    .map(p => ({ asset: p.asset, price_usd: Number(p.assetPriceUSD).toPrecision(6) }))
+    .map(p => ({ asset: p.asset, price_usd: (isDollarStable(p.asset) ? 1 : Number(p.assetPriceUSD)).toPrecision(6) }))
   return {
     bch_side: [
       ...(!search || 'bch bitcoin cash'.includes(search) ? [{ asset: BridgeConfig.buyAsset, name: 'Bitcoin Cash', decimals: 8, route: 'THORChain to or from your BCH address' }] : []),

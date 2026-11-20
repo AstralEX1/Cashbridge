@@ -31,6 +31,7 @@ import { nearExplorerUrl } from '@/lib/near-intents'
 import { useAssets } from '@/hooks/use-assets'
 import { useRates } from '@/hooks/use-rates'
 import { formatAmount, formatMinutes, PUSD_LEG_SECONDS } from '@/lib/bridge-summary'
+import { isDollarStable } from '@/lib/dollar-stable'
 import { formatStepTime, stepTime } from '@/lib/bridge-tracking'
 import { PUSD_TOKEN } from '@/lib/cauldron-tokens'
 import { BridgeConfig } from '@/config'
@@ -270,7 +271,11 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
     usd: usdText(bchAmount !== undefined && bchUsd ? bchAmount * bchUsd : undefined),
     icon: <BchMark size={30} />
   }
-  const pusdUsd = leg && bchUsd && leg.spotOutput > 0 ? ((Number(leg.sell) / 1e8) * bchUsd) / (leg.spotOutput / 10 ** token.decimals) : undefined
+  const pusdUsd = isDollarStable(token.ticker)
+    ? 1
+    : leg && bchUsd && leg.spotOutput > 0
+      ? ((Number(leg.sell) / 1e8) * bchUsd) / (leg.spotOutput / 10 ** token.decimals)
+      : undefined
   const final: FlowToken = {
     amount: pusdAmount === undefined ? '—' : `${receipt ? '' : '≈ '}${formatAmount(pusdAmount, 4)}`,
     ticker: token.ticker,

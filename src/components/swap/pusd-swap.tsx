@@ -50,6 +50,7 @@ import {
 import { type CauldronToken, PUSD_TOKEN } from '@/lib/cauldron-tokens'
 import { generateId } from '@/lib/utils'
 import { formatAmount, formatMinutes, formatUsd, PUSD_LEG_SECONDS } from '@/lib/bridge-summary'
+import { isDollarStable } from '@/lib/dollar-stable'
 import { useSwapStore } from '@/store/swap-store'
 import {
   type BridgeOperation,
@@ -761,7 +762,7 @@ export const cauldronQuoteView = (
   return {
     ticker: token.ticker,
     bchPerToken,
-    tokenUsd: bchUsd ? bchPerToken * bchUsd : undefined,
+    tokenUsd: isDollarStable(token.ticker) ? 1 : bchUsd ? bchPerToken * bchUsd : undefined,
     lpFeePercent: feeShare * 100,
     lpFeeUsd: bchUsd ? fee * bchUsd : undefined,
     networkFeeBch: miner,
@@ -1000,7 +1001,13 @@ const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => 
   const bchUsd = rateOf('BCH.BCH')
   const bchAmount = bchSats === undefined ? undefined : Number(bchSats) / 1e8
   const leg = pusdEstimate.quote
-  const pusdUnitUsd = token && leg && bchUsd && leg.spotOutput > 0 ? ((Number(leg.sell) / 1e8) * bchUsd) / tokenAmount(BigInt(Math.round(leg.spotOutput)), token) : undefined
+  const pusdUnitUsd = token
+    ? isDollarStable(token.ticker)
+      ? 1
+      : leg && bchUsd && leg.spotOutput > 0
+        ? ((Number(leg.sell) / 1e8) * bchUsd) / tokenAmount(BigInt(Math.round(leg.spotOutput)), token)
+        : undefined
+    : undefined
   const signedOut = op.secondLeg?.tokenOut ?? op.secondLeg?.pusdOut
   const pusdUnits = signedOut !== undefined ? BigInt(signedOut) : leg?.output
   const pusdAmount = pusdUnits === undefined || !token ? undefined : tokenAmount(pusdUnits, token)

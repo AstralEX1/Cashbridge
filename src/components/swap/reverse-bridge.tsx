@@ -45,6 +45,7 @@ import { bridgeCompletionTransactions } from '@/lib/bridge-completion'
 import { hasSecondAuthorization, OPEN_SECOND_REQUEST_NOTE, recoverSecondSigning, rememberAttempt, sameSecondAttempt, signingDefinitelyStopped, signingRequest } from '@/lib/bridge-signing-recovery'
 import { formatStepTime, stepTime } from '@/lib/bridge-tracking'
 import { formatAmount, formatMinutes, formatPercent, formatUsd, PUSD_LEG_SECONDS, valueImpact } from '@/lib/bridge-summary'
+import { isDollarStable } from '@/lib/dollar-stable'
 import { type ReviewedSwap } from '@/lib/cauldron'
 import { SignCancelled, SignDeclined, SignSessionLost, SignTimedOut, SignUndelivered } from '@/lib/bch-signing'
 import { type CauldronToken, PUSD_TOKEN } from '@/lib/cauldron-tokens'
@@ -599,7 +600,12 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
   const chain = chainLabel(asset.chain)
   const sentAmount = Number(amount)
   const sentBch = token ? (sale.quote ? Number(sale.quote.output) / 1e8 : undefined) : sentAmount
-  const sentUsd = sentBch !== undefined && bchUsd ? sentBch * bchUsd : undefined
+  const pegged = !!token && isDollarStable(token.ticker)
+  const sentUsd = pegged
+    ? sentAmount
+    : sentBch !== undefined && bchUsd
+      ? sentBch * bchUsd
+      : undefined
   const received = Number(quote.expectedBuyAmount)
   const receivedUsd = outUsd ? received * outUsd : undefined
   const thorSeconds = quote.estimatedTime?.total
@@ -609,8 +615,14 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
   const bchGas = (Number(sale.quote?.minerFeeSats ?? 0n) + Number(DEPOSIT_FEE_RESERVE)) / 1e8
   const gasUsd = bchUsd ? bchGas * bchUsd : undefined
   // Value lost from what is sent to what arrives, BCH network fees aside.
-  // A token is valued at what it is worth at the pools' spot price, before Cauldron's fee and impact.
-  const sentValueUsd = token ? (!sale.error && sale.quote && bchUsd ? (sale.quote.spotOutput / 1e8) * bchUsd : undefined) : sentUsd
+  // Dollar stables are $1; other tokens are valued at the pools' spot price before fee and impact.
+  const sentValueUsd = pegged
+    ? sentAmount
+    : token
+      ? !sale.error && sale.quote && bchUsd
+        ? (sale.quote.spotOutput / 1e8) * bchUsd
+        : undefined
+      : sentUsd
   const { impactUsd, impactPercent } = valueImpact(sentValueUsd, receivedUsd)
   const cauldronFeeUsd = token && sale.quote && bchUsd ? (Number(sale.quote.tradeFeeSats) / 1e8) * bchUsd : undefined
   const thorFeeUsd = fees ? toNumber(fees.included) : undefined
@@ -1164,7 +1176,12 @@ export const ReverseOperationPanel = ({ uid, onClose }: { uid?: string; onClose:
 
   const icon = (node: ReactNode) => <span className="bridge-flow-icon">{node}</span>
   const sent: FlowToken = token
-    ? { amount: formatAmount(Number(active.amountFrom), 6), ticker: token.ticker, icon: <TokenMark token={token} size={30} /> }
+    ? {
+        amount: formatAmount(Number(active.amountFrom), 6),
+        ticker: token.ticker,
+        usd: isDollarStable(token.ticker) ? usdText(Number(active.amountFrom)) : undefined,
+        icon: <TokenMark token={token} size={30} />
+      }
     : { amount: formatAmount(Number(active.amountFrom), 8), ticker: 'BCH', usd: usdText(bchAmount !== undefined && bchUsd ? bchAmount * bchUsd : undefined), icon: <BchMark size={30} /> }
   const bch: FlowToken = {
     amount: bchAmount === undefined ? '—' : `${saleDone ? '' : '≈ '}${formatAmount(bchAmount, saleDone ? 8 : 4)}`,

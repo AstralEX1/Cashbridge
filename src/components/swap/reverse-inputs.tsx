@@ -26,6 +26,7 @@ import { formatBaseUnits } from '@/lib/bridge'
 import { percentOfUnits } from '@/lib/amount-presets'
 import { formatUsd, valueImpact } from '@/lib/bridge-summary'
 import type { CauldronToken } from '@/lib/cauldron-tokens'
+import { isDollarStable } from '@/lib/dollar-stable'
 import { checkInbound, DepositError, type InboundAddress, maxBchDeposit } from '@/lib/thorchain-deposit'
 import { getInboundAddresses } from '@/lib/api'
 import { useSwapStore } from '@/store/swap-store'
@@ -99,9 +100,13 @@ export const BchInputFrom = ({ selecting, onSelectOpenChange }: BridgeInputProps
     requestAnimationFrame(() => trigger.current?.focus())
   }
 
-  // A token is valued at what its sale brings in BCH; BCH at its pool price.
+  // Dollar stables are $1; other tokens are valued at what their sale brings in BCH; BCH at its pool price.
   const sentBch = token ? (sale.quote ? Number(sale.quote.output) / 1e8 : undefined) : Number(amountFrom) || undefined
-  const usd = sentBch !== undefined && bchUsd ? formatUsd(sentBch * bchUsd) : null
+  const usd = token && isDollarStable(token.ticker) && Number(amountFrom)
+    ? formatUsd(Number(amountFrom))
+    : sentBch !== undefined && bchUsd
+      ? formatUsd(sentBch * bchUsd)
+      : null
   // Sending all BCH leaves room for the deposit's fee.
   const max = balance.maxUnits
 
@@ -178,7 +183,11 @@ export const ReverseInputTo = ({ selecting, onSelectOpenChange }: BridgeInputPro
   const usd = receivedUsd !== undefined && !isLoading ? formatUsd(receivedUsd) : undefined
   const bchUsd = rates[BridgeConfig.buyAsset]
   const sentBch = token ? (!sale.error && sale.quote ? sale.quote.spotOutput / 1e8 : undefined) : Number(amount)
-  const sentUsd = sentBch !== undefined && bchUsd ? sentBch * Number(bchUsd.toSignificant(12)) : undefined
+  const sentUsd = token && isDollarStable(token.ticker)
+    ? Number(amount)
+    : sentBch !== undefined && bchUsd
+      ? sentBch * Number(bchUsd.toSignificant(12))
+      : undefined
   const { impactPercent } = valueImpact(sentUsd, receivedUsd)
 
   return (
