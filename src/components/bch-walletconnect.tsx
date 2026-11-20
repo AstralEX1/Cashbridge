@@ -274,6 +274,11 @@ export function useBchWalletConnect() {
         void instance.disconnect({ topic: live.topic, reason: USER_DISCONNECTED }).catch(() => {})
         throw new Error('The wallet shared no Bitcoin Cash mainnet address')
       }
+      // The methods are only optional in the proposal, so a wallet may approve without signing; every transfer needs it.
+      if (!live.namespaces.bch?.methods?.includes('bch_signTransaction')) {
+        void instance.disconnect({ topic: live.topic, reason: USER_DISCONNECTED }).catch(() => {})
+        throw new Error('The wallet did not allow transaction signing for this site')
+      }
       await bind(instance, live, address, run)
     } catch (e) {
       if (run !== attempt.current) return
