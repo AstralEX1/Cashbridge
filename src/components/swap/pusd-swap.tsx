@@ -47,6 +47,7 @@ import {
   quoteToken,
   type ReviewedSwap
 } from '@/lib/cauldron'
+import { arrivalSoftMessageKey, clearArrival, runArrivalRelease, runArrivalSwap } from '@/lib/arrival-second-leg'
 import { type CauldronToken, PUSD_TOKEN } from '@/lib/cauldron-tokens'
 import { generateId } from '@/lib/utils'
 import { formatAmount, formatMinutes, formatUsd, PUSD_LEG_SECONDS } from '@/lib/bridge-summary'
@@ -1181,6 +1182,7 @@ const ReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: number; com
             ) : (
               !leg.walletAway && <p className="bridge-flow-message">{t('progress.reconnectBch')}</p>
             ))}
+          {leg.note && <p className="bridge-flow-message" role="status">{leg.note}</p>}
           {leg.error && <SwapError error={new Error(leg.error)} />}
         </>
       }
@@ -1190,7 +1192,7 @@ const ReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: number; com
             className="bridge-flow-primary is-active w-full"
             colorType="3"
             onClick={leg.sign}
-            disabled={!leg.reviewed || !!leg.busy || !leg.walletMatches}
+            disabled={(!leg.reviewed && !leg.arrivalMode) || !!leg.busy || !leg.walletMatches}
             aria-busy={!!leg.busy || leg.walletAway}
           >
             {(leg.busy || leg.walletAway) && <LoaderCircle size={18} className="animate-spin" />}
@@ -1200,16 +1202,18 @@ const ReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: number; com
                 ? t('reverse.sending')
                 : leg.walletAway
                   ? t('reverse.walletAway')
-                  : t('progress.swapAction', { ticker: token.ticker })}
+                  : leg.arrivalMode
+                    ? t('arrival.swapAction', { ticker: token.ticker })
+                    : t('progress.swapAction', { ticker: token.ticker })}
           </GenericButton>
-          <SignHint dark phase={leg.phase} walletName={leg.walletName} note={leg.note} onCancel={leg.cancel} />
-          {!leg.reviewed && !leg.busy && leg.error && (
+          <SignHint dark phase={leg.phase} walletName={leg.walletName} note={leg.arrivalMode ? undefined : leg.note} onCancel={leg.cancel} />
+          {!leg.reviewed && !leg.busy && (leg.error || leg.arrivalMode) && (
             <button type="button" className="bridge-flow-link" onClick={leg.prepare}>
               {t('progress.retry')}
             </button>
           )}
-          <button type="button" className="bridge-flow-link" onClick={leg.keep} disabled={!!leg.busy || !leg.canKeep}>
-            {t('progress.keepBch')}
+          <button type="button" className="bridge-flow-link" onClick={() => void leg.keep()} disabled={!!leg.busy || !leg.canKeep}>
+            {leg.arrivalMode ? t('arrival.releaseBch') : t('progress.keepBch')}
           </button>
         </>
       }
@@ -1289,13 +1293,14 @@ const useSecondLeg = (tx: BridgeTx) => {
   const abort = useRef<AbortController | undefined>(undefined)
   useEffect(() => () => abort.current?.abort(), [])
   const op = tx.bridge
+  const isArrival = !!op.arrival
   const token = operationToken(op) ?? PUSD_TOKEN
   const walletName = useBchWallet().walletName ?? op.walletName ?? t('wallet.yourWallet')
   const total = (op.received ?? []).reduce((sum, o) => sum + BigInt(o.value), 0n)
-  // The binding outlives a wallet that is briefly away (see bch-wallet.tsx); signing needs it live.
-  const walletMatches = walletState === 'connected' && !!binding && binding.pubkey === op.binding.pubkey
+  // Arrival uses the browser trade key; classic Manual needs the bound wallet live.
+  const walletMatches = isArrival ? true : walletState === 'connected' && !!binding && binding.pubkey === op.binding.pubkey
   // The right wallet, only away (its app in the background): the button waits for it to answer.
-  const walletAway = !walletMatches && !!binding && binding.pubkey === op.binding.pubkey
+  const walletAway = !isArrival && !walletMatches && !!binding && binding.pubkey === op.binding.pubkey
   const signing = useRef(false)
   const preparation = useRef(0)
   const fundingKey = (op.received ?? []).map(o => `${o.txid}:${o.vout}:${o.value}`).join('|')
@@ -1307,8 +1312,67 @@ const useSecondLeg = (tx: BridgeTx) => {
 
   const expired = !!review && now - review.at > REVIEW_TTL_MS
 
+  const runArrival = async (broadcastTrade: boolean) => {
+    if (signing.current || !op.arrival) return
+    const request = ++preparation.current
+    signing.current = broadcastTrade
+    setBusy(broadcastTrade ? 'sign' : 'quote')
+    setError(undefined)
+    setNote(undefined)
+    if (broadcastTrade) setPhase('sending')
+    const controller = new AbortController()
+    abort.current = controller
+    try {
+      const current = await freshOperation(tx.uid)
+      if (current?.bridge.stage !== 'bch_ready' || !current.bridge.arrival) return
+      const { status, update: patch, clearAddress } = await runArrivalSwap({
+        op: current.bridge,
+        broadcast: broadcastTrade,
+        signal: controller.signal
+      })
+      if (request !== preparation.current) return
+      if (patch) update(tx.uid, () => patch)
+      if (clearAddress) void clearArrival(clearAddress)
+      if (status.kind === 'Swapped' && !broadcastTrade) {
+        // Local sign succeeded; surface a fresh reviewed build for the confirm button figures.
+        const { arrivalUnlock } = await import('@/lib/swap-on-arrival')
+        const funding = (current.bridge.received ?? []).map(o => ({ txid: o.txid, vout: o.vout, value: o.value }))
+        const unlockBytes = arrivalUnlock(current.bridge.arrival.terms, 'swap', new Uint8Array(65)).length + 2
+        const reviewed = await prepareTokenTrade(
+          {
+            category: token.category,
+            side: 'buy',
+            funding,
+            lockingBytecode: current.bridge.binding.lockingBytecode,
+            tokenAddress: current.bridge.binding.tokenAddress,
+            cashAddress: current.bridge.binding.cashAddress,
+            payout: { tokenScript: current.bridge.arrival.terms.ownerScript, changeScript: current.bridge.arrival.terms.ownerScript },
+            ownUnlockBytes: unlockBytes
+          },
+          funding.reduce((s, f) => s + BigInt(f.value), 0n),
+          output => minOutputFor(output)
+        )
+        setReview({ reviewed, at: Date.now() })
+        return
+      }
+      const softKey = arrivalSoftMessageKey(status)
+      if (softKey) setNote(t(softKey as never))
+      if (status.kind === 'TradeLayoutError') setError(status.message)
+    } catch (e) {
+      if (request === preparation.current) setError(e instanceof Error ? e.message : t('second.failed'))
+    } finally {
+      if (request === preparation.current) {
+        signing.current = false
+        abort.current = undefined
+        setBusy(undefined)
+        setPhase('idle')
+      }
+    }
+  }
+
   // Fresh quote on the BCH actually received, then a build checked against it.
   const prepare = async () => {
+    if (isArrival) return runArrival(false)
     if (signing.current) return
     const request = ++preparation.current
     setBusy('quote')
@@ -1360,7 +1424,18 @@ const useSecondLeg = (tx: BridgeTx) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expired])
 
+  // Soft arrival retries while waiting for price / fee headroom / broadcast races.
+  useEffect(() => {
+    if (!isArrival || op.stage !== 'bch_ready' || signing.current) return
+    const soft = op.arrival?.status
+    if (!soft || !['Waiting', 'BelowFloor', 'FeeShortfall', 'BroadcastConflict'].includes(soft)) return
+    const timer = setTimeout(() => void runArrival(true), 12_000)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isArrival, op.stage, op.arrival?.status, fundingKey])
+
   const sign = async () => {
+    if (isArrival) return runArrival(true)
     if (!review || expired || !signer || !binding || !walletMatches || signing.current) return
     signing.current = true
     const controller = new AbortController()
@@ -1456,7 +1531,28 @@ const useSecondLeg = (tx: BridgeTx) => {
     }
   }
 
-  const keep = () => update(tx.uid, current => (current.stage === 'bch_ready' && !hasSecondAuthorization(current) ? { stage: 'kept_bch' } : {}))
+  const keep = async () => {
+    if (!isArrival) {
+      update(tx.uid, current => (current.stage === 'bch_ready' && !hasSecondAuthorization(current) ? { stage: 'kept_bch' } : {}))
+      return
+    }
+    if (signing.current) return
+    setBusy('sign')
+    try {
+      const current = await freshOperation(tx.uid)
+      if (!current?.bridge.arrival) return
+      const { status, update: patch, clearAddress } = await runArrivalRelease(current.bridge)
+      if (patch) update(tx.uid, () => patch)
+      if (clearAddress) void clearArrival(clearAddress)
+      const softKey = arrivalSoftMessageKey(status)
+      if (softKey) setNote(t(softKey as never))
+      if (status.kind === 'TradeLayoutError') setError(status.message)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t('second.failed'))
+    } finally {
+      setBusy(undefined)
+    }
+  }
   return {
     token,
     reviewed: expired ? undefined : review?.reviewed,
@@ -1472,7 +1568,8 @@ const useSecondLeg = (tx: BridgeTx) => {
     sign,
     keep,
     canKeep: !hasSecondAuthorization(op),
-    total
+    total,
+    arrivalMode: isArrival
   }
 }
 

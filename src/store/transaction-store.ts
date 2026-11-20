@@ -187,6 +187,20 @@ export interface NearLeg {
   status?: string
 }
 
+// Public SwapOnArrival terms only — the trade private key stays in IndexedDB (arrival-session).
+export interface ArrivalLeg {
+  terms: {
+    tradeKey: string
+    ownerScript: string
+    category: string
+    rateNum: string
+    rateDen: string
+    refundAfter: number
+  }
+  // Soft status from the last arrival engine pass (waiting / below floor / …).
+  status?: string
+}
+
 export interface BridgeOperation {
   id: string
   // Set when NEAR Intents carries the bridge leg; THORChain otherwise.
@@ -200,6 +214,8 @@ export interface BridgeOperation {
   token?: CauldronToken
   reverse?: ReverseDetails
   binding: BchBinding
+  // Manual CashToken via SwapOnArrival: binding is the contract P2SH; trade key is browser-local.
+  arrival?: ArrivalLeg
   walletName?: string
   // Indicative BCH (sats) from the first-leg quote; never used as receipt evidence.
   quotedBchSats?: string

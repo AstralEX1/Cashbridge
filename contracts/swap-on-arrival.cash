@@ -1,0 +1,61 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) Cash Bridge
+//
+// Swap-on-arrival escrow for one bridge leg (same shape as Hashi's SwapOnArrival): a cross-chain bridge
+// pays plain BCH here, and a one-swap trade key kept in the person's browser can turn it into a CashToken
+// on Cauldron without another wallet prompt. The Cashbridge Router path (router-order.cash) is separate:
+// that one uses the service key and a fixed minimum. This contract is for the browser-held trade-key model.
+
+pragma cashscript ^0.14.0;
+
+/*
+ * Every way out pays the person and no one else:
+ *
+ * - swap: the trade key signs, and the output at this coin's own index pays the person at least the floor
+ *   in the token: `rateNum` (the quoted "you get at least"), or pro rata if the coin holds less than
+ *   `rateDen` sats (the least BCH the bridge promised). Binding the payout to the coin's own index means
+ *   two coins can never share one payout.
+ * - release: the trade key sends the BCH straight to the person at any time (finish by hand), losing at
+ *   most MAX_FEE sats to the miner.
+ * - reclaim: after `refundAfter` (Unix time vs the chain's median time), anyone who knows these terms may
+ *   send the BCH to the person, with the same fee cap — so a closed tab / stopped helper cannot strand it.
+ *
+ * MAX_FEE (3,000 sats) is written out below; a one-input, one-output refund needs about 300.
+ */
+contract SwapOnArrival(
+    // The token's category id in the byte order the VM reads it: reversed from how explorers show it.
+    bytes32 tokenCategory,
+    // The person's locking bytecode: where the token goes, and where the BCH goes back.
+    bytes owner,
+    // One-swap public key made and kept by the person's browser (never sent to a keeper).
+    pubkey tradeKey,
+    int rateNum,
+    int rateDen,
+    int refundAfter
+) {
+    function swap(sig tradeSig) {
+        require(checkSig(tradeSig, tradeKey));
+        int minimum = min(tx.inputs[this.activeInputIndex].value * rateNum / rateDen, rateNum);
+        require(tx.outputs[this.activeInputIndex].lockingBytecode == owner);
+        require(tx.outputs[this.activeInputIndex].tokenCategory == tokenCategory);
+        require(tx.outputs[this.activeInputIndex].tokenAmount >= minimum);
+    }
+
+    function release(sig tradeSig) {
+        require(checkSig(tradeSig, tradeKey));
+        require(tx.inputs.length == 1);
+        require(tx.outputs.length == 1);
+        require(tx.outputs[0].lockingBytecode == owner);
+        require(tx.outputs[0].tokenCategory == 0x);
+        require(tx.outputs[0].value >= tx.inputs[this.activeInputIndex].value - 3000);
+    }
+
+    function reclaim() {
+        require(tx.time >= refundAfter);
+        require(tx.inputs.length == 1);
+        require(tx.outputs.length == 1);
+        require(tx.outputs[0].lockingBytecode == owner);
+        require(tx.outputs[0].tokenCategory == 0x);
+        require(tx.outputs[0].value >= tx.inputs[this.activeInputIndex].value - 3000);
+    }
+}

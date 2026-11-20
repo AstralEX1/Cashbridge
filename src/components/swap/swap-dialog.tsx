@@ -33,12 +33,14 @@ interface SwapDialogProps {
   // Prepared by the main button: the executable route and the BCH destination it pays.
   quote?: QuoteResponseRoute
   binding?: BchBinding
+  // Public SwapOnArrival terms when the destination is the contract P2SH (trade key stays local).
+  arrival?: { terms: import('@/lib/swap-on-arrival').ArrivalTerms }
   walletName?: string
   isOpen: boolean
   onOpenChange: (isOpen: boolean) => void
 }
 
-export const SwapDialog = ({ provider, quote: prepared, binding: destination, walletName, isOpen, onOpenChange }: SwapDialogProps) => {
+export const SwapDialog = ({ provider, quote: prepared, binding: destination, arrival, walletName, isOpen, onOpenChange }: SwapDialogProps) => {
   const t = useTranslations('swap')
   const tConfirm = useTranslations('bridge.confirm')
   const tBridge = useTranslations('bridge')
@@ -104,6 +106,7 @@ export const SwapDialog = ({ provider, quote: prepared, binding: destination, wa
     const broadcast = startBridgeFirstLeg({
       binding,
       near,
+      arrival: arrival ? { terms: arrival.terms } : undefined,
       walletName: bchWalletName ?? undefined,
       quotedBchSats,
       destinationAsset: bchToken ? 'TOKEN' : 'BCH',

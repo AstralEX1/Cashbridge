@@ -29,9 +29,12 @@ import { AutoBridgeDialog, prepareAutomatic } from '@/components/swap/auto-bridg
 import { RouterUnavailable } from '@/components/swap/router-unavailable'
 import { RouterUnavailableError } from '@/lib/auto-bridge-client'
 import { addressToLockingBytecode } from '@/lib/bch'
+import { toBaseUnits } from '@/lib/bridge'
+import { prepareArrivalDestination } from '@/lib/arrival-prepare'
 import { getQuotes } from '@/lib/api'
 import { getNearQuote, isNearRoute, nearSlippageBps } from '@/lib/near-intents'
 import { USwapError } from '@tcswap/helpers'
+import type { ArrivalTerms } from '@/lib/swap-on-arrival'
 
 interface SwapButtonProps {
   onShowBridge: () => void
@@ -108,10 +111,33 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
         openDialog(AutoBridgeDialog, { prepared })
         return
       }
-      const binding = destination.binding
-      if (!binding) return
+      const owner = destination.binding
+      if (!owner) return
+      // CashToken Manual: try SwapOnArrival so THOR/NEAR pay the contract P2SH (not the wallet). Soft
+      // fallback to the wallet on any prepare failure — classic Manual Cauldron still works.
+      let binding = owner
+      let arrival: { terms: ArrivalTerms } | undefined
+      if (bchToken && !destination.pasted) {
+        try {
+          const expectedBchSats = toBaseUnits(quote.expectedBuyAmount, 8)
+          const expectedTokenUnits = tokenEstimate.output ?? 0n
+          const dest = await prepareArrivalDestination({
+            owner,
+            token: bchToken,
+            expectedBchSats,
+            expectedTokenUnits
+          })
+          if (dest.mode === 'arrival') {
+            binding = dest.binding
+            arrival = { terms: dest.terms }
+          }
+        } catch {
+          binding = owner
+          arrival = undefined
+        }
+      }
       if (isNearRoute(quote)) {
-        // A fresh quote with a one-use deposit address, paying the bound wallet's plain address (1Click refuses z…)
+        // A fresh quote with a one-use deposit address, paying the bound address (1Click refuses z…)
         // and refunding the source wallet.
         const route = await getNearQuote({
           sellAsset: assetFrom.identifier,
@@ -124,7 +150,13 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
           slippageBps: nearSlippageBps(slippage)
         })
         if (!route) throw new Error(t('button.noValidQuotes'))
-        openDialog(SwapDialog, { provider, quote: route, binding, walletName: destination.pasted ? undefined : (bchWallet.walletName ?? undefined) })
+        openDialog(SwapDialog, {
+          provider,
+          quote: route,
+          binding,
+          arrival,
+          walletName: destination.pasted ? undefined : (bchWallet.walletName ?? undefined)
+        })
         return
       }
       const quotes = await getQuotes({
@@ -139,7 +171,13 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
         providers: [provider]
       })
       if (!quotes[0]) throw new Error(t('button.noValidQuotes'))
-      openDialog(SwapDialog, { provider, quote: quotes[0], binding, walletName: destination.pasted ? undefined : (bchWallet.walletName ?? undefined) })
+      openDialog(SwapDialog, {
+        provider,
+        quote: quotes[0],
+        binding,
+        arrival,
+        walletName: destination.pasted ? undefined : (bchWallet.walletName ?? undefined)
+      })
     } catch (error) {
       console.warn('Preparing the swap failed', error)
       // The form is untouched: the notice offers Try again, which prepares the same transfer once more.

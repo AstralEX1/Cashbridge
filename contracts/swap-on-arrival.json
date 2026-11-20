@@ -1,0 +1,62 @@
+{
+  "contractName": "SwapOnArrival",
+  "constructorInputs": [
+    { "name": "tokenCategory", "type": "bytes32" },
+    { "name": "owner", "type": "bytes" },
+    { "name": "tradeKey", "type": "pubkey" },
+    { "name": "rateNum", "type": "int" },
+    { "name": "rateDen", "type": "int" },
+    { "name": "refundAfter", "type": "int" }
+  ],
+  "abi": [
+    {
+      "name": "swap",
+      "inputs": [
+        { "name": "tradeSig", "type": "sig" }
+      ]
+    },
+    {
+      "name": "release",
+      "inputs": [
+        { "name": "tradeSig", "type": "sig" }
+      ]
+    },
+    { "name": "reclaim", "inputs": [] }
+  ],
+  "bytecode": "OP_6 OP_PICK OP_0 OP_NUMEQUAL OP_IF OP_7 OP_ROLL OP_3 OP_ROLL OP_CHECKSIGVERIFY OP_INPUTINDEX OP_UTXOVALUE OP_3 OP_PICK OP_MUL OP_4 OP_ROLL OP_DIV OP_3 OP_ROLL OP_MIN OP_INPUTINDEX OP_OUTPUTBYTECODE OP_3 OP_ROLL OP_EQUALVERIFY OP_INPUTINDEX OP_OUTPUTTOKENCATEGORY OP_ROT OP_EQUALVERIFY OP_INPUTINDEX OP_OUTPUTTOKENAMOUNT OP_LESSTHANOREQUAL OP_NIP OP_NIP OP_ELSE OP_6 OP_PICK OP_1 OP_NUMEQUAL OP_IF OP_7 OP_ROLL OP_3 OP_ROLL OP_CHECKSIGVERIFY OP_TXINPUTCOUNT OP_1 OP_NUMEQUALVERIFY OP_TXOUTPUTCOUNT OP_1 OP_NUMEQUALVERIFY OP_0 OP_OUTPUTBYTECODE OP_ROT OP_EQUALVERIFY OP_0 OP_OUTPUTTOKENCATEGORY OP_0 OP_EQUALVERIFY OP_0 OP_OUTPUTVALUE OP_INPUTINDEX OP_UTXOVALUE b80b OP_SUB OP_GREATERTHANOREQUAL OP_VERIFY OP_2DROP OP_2DROP OP_DROP OP_1 OP_ELSE OP_6 OP_ROLL OP_2 OP_NUMEQUALVERIFY OP_5 OP_ROLL OP_CHECKLOCKTIMEVERIFY OP_DROP OP_TXINPUTCOUNT OP_1 OP_NUMEQUALVERIFY OP_TXOUTPUTCOUNT OP_1 OP_NUMEQUALVERIFY OP_0 OP_OUTPUTBYTECODE OP_ROT OP_EQUALVERIFY OP_0 OP_OUTPUTTOKENCATEGORY OP_0 OP_EQUALVERIFY OP_0 OP_OUTPUTVALUE OP_INPUTINDEX OP_UTXOVALUE b80b OP_SUB OP_GREATERTHANOREQUAL OP_VERIFY OP_2DROP OP_2DROP OP_1 OP_ENDIF OP_ENDIF",
+  "source": "// SPDX-License-Identifier: MIT\n// Copyright (c) Cash Bridge\n//\n// Swap-on-arrival escrow for one bridge leg (same shape as Hashi's SwapOnArrival): a cross-chain bridge\n// pays plain BCH here, and a one-swap trade key kept in the person's browser can turn it into a CashToken\n// on Cauldron without another wallet prompt. The Cashbridge Router path (router-order.cash) is separate:\n// that one uses the service key and a fixed minimum. This contract is for the browser-held trade-key model.\n\npragma cashscript ^0.14.0;\n\n/*\n * Every way out pays the person and no one else:\n *\n * - swap: the trade key signs, and the output at this coin's own index pays the person at least the floor\n *   in the token: `rateNum` (the quoted \"you get at least\"), or pro rata if the coin holds less than\n *   `rateDen` sats (the least BCH the bridge promised). Binding the payout to the coin's own index means\n *   two coins can never share one payout.\n * - release: the trade key sends the BCH straight to the person at any time (finish by hand), losing at\n *   most MAX_FEE sats to the miner.\n * - reclaim: after `refundAfter` (Unix time vs the chain's median time), anyone who knows these terms may\n *   send the BCH to the person, with the same fee cap — so a closed tab / stopped helper cannot strand it.\n *\n * MAX_FEE (3,000 sats) is written out below; a one-input, one-output refund needs about 300.\n */\ncontract SwapOnArrival(\n    // The token's category id in the byte order the VM reads it: reversed from how explorers show it.\n    bytes32 tokenCategory,\n    // The person's locking bytecode: where the token goes, and where the BCH goes back.\n    bytes owner,\n    // One-swap public key made and kept by the person's browser (never sent to a keeper).\n    pubkey tradeKey,\n    int rateNum,\n    int rateDen,\n    int refundAfter\n) {\n    function swap(sig tradeSig) {\n        require(checkSig(tradeSig, tradeKey));\n        int minimum = min(tx.inputs[this.activeInputIndex].value * rateNum / rateDen, rateNum);\n        require(tx.outputs[this.activeInputIndex].lockingBytecode == owner);\n        require(tx.outputs[this.activeInputIndex].tokenCategory == tokenCategory);\n        require(tx.outputs[this.activeInputIndex].tokenAmount >= minimum);\n    }\n\n    function release(sig tradeSig) {\n        require(checkSig(tradeSig, tradeKey));\n        require(tx.inputs.length == 1);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].lockingBytecode == owner);\n        require(tx.outputs[0].tokenCategory == 0x);\n        require(tx.outputs[0].value >= tx.inputs[this.activeInputIndex].value - 3000);\n    }\n\n    function reclaim() {\n        require(tx.time >= refundAfter);\n        require(tx.inputs.length == 1);\n        require(tx.outputs.length == 1);\n        require(tx.outputs[0].lockingBytecode == owner);\n        require(tx.outputs[0].tokenCategory == 0x);\n        require(tx.outputs[0].value >= tx.inputs[this.activeInputIndex].value - 3000);\n    }\n}\n",
+  "fingerprint": "8ced2367d899f7eb369c87396a0a615586b9e73993785ffeb9515a7a841cf687",
+  "debug": {
+    "bytecode": "5679009c63577a537aadc0c6537995547a96537aa3c0cd537a88c0d17b88c0d3a17777675679519c63577a537aadc3519dc4519d00cd7b8800d1008800ccc0c602b80b94a2696d6d755167567a529d557ab175c3519dc4519d00cd7b8800d1008800ccc0c602b80b94a2696d6d516868",
+    "sourceMap": "36:4:42:5;;;;;37:25:37:33;;:35::43;;:8::46:1;38:36:38:57:0;:26::64:1;:67::74:0;;:26:::1;:77::84:0;;:26:::1;:86::93:0;;:22::94:1;39:27:39:48:0;:16::65:1;:69::74:0;;:8::76:1;40:27:40:48:0;:16::63:1;:67::80:0;:8::82:1;41:27:41:48:0;:16::61:1;:8::74;36:32:42:5;;:4;44::51::0;;;;;45:25:45:33;;:35::43;;:8::46:1;46:16:46:32:0;:36::37;:8::39:1;47:16:47:33:0;:37::38;:8::40:1;48:27:48:28:0;:16::45:1;:49::54:0;:8::56:1;49:27:49:28:0;:16::43:1;:47::49:0;:8::51:1;50:27:50:28:0;:16::35:1;:49::70:0;:39::77:1;:80::84:0;:39:::1;:16;:8::86;44:35:51:5;;;;:4;53::60::0;;;;54:27:54:38;;:8::40:1;;55:16:55:32:0;:36::37;:8::39:1;56:16:56:33:0;:37::38;:8::40:1;57:27:57:28:0;:16::45:1;:49::54:0;:8::56:1;58:27:58:28:0;:16::43:1;:47::49:0;:8::51:1;59:27:59:28:0;:16::35:1;:49::70:0;:39::77:1;:80::84:0;:39:::1;:16;:8::86;53:23:60:5;;;25:0:61:1;",
+    "logs": [],
+    "requires": [
+      { "ip": 15, "line": 37 },
+      { "ip": 31, "line": 39 },
+      { "ip": 35, "line": 40 },
+      { "ip": 39, "line": 41 },
+      { "ip": 51, "line": 45 },
+      { "ip": 54, "line": 46 },
+      { "ip": 57, "line": 47 },
+      { "ip": 61, "line": 48 },
+      { "ip": 65, "line": 49 },
+      { "ip": 73, "line": 50 },
+      { "ip": 85, "line": 54 },
+      { "ip": 89, "line": 55 },
+      { "ip": 92, "line": 56 },
+      { "ip": 96, "line": 57 },
+      { "ip": 100, "line": 58 },
+      { "ip": 108, "line": 59 }
+    ],
+    "sourceTags": "33:34:sc"
+  },
+  "compiler": {
+    "name": "cashc",
+    "version": "0.14.0",
+    "options": {
+      "enforceFunctionParameterTypes": true,
+      "enforceLocktimeGuard": true
+    }
+  },
+  "updatedAt": "2026-11-20T04:09:46.168Z"
+}

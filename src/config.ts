@@ -59,6 +59,9 @@ export const BridgeConfig = {
   // NEAR Intents for the Cashbridge Router's forward transfers too, which the Router admits with AUTO_BRIDGE_NEAR_ORDERS (a
   // Router that does not falls back to THORChain). On by default; NEXT_PUBLIC_ROUTER_NEAR=false leaves the Router on THORChain.
   routerNear: process.env.NEXT_PUBLIC_ROUTER_NEAR !== 'false',
+  // Manual CashToken via SwapOnArrival (browser trade key → P2SH). Off with NEXT_PUBLIC_SWAP_ON_ARRIVAL=false;
+  // prepare failure falls back to the wallet address + classic Manual Cauldron.
+  swapOnArrival: process.env.NEXT_PUBLIC_SWAP_ON_ARRIVAL !== 'false',
   cauldronBroadcastUrl: process.env.NEXT_PUBLIC_CAULDRON_BROADCAST_URL || 'https://broadcast.cauldron.quest/broadcast',
   // Cauldron's public pool indexer: the PUSD pools the second leg trades against. Each pool a trade
   // picks is checked unspent on a Fulcrum server first, since the list can lag the chain.

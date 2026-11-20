@@ -45,6 +45,25 @@ export default function Page() {
         When Router sales are offered, a reverse CashToken transfer uses a sale covenant: your wallet sends the token in; the Router may sell for ≥ min BCH and deposit to THORChain with the fixed memo, or return the tokens; after <code>refundAfter</code> (same median-time rule) anyone may return them. Sales stay on THORChain. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.
       </p>
 
+      <h3 id="swap-on-arrival">SwapOnArrival: browser-held trade keys</h3>
+      <p>
+        Manual CashToken transfers can use a separate covenant (<code>SwapOnArrival</code>), distinct from the Router&apos;s <code>RouterOrder</code>:
+      </p>
+      <ul>
+        <li>
+          <strong>RouterOrder</strong> = Router service key, continues with tab closed, fixed <code>minTokens</code>. The Router decides when to act.
+        </li>
+        <li>
+          <strong>SwapOnArrival</strong> = browser-held <code>tradeKey</code>, proportional floor (<code>rateNum/rateDen</code>), <strong>keep tab open</strong> to swap. After <code>refundAfter</code> anyone may <code>reclaim</code> BCH to your wallet (no key required).
+        </li>
+      </ul>
+      <Callout kind="info" title="Server never holds the arrival trade key">
+        Cash Bridge stores only public terms (owner script, token category, rate floor, refund time). The <code>tradeKey</code> private key never leaves your browser. Lost key means waiting for <code>refundAfter</code> to reclaim BCH — the token swap is gone.
+      </Callout>
+      <p>
+        If arrival preparation fails, the bridge pays your <strong>wallet</strong> directly and uses classic Manual Cauldron.
+      </p>
+
       <h3 id="legacy">Legacy P2PKH orders</h3>
       <p>
         Older Router orders (and the published mainnet Router proof row) used a P2PKH order address — temporary service custody of BCH, not the purchase covenant. That row proves a mainnet run with a single source-wallet signature under that legacy model; it does not prove funded settlement of the P2SH covenants.

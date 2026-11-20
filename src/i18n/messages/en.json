@@ -999,6 +999,15 @@
       "best": "Best",
       "minutes": "≈ {minutes} min",
       "unavailable": "No quote for this amount"
+    },
+    "arrival": {
+      "waiting": "Waiting for BCH or a better Cauldron price — retrying automatically.",
+      "belowFloor": "Cauldron price is below the contract floor right now. Waiting to retry.",
+      "feeShortfall": "Need a little more BCH for the miner fee — rebuilding with a larger reserve.",
+      "broadcastConflict": "Broadcast raced the network. Retrying with a fresh build.",
+      "missingKey": "This browser no longer has the arrival trade key. After the reclaim time anyone can send the BCH to your wallet.",
+      "swapAction": "Swap to {ticker} (no wallet prompt)",
+      "releaseBch": "Release BCH to my wallet"
     }
   },
   "automatic": {

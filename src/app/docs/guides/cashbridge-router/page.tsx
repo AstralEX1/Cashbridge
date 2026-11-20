@@ -47,6 +47,41 @@ export default function Page() {
         When Router sales are offered, reverse CashToken transfers use an <code>apiVersion=2</code> sale covenant (THORChain only). Your wallet sends the token in; the Router may sell for ≥ min BCH and deposit with the fixed memo, or return the tokens; after three hours anyone can return them. Legacy P2PKH order addresses are a different model — temporary service custody, not this script.
       </p>
 
+      <h2 id="router-order-vs-swap-on-arrival">RouterOrder vs SwapOnArrival</h2>
+      <p>
+        Two distinct non-custodial covenants: the Router&apos;s <code>RouterOrder</code>, and Manual CashToken <code>SwapOnArrival</code> (browser trade key). They are not interchangeable:
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Covenant</th>
+            <th>Key holder</th>
+            <th>Minimum</th>
+            <th>Tab state</th>
+            <th>Lost key</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>RouterOrder</strong></td>
+            <td>Router service key</td>
+            <td>Fixed <code>minTokens</code></td>
+            <td>Continues with tab closed</td>
+            <td>Service continues</td>
+          </tr>
+          <tr>
+            <td><strong>SwapOnArrival</strong></td>
+            <td>Browser <code>tradeKey</code></td>
+            <td>Proportional floor (<code>rateNum/rateDen</code>)</td>
+            <td>Keep tab open to swap</td>
+            <td>Reclaim BCH after <code>refundAfter</code> only</td>
+          </tr>
+        </tbody>
+      </table>
+      <Callout kind="warning" title="Server never holds arrival trade keys">
+        For Manual <code>SwapOnArrival</code>, Cash Bridge never receives the trade private key — only public terms stay local. If you lose the key, reclaim BCH to your wallet after <code>refundAfter</code> — the token swap is forfeited. If arrival preparation fails, the bridge pays your wallet and uses classic Manual Cauldron.
+      </Callout>
+
       <h2 id="custody-boundary">Custody boundary</h2>
       <table>
         <thead>
