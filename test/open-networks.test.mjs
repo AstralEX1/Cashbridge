@@ -57,6 +57,17 @@ test('a streaming quote can prepare its executable THORChain route', async t => 
   assert.deepEqual(sent.providers, ['THORCHAIN'])
 })
 
+test('a THORChain quote is refused while THORChain holds payouts on either end, and goes ahead when mimir is unreadable', async t => {
+  let mimir = { HALTOUTBOUNDBTC: 1 }
+  t.mock.method(globalThis, 'fetch', async url =>
+    String(url).endsWith('/thorchain/mimir') ? (mimir ? Response.json(mimir) : new Response('down', { status: 502 })) : Response.json({ routes: [route] }))
+  await assert.rejects(api.getNetworkQuotes(request), /holding payouts/)
+  mimir = { HALTSIGNINGETH: 5, HALTOUTBOUNDBTC: 0 }
+  await assert.rejects(api.getNetworkQuotes(request), /holding payouts/, 'the sell chain counts too')
+  mimir = undefined
+  assert.deepEqual(await api.getNetworkQuotes(request), [route])
+})
+
 test('reverse bridge destination picks still update the stored non-BCH asset', () => {
   const source = readFileSync(new URL('../src/components/swap/bridge-asset-picker.tsx', import.meta.url), 'utf8')
   const handler = source.match(/if \(halted\) return\s+([\s\S]*?)\s+onClose\(\)/)?.[1]

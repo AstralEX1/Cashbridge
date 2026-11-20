@@ -2,7 +2,7 @@ import axios from 'axios'
 import { AssetValue, Chain, EVMChains, getChainConfig } from '@tcswap/core'
 import { ProviderName, USwapError } from '@tcswap/helpers'
 import { BalanceResponse, QuoteRequest, QuoteResponse, QuoteResponseRoute, USwapApi } from '@tcswap/helpers/api'
-import { normalizeThorBankDenom } from '@/lib/swap-helpers'
+import { normalizeThorBankDenom, thorchainPayoutsHalted } from '@/lib/swap-helpers'
 import { referralHeaders } from '@/lib/referral'
 import { aggregatorApiUrl, BridgeConfig } from '@/config'
 import { addressToLockingBytecode } from '@/lib/bch'
@@ -258,6 +258,20 @@ const postQuote = async (request: QuoteRequest, abortController?: AbortControlle
   return body
 }
 
+// THORChain still quotes during a signing or outbound halt, while it holds every payout and refund on the chain, so a
+// quote is refused then. Read with fetch beside the quote; a mimir that does not answer blocks nothing.
+const quoteWhilePayoutsRun = async (request: QuoteRequest, abortController?: AbortController) => {
+  const [quote, held] = await Promise.all([
+    postQuote(request, abortController),
+    fetch('https://gateway.liquify.com/chain/thorchain_api/thorchain/mimir', { signal: abortController?.signal })
+      .then(res => (res.ok ? res.json() : undefined))
+      .then(mimir => !!mimir && thorchainPayoutsHalted(mimir, [request.sellAsset, request.buyAsset]))
+      .catch(() => false)
+  ])
+  if (held) throw new Error('THORChain is holding payouts on this network right now')
+  return quote
+}
+
 export const getQuotes = async (json: QuoteRequest, abortController?: AbortController) => {
   assertBridgeQuoteRequest(json)
   const { sellAsset, sellAmount, sourceAddress, destinationAddress, refundAddress, slippage, dry } = json
@@ -274,7 +288,7 @@ export const getQuotes = async (json: QuoteRequest, abortController?: AbortContr
     ...(dry !== undefined && { dry })
   }
 
-  return postQuote(request, abortController).then(res =>
+  return quoteWhilePayoutsRun(request, abortController).then(res =>
     res.routes
       .map(route => ({ ...route, sellAsset: requestCase(route.sellAsset, sellAsset), buyAsset: requestCase(route.buyAsset, buyAsset) }))
       .filter(route => isBridgeRoute(route, request))
@@ -318,7 +332,7 @@ export const getNetworkQuotes = async (json: NetworkQuoteRequest, abortControlle
     ...(refundAddress && { refundAddress }),
     ...(dry !== undefined && { dry })
   }
-  const response = await postQuote(request, abortController)
+  const response = await quoteWhilePayoutsRun(request, abortController)
   return response.routes
     .map(route => ({ ...route, sellAsset: requestCase(route.sellAsset, sellAsset), buyAsset: requestCase(route.buyAsset, buyAsset) }))
     .filter(route => isNetworkRoute(route, { ...request, buyAssetShortCode: json.buyAssetShortCode }))
