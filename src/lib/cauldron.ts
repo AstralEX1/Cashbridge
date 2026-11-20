@@ -163,6 +163,8 @@ export const bestTrade = (pools: PoolV0[], amount: bigint, category: string = Br
     return lab.constructTradeBestRateForTargetSupply(supply, demand, amount, pools, TX_FEE_PER_BYTE)
   } catch (error) {
     if (error instanceof InsufficientCapitalInPools) throw new CauldronError('route_failed', 'The Cauldron pools cannot fill this amount')
+    // The pools fill nothing for an amount under one unit's price (one SOCK costs about half a BCH).
+    if (error instanceof InsufficientFunds) throw new CauldronError('too_small', 'This amount is too small to trade on Cauldron; try a larger one')
     throw error
   }
 }

@@ -305,3 +305,8 @@ test("dust or a stranger's coin at the contract never blocks the swap or sends t
     env.store.close()
   }
 })
+
+test('a buy worth less than one whole token is called too small, not a library error', () => {
+  const dear = { ...pool, output: { ...pool.output, token: { amount: 10n, token_id: BridgeConfig.pusd.category }, amount: 5_000_000_000n } }
+  assert.throws(() => bestTrade([dear], 100_000n), /too small to trade on Cauldron/)
+})
