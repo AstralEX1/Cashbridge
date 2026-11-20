@@ -12,6 +12,23 @@ AI agents use the MCP server at `https://www.cashbridge.space/mcp`: list assets,
 
 Forked from the [swap.thorchain.org](https://github.com/thorchain/swap.thorchain) interface.
 
+## How Cash Bridge meets the bounty
+
+Cash Bridge is an entry for the BCH BLAZE 2026 [Stablecoin Bridge bounty](https://bchblaze.cash/bounties/stablecoin-bridge/). The same list, with links into the app, is at [/docs/bounty](https://www.cashbridge.space/docs/bounty).
+
+| The bounty asks | Cash Bridge |
+|---|---|
+| "convert stablecoins on other chains to BCH stablecoins (eg USDC on ETH into PUSD on BCH)" | USDC and USDT on Ethereum, Base, Arbitrum, Optimism, Polygon, BNB Smart Chain, Avalanche, Solana, TRON and more, to PUSD, MUSD or any Cauldron token, through THORChain, NEAR Intents or ShapeShift and then Cauldron. [Try it](https://www.cashbridge.space/sell-ETH.USDC-buy-PUSD) |
+| "And vice-versa, BCH stables to other-chain stables (eg PUSD on BCH into USDC on ETH)" | PUSD, MUSD or any Cauldron token back to USDC, USDT or any asset the three bridges pay out. [Try it](https://www.cashbridge.space/sell-PUSD-buy-ETH.USDC) |
+| "from BCH stables to multiple/any other ecosystems would be even better" | More than 20 source chains. Stablecoins come from the EVM chains, Solana, TRON, TON, Sui and NEAR |
+| "The faster, cheaper, and easier to use the bridge is - the better." | The token is bought as soon as the bridge's BCH reaches the mempool, and the Cashbridge Router finishes after the tab closes. No Cash Bridge fee: three bridges are quoted side by side and the best one is picked. One signature each way with the Router. 24 interface languages and an MCP server for agents |
+| "On the BCH side, WizardConnect is highly recommended." | WizardConnect for Selene, Paytaca and any WizardConnect wallet; WalletConnect for Cashonize and Zapit. [Wallets](https://www.cashbridge.space/docs/wallets) |
+| "On the other chain side, WalletConnect is probably essential" | WalletConnect, plus browser, mobile and hardware wallets |
+| Stretch: more than one BCH stablecoin | PUSD and MUSD, and any token with a Cauldron pool |
+| Stretch: "route through large popular and existing multicoin providers like ShapeShift, ThorChain etc." | THORChain, NEAR Intents and ShapeShift, each quoted wherever it carries the pair |
+| "ParyonUSD … first priority integration & demo" | PUSD is the default destination, identified by its category id |
+| Mainnet Track: a BCH mainnet transaction | Every transfer, with explorer links. See [Proof on mainnet](#proof-on-mainnet) |
+
 ## Use Cash Bridge
 
 1. Open the [bridge](https://www.cashbridge.space/bridge), choose the source asset and receive BCH, PUSD, MUSD or another Cauldron token.
