@@ -4,6 +4,7 @@ import { Chain, getChainConfig, isSecuredAssetIdentifier, ProviderName } from '@
 import { USwapApi } from '@tcswap/helpers/api'
 import { Asset } from '@/components/swap/asset'
 import { AppConfig, BridgeConfig } from '@/config'
+import { getMidgardPools } from '@/lib/api'
 import { getNearTokens, mergeNearAssets } from '@/lib/near-intents'
 import { useIsPrivateSwap } from '@/store/private-swap-store'
 import { isNetworkAsset, useSwapStore } from '@/store/swap-store'
@@ -65,6 +66,8 @@ export const useAssets = (): { assets?: Asset[]; isLoading: boolean } => {
     queryFn: async () => {
       // The bridge lists THORChain's assets only; the private provider's list is never fetched.
       const providers: ProviderName[] = [...AppConfig.providers]
+      // THORChain lists tokens whose pool is staged or suspended, and it quotes none of them; unreadable pools hide nothing.
+      const pools = getMidgardPools().catch(() => undefined)
       // The private provider's list is a separate product: if it is down or not yet synced the
       // SWAP tab must not go with it.
       const lists = await Promise.all(
@@ -84,6 +87,7 @@ export const useAssets = (): { assets?: Asset[]; isLoading: boolean } => {
       )
 
       const assets = new Map<string, Asset>()
+      const closed = new Set((await pools)?.filter(pool => pool.status && pool.status !== 'available').map(pool => pool.asset.toUpperCase()))
 
       for (const { token, provider } of entries) {
         if (!token.chain || !getChainConfig(token.chain).chain) {
@@ -104,6 +108,7 @@ export const useAssets = (): { assets?: Asset[]; isLoading: boolean } => {
         // Secured and trade assets live in THORChain accounts rather than on their own chains;
         // the bridge is qualified for L1 sources only.
         if (isSecured || isTrade) continue
+        if (closed.has(token.identifier.toUpperCase())) continue
 
         // The token list API returns TRON identifiers with the address segment uppercased
         // (e.g. TRON.USDT-TR7NHQJEKQ...), but Tron base58 addresses are case-sensitive and

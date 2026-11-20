@@ -120,7 +120,7 @@ const midgard = axios.create({ baseURL: 'https://gateway.liquify.com/chain/thorc
 const mayaMidgard = axios.create({ baseURL: 'https://midgard.mayachain.info', timeout })
 const mayanode = axios.create({ baseURL: 'https://mayanode.mayachain.info', timeout })
 
-export const getMidgardPools = async (): Promise<{ asset: string; assetPriceUSD: string }[]> => {
+export const getMidgardPools = async (): Promise<{ asset: string; assetPriceUSD: string; status?: string }[]> => {
   return midgard.get('/v2/pools').then(res => res.data)
 }
 
