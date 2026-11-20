@@ -19,6 +19,7 @@ import { useIsLimitSwap, useLimitSwapBuyAmount } from '@/store/limit-swap-store'
 import { useSetTransaction } from '@/store/transaction-store'
 import { useSwapStore } from '@/store/swap-store'
 import { toBaseUnits } from '@/lib/bridge'
+import { isNearRoute } from '@/lib/near-intents'
 
 interface InstantSwapDialogProps {
   provider: ProviderName
@@ -36,6 +37,14 @@ export interface DepositChannel {
   provider?: ProviderName
   // The history entry tracking this deposit, so the screen can follow its status.
   txUid?: string
+}
+
+
+// The screen counts down to the route's `expiration` (for NEAR, when the refund starts), but history follows a NEAR
+// address until 1Click's response deadline: a deposit sent late still reports its refund there.
+const watchUntil = (quote: QuoteResponseRoute, expiration?: number) => {
+  const end = isNearRoute(quote) ? Date.parse(quote.near.quote.deadline ?? '') / 1000 : NaN
+  return Number.isFinite(end) && expiration !== undefined && end > expiration ? end : expiration
 }
 
 export const InstantSwapDialog = ({ provider, isOpen, onOpenChange }: InstantSwapDialogProps) => {
@@ -90,7 +99,7 @@ export const InstantSwapDialog = ({ provider, isOpen, onOpenChange }: InstantSwa
       status: 'not_started',
       qrCodeData,
       depositMemo: memo,
-      expiration,
+      expiration: watchUntil(quote, expiration),
       limitSwapMemo: isLimitSwap ? quote.memo : undefined,
       limitPrice:
         isLimitSwap && limitSwapBuyAmount && !sentAmount.eq(0)
