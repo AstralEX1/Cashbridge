@@ -83,6 +83,7 @@ const router = createServer((req, res) => {
 })
 
 let mcpPost, mcpGet
+let nearSubmitStatus = 200
 before(async () => {
   const socket = join(mkdtempSync(join(tmpdir(), 'mcp-router-')), 'worker.sock')
   await new Promise(resolve => router.listen(socket, resolve))
@@ -158,6 +159,7 @@ before(async () => {
     }
     if (url.startsWith('https://api.shapeshift.com/v1/swap/status'))
       return Response.json({ quoteId: 'ss-quote-1', status: 'pending' })
+    if (url === 'https://1click.chaindefuser.com/v0/deposit/submit') return Response.json({}, { status: nearSubmitStatus })
     throw new Error(`Unexpected fetch ${url}`)
   }
   ;({ mcpPost, mcpGet } = await import('../src/server/agent/mcp.ts'))
@@ -203,6 +205,18 @@ test('Streamable HTTP rules: foreign Origin, unknown protocol version and a null
   assert.equal(init.body.result.protocolVersion, '2025-11-25', 'initialize still negotiates')
   assert.equal((await post({ jsonrpc: '2.0', id: null, method: 'ping' })).status, 400)
   assert.equal((await mcpGet(new NextRequest('https://cashbridge.space/mcp', { headers: { origin: 'https://evil.example' } }))).status, 403)
+})
+
+test('a NEAR deposit notice reports whether 1Click took it, and takes only a transaction hash', async t => {
+  t.mock.method(console, 'warn', () => {})
+  const args = { near_deposit_address: NEAR_DEPOSIT, source_tx: `0x${'ab'.repeat(32)}` }
+  assert.equal((await call('report_source_transaction', args)).structuredContent.reported, true)
+  nearSubmitStatus = 500
+  t.after(() => (nearSubmitStatus = 200))
+  const refused = (await call('report_source_transaction', args)).structuredContent
+  assert.equal(refused.reported, false)
+  assert.match(refused.note, /did not take/)
+  assert.equal((await call('report_source_transaction', { ...args, source_tx: 'paid it, thanks' })).isError, true)
 })
 
 test('GET serves the server card, and an SSE request is refused', async () => {

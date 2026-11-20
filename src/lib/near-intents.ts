@@ -483,8 +483,12 @@ export const nearLegOf = (route: NearRoute): NearLeg => ({
 export const getNearStatus = (depositAddress: string) => request<NearStatusResponse>(`/status?depositAddress=${encodeURIComponent(depositAddress)}`)
 
 // Points the solvers at the deposit right away; optional, so a failure is only logged.
+// True once 1Click took the notice; the swap proceeds without it, only slower.
 export const submitNearDeposit = (depositAddress: string, txHash: string) =>
-  request('/deposit/submit', { method: 'POST', body: { depositAddress, txHash } }).catch(error => console.warn('NEAR Intents deposit notice failed', error))
+  request('/deposit/submit', { method: 'POST', body: { depositAddress, txHash } }).then(
+    () => true,
+    error => (console.warn('NEAR Intents deposit notice failed', error), false)
+  )
 
 // The public page of a swap, by its deposit address.
 export const nearExplorerUrl = (depositAddress: string) => `https://explorer.near-intents.org/transactions/${encodeURIComponent(depositAddress)}`
