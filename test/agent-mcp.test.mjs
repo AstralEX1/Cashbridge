@@ -217,6 +217,8 @@ test('a NEAR deposit notice reports whether 1Click took it, and takes only a tra
   assert.equal(refused.reported, false)
   assert.match(refused.note, /did not take/)
   assert.equal((await call('report_source_transaction', { ...args, source_tx: 'paid it, thanks' })).isError, true)
+  const ton = (await call('report_source_transaction', { ...args, source_tx: 'q0z4g+M3n/VxX3nC2hq8xNfX0b3l8XvB1sJ8i2ZkQ1Y=' })).structuredContent
+  assert.equal(ton.source_tx.length, 44, 'a base64 TON hash is a hash too')
 })
 
 test('GET serves the server card, and an SSE request is refused', async () => {

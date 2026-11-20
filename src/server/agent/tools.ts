@@ -1321,8 +1321,8 @@ const reportSourceTransaction = async (args: Args, context: ToolContext) => {
   const shapeId = text(args, 'shapeshift_quote_id', false)
   const raw = text(args, 'source_tx')!
   if (near) {
-    // A chain transaction id: hex (0x or not), base58 (Solana, NEAR) or similar, never free text.
-    if (!/^[0-9A-Za-z]{32,128}$/.test(raw.replace(/^0x/i, ''))) throw new ToolError('"source_tx" is not a transaction hash')
+    // A chain transaction id: hex (0x or not), base58 (Solana, NEAR), base64 (TON) or similar, never free text.
+    if (!/^[0-9A-Za-z+/=_-]{32,128}$/.test(raw.replace(/^0x/i, ''))) throw new ToolError('"source_tx" is not a transaction hash')
     if (!context.allowWrite()) throw new ToolError('Too many updates from this client; wait a few minutes')
     const reported = await submitNearDeposit(near, raw)
     return {
