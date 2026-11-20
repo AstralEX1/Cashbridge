@@ -524,7 +524,6 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
   const tReverse = useTranslations('bridge.reverse')
   const tBridge = useTranslations('bridge')
   const tSwap = useTranslations('swap')
-  const tAuto = useTranslations('automatic')
   const asset = useAssetFrom()
   const destination = usePayoutAddress()
   // The Cashbridge Router sells the token and deposits the BCH: the wallet signs one send to the order's contract.
@@ -912,7 +911,6 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
           </div>
         </ScrollArea>
         <div className="space-y-3 p-4 pt-2 md:px-7 md:pb-7">
-          {viaRouter && <p className="bridge-confirm-note">{tAuto('saleCustody', { ticker })}</p>}
           {needsImpact && <SwapAddressWarning checked={acceptedImpact} onCheckedChange={setAcceptedImpact} text={tBridge('automatic.highImpact')} />}
           <GenericButton
             colorType="3"
