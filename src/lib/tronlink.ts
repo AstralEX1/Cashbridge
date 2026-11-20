@@ -13,6 +13,8 @@ interface TronProvider {
   isVultiConnect?: boolean
   isVultisig?: boolean
   request: (args: { method: string; params?: unknown }) => Promise<unknown>
+  on?: (event: 'accountsChanged', listener: (accounts: string[]) => void) => void
+  removeListener?: (event: 'accountsChanged', listener: (accounts: string[]) => void) => void
   // TronLink parks a plain `false` here until the site is connected.
   tronWeb?: TronWebLike | false
 }
@@ -103,15 +105,24 @@ export const tronlinkWallet = createWallet({
           getAddress: async () => address,
           // Read `tronWeb` at signing time - it is only populated once the account is granted.
           signTransaction: async (tx: unknown) => {
-            const trx = tronWebOf(provider)?.trx
+            const tronWeb = tronWebOf(provider)
+            const trx = tronWeb?.trx
             if (!trx?.sign) throw new Error('TronLink is not connected. Reconnect it and try again.')
+            // The transaction was built for `address`; TronLink signs with whichever account is selected now.
+            const selected = tronWeb?.defaultAddress?.base58
+            if (selected && selected !== address) throw new Error('TronLink switched to another account. Reconnect it and try again.')
 
             return await trx.sign(tx)
           }
         }
       })
 
-      const unsubscribe = setupEventListeners(
+      // The window messages are TronLink's "Deprecated 3.x Events"; current builds announce on `accountsChanged` instead.
+      const onAccounts = (accounts: string[]) => {
+        if (accounts[0] && accounts[0] !== address) window.location.reload()
+      }
+      provider.on?.('accountsChanged', onAccounts)
+      const unsubscribeLegacy = setupEventListeners(
         (account: string) => {
           if (account !== address) window.location.reload()
         },
@@ -119,6 +130,10 @@ export const tronlinkWallet = createWallet({
           if (!node.includes(TRON_MAINNET_HOST)) window.location.reload()
         }
       )
+      const unsubscribe = () => {
+        provider.removeListener?.('accountsChanged', onAccounts)
+        return unsubscribeLegacy()
+      }
 
       addChain({ ...toolbox, address, balance: [], chain: Chain.Tron, disconnect: unsubscribe, walletType })
 
