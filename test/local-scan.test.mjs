@@ -74,6 +74,9 @@ test('a saved transfer is a row only once a chain has it', () => {
   assert.equal(rowFromTransaction({ ...bridgeTx('first_leg_unknown'), status: 'unknown' }), undefined)
   const unpaid = { uid: 'qr', provider: 'NEAR', timestamp: '2030-01-01T00:00:00Z', assetFrom: usdc, assetTo: bch, amountFrom: '5', amountTo: '1', addressTo: binding.cashAddress, status: 'not_started', qrCodeData: 'data:' }
   assert.equal(rowFromTransaction(unpaid), undefined, 'a deposit address nobody paid')
+  const quoted = { ...bridgeTx('first_leg_signing'), bridge: { ...bridgeTx('first_leg_signing').bridge, near: { depositAddress: 'ff'.repeat(32) } } }
+  assert.equal(rowFromTransaction(quoted), undefined, 'a NEAR Intents deposit address alone is not a sent transaction')
+  assert.deepEqual(rowFromTransaction({ ...quoted, hash: 'ab'.repeat(32) }).legs.map(leg => leg.label), ['Base deposit', 'NEAR Intents swap'])
 
   const sent = rowFromTransaction({ ...bridgeTx('first_leg_pending'), hash: 'ab'.repeat(32) })
   assert.deepEqual(sent.legs.map(leg => leg.label), ['Base deposit', 'THORChain swap'])
@@ -91,6 +94,8 @@ test('a saved transfer is a row only once a chain has it', () => {
 test('a saved Router order shows once something is sent to it; a draft never does', () => {
   assert.equal(rowFromSavedOrder(savedOrder()), undefined, 'a draft')
   assert.equal(rowFromSavedOrder(savedOrder({ sourceAttempted: true })), undefined, 'the wallet opened, no hash yet')
+  assert.equal(rowFromSavedOrder(savedOrder({ sourceAttempted: true }, { state: 'expired' })), undefined, 'expired unpaid')
+  assert.ok(rowFromSavedOrder(savedOrder({}, { inboundHash: 'cd'.repeat(32), state: 'streaming' })), 'paid from another wallet')
   const row = rowFromSavedOrder(savedOrder({}, { sourceHash: 'ab'.repeat(32), state: 'streaming' }))
   assert.deepEqual([row.router, row.status, row.from.ticker], [true, 'pending', 'USDC'])
   assert.equal(row.legs[0].label, 'Base deposit')

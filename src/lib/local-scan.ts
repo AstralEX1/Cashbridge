@@ -73,7 +73,8 @@ const transactionLegs = (tx: Transaction): ScanLeg[] => {
     if (tx.networkSwap?.near) add('NEAR Intents swap', 'NEAR', tx.networkSwap.near.depositAddress, nearExplorerUrl(tx.networkSwap.near.depositAddress))
     add('Payout', to, tx.networkSwap?.payout?.hash)
   }
-  return legs
+  // A NEAR Intents deposit address is quoted before anyone pays it: on its own it is not a sent transaction.
+  return legs.every(item => item.label === 'NEAR Intents swap' || item.label === 'ShapeShift swap') ? [] : legs
 }
 
 export const rowFromTransaction = (tx: Transaction): ScanRow | undefined => {
@@ -109,11 +110,16 @@ export const transactionAddresses = (tx: Transaction) => {
   return [tx.addressFrom, tx.addressTo, tx.details?.fromAddress, tx.details?.toAddress, op?.binding?.cashAddress, op?.binding?.tokenAddress, op?.reverse?.destination]
 }
 
+// The user signed something for this order and a chain has it. Opening the wallet (sourceAttempted) is not enough:
+// the prompt may still be open, or closed without signing. Anything less is a draft and is never listed.
+export const orderSent = ({ order, sourceHash }: SavedAutoOrder) =>
+  !!(sourceHash || order?.sourceHash || order?.inboundHash || order?.bchReceipts?.length || BigInt(order?.receivedSats || '0') > 0n || order?.payoutTxid || order?.settlement)
+
 // A saved Cashbridge Router order in the shape the Router's feed gives it, once a chain has seen it.
 export const rowFromSavedOrder = (reference: SavedAutoOrder): ScanRow | undefined => {
   const order = reference.order
   const sourceHash = order?.sourceHash ?? order?.inboundHash ?? reference.sourceHash
-  if (!order || !(sourceHash || order.bchReceipts?.length || order.settlement)) return undefined
+  if (!order || !orderSent(reference)) return undefined
   const routed = order.nearDepositAddress ?? (order.sale?.route ? order.sale.vaultAddress : undefined)
   const feed: FeedOrder = {
     ref: reference.id,

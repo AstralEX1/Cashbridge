@@ -19,7 +19,6 @@ import {
   type FlowStage,
   type FlowToken,
   thorchainTxUrl,
-  timeOf,
   usdText,
   useCollapseOnce,
   useTokenQuoteFor,
@@ -39,13 +38,12 @@ import { automaticCompletion, automaticTransactions } from '@/lib/auto-bridge-su
 import { formatBaseUnits } from '@/lib/bridge'
 import { orderRequest, pollAutomaticOrders, restoreAutomaticOrder, type OrderPollSchedule } from '@/lib/auto-bridge-client'
 import { sourceTransactionId } from '@/lib/source-transaction'
+import { orderSent } from '@/lib/local-scan'
 import { sideOf } from '@/lib/scanner'
 import { autoBridgeStore, type SavedAutoOrder } from '@/store/auto-bridge-store'
 
 const BCH_STAGES = ['awaiting_deposit', 'streaming']
 
-// Sent, with nothing on a chain yet: the page saved the order, but no wallet sent anything to it.
-const isDraft = (reference: SavedAutoOrder) => !reference.sourceAttempted && !reference.order?.sourceHash && reference.order?.state === 'awaiting_deposit'
 
 // One running order under the form, as a card: what was sent, where it is, what it buys. Opens its progress.
 const AutomaticOrderRow = ({ reference }: { reference: SavedAutoOrder }) => {
@@ -119,8 +117,8 @@ export const AutomaticOrders = () => {
     return () => { stopped = true; clearInterval(timer); window.removeEventListener('storage', rehydrate) }
   }, [ids])
   if (!hydrated) return null
-  // A draft is not a transfer: it stays polled, but is listed only once something is sent to it.
-  const active = references.filter(ref => (!ref.order || !isTerminal(ref.order.state)) && !isDraft(ref)).slice(-3)
+  // A draft is not a transfer: it stays polled, but is listed only once the user signed something for it.
+  const active = references.filter(ref => (!ref.order || !isTerminal(ref.order.state)) && orderSent(ref)).slice(-3)
   return (
     <>
       {/* Toasts stay on the bridge tab after the tracking dialog is closed. */}
@@ -220,7 +218,6 @@ function BackgroundAutomaticToasts({ active }: { active: SavedAutoOrder[] }) {
 export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string; isOpen: boolean; onOpenChange: (open: boolean) => void }) => {
   const t = useTranslations('automatic')
   const tb = useTranslations('bridge')
-  const { openDialog } = useDialog()
   const reference = autoBridgeStore(state => state.orders.find(order => order.id === id))
   const token = reference?.token ?? PUSD_TOKEN
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [hint, setHint] = useState('')
