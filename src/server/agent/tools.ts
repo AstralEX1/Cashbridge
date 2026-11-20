@@ -1029,7 +1029,7 @@ const prepareNear = async (
       amount: route.sellAmount,
       amount_base_units: units.toString(),
       deposit_address: deposit,
-      expires_at: route.near.quote.deadline,
+      expires_at: route.near.quoteRequest?.deadline ?? route.near.quote.deadline,
       how_to_send:
         'Send exactly the amount to deposit_address in a plain transfer from source_address: no memo, no OP_RETURN and no approval. The address is for this one transfer only.'
     },

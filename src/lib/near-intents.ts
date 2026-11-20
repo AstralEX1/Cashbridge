@@ -31,8 +31,10 @@ export const NEAR_BCH = 'nep141:bch.omft.near'
 // The quote names this site as the venue (letters, digits and single - _ . only). No app fee is asked.
 const REFERRAL = 'cashbridge'
 
-// Going in, the source deposit lands within minutes; coming out, NEAR counts a BCH deposit only once it confirms.
-export const FORWARD_DEADLINE_MS = 60 * 60_000
+// The refund starts at the deadline, which "must exceed the time required for the deposit transaction to be mined. For
+// example, Bitcoin may require around one hour" (1Click): two hours going in, still inside a contract order's three.
+// Coming out, NEAR counts a BCH deposit only once it confirms.
+export const FORWARD_DEADLINE_MS = 2 * 60 * 60_000
 export const REVERSE_DEADLINE_MS = 4 * 60 * 60_000
 
 // The form's slippage is a percentage; 1Click takes basis points.
@@ -265,6 +267,8 @@ export interface OneClickQuoteResponse {
   correlationId: string
   timestamp: string
   signature: string
+  // 1Click's echo of the request: its `deadline` is when the refund starts.
+  quoteRequest?: { deadline?: string }
   quote: OneClickQuote
 }
 
@@ -419,7 +423,8 @@ export const nearRoute = (
   destination: OneClickToken
 ): NearRoute => {
   const { quote } = response
-  const deadline = quote.deadline ? Math.floor(Date.parse(quote.deadline) / 1000) : NaN
+  // The swap refunds at the requested deadline; `quote.deadline` is only when the deposit address goes inactive.
+  const deadline = Math.floor(Math.min(...[response.quoteRequest?.deadline, quote.deadline].map(d => (d ? Date.parse(d) : NaN)).filter(Number.isFinite)) / 1000)
   return {
     providers: [ProviderName.NEAR],
     sellAsset: req.sellAsset,
@@ -455,9 +460,12 @@ export const getNearQuote = async (req: NearQuoteRequest & { sourceAddress?: str
   const origin = findNearToken(list, req.sellAsset)
   const destination = findNearToken(list, req.buyAsset)
   if (!origin || !destination) return undefined
-  const response = await request<OneClickQuoteResponse>('/quote', { method: 'POST', body: nearQuoteBody(req, origin, destination), signal })
+  const body = nearQuoteBody(req, origin, destination)
+  const response = await request<OneClickQuoteResponse>('/quote', { method: 'POST', body, signal })
   if (!req.dry && !response.quote.depositAddress) throw new Error('NEAR Intents returned no deposit address')
-  return nearRoute(response, req, origin, destination)
+  // The wallet send carries no memo, and a deposit address that needs one would not credit the swap.
+  if (!req.dry && response.quote.depositMemo) throw new Error('NEAR Intents asks for a deposit memo this transfer cannot send')
+  return nearRoute({ ...response, quoteRequest: response.quoteRequest ?? body }, req, origin, destination)
 }
 
 // What the operation keeps of an executable route (it has a deposit address).
@@ -466,7 +474,7 @@ export const nearLegOf = (route: NearRoute): NearLeg => ({
   correlationId: route.near.correlationId,
   signature: route.near.signature,
   quotedAt: route.near.timestamp,
-  deadline: route.near.quote.deadline,
+  deadline: route.near.quoteRequest?.deadline ?? route.near.quote.deadline,
   amountIn: route.near.quote.amountIn,
   amountOut: route.near.quote.amountOut,
   minAmountOut: route.near.quote.minAmountOut

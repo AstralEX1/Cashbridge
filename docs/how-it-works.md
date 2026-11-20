@@ -58,8 +58,8 @@ The Router reads 1Click's status for that deposit address as a pointer only: the
 the order's address, each BCH payout it names is read from the Router's own node, and together they must pay at least the
 quote's minimum. Then the order goes on as above (depth, Cauldron trade or BCH fallback). A quote paying elsewhere, a
 short payout or a failed swap stops the order for review; a 1Click refund ends it as refunded at the source.
-ShapeShift's swaps refund about four hours after the quote, later than NEAR's one hour; the Router still expects the payout
-within the hour, and BCH that lands after the order's refund time can only go back to the BCH fallback.
+ShapeShift's swaps refund about four hours after the quote, later than NEAR's two hours; the Router still expects the payout
+within those two hours, and BCH that lands after the order's refund time can only go back to the BCH fallback.
 
 ## Sale orders (Cashbridge Router back from BCH)
 

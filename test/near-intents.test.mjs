@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import { hexToBin } from '@bitauth/libauth'
 import { checkPayment, bindingFromPubkey, decodeTx, txidOf } from '../src/lib/bch.ts'
 import { Chain, ProviderName } from '@tcswap/helpers'
-import { assetsFromNearTokens, findNearToken, interpretNearStatus, isNearRoute, mergeNearAssets, nearAssetIdentifier, nearLegOf, nearQuoteBody, nearRoute, nearSlippageBps, NEAR_BCH } from '../src/lib/near-intents.ts'
+import { assetsFromNearTokens, findNearToken, getNearQuote, interpretNearStatus, isNearRoute, mergeNearAssets, nearAssetIdentifier, nearLegOf, nearQuoteBody, nearRoute, nearSlippageBps, NEAR_BCH } from '../src/lib/near-intents.ts'
 import { isAssetInMode, isNearOnlyAsset } from '../src/hooks/use-assets.ts'
 import { bestRoute } from '../src/hooks/use-quote.ts'
 import { isBridgeRoute } from '../src/lib/api.ts'
@@ -213,7 +213,7 @@ test('a forward quote asks exact input in base units, pays the plain BCH address
   assert.equal(body.recipient, binding.cashAddress)
   assert.ok(body.recipient.startsWith('bitcoincash:q'), '1Click refuses token-aware z… addresses')
   assert.equal(body.refundTo, '0xabc')
-  assert.equal(body.deadline, '2030-01-01T08:00:00.000Z')
+  assert.equal(body.deadline, '2030-01-01T09:00:00.000Z', 'two hours: a Bitcoin deposit can take about one to confirm')
   assert.equal(body.originAsset, usdc.assetId)
   assert.equal(body.destinationAsset, NEAR_BCH)
   assert.equal(body.dry, false)
@@ -279,6 +279,28 @@ test('the 1Click answer becomes a NEAR route the bridge checks like any other', 
     minAmountOut: '2376559'
   })
   assert.ok(near)
+})
+
+test('a NEAR route expires when its refund starts, not when its deposit address goes inactive', () => {
+  const request = { sellAsset: 'BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913', buyAsset: 'BCH.BCH', sellAmount: '5', recipient: binding.cashAddress, refundTo: '0xabc', dry: false, slippageBps: 100 }
+  const echoed = { ...answer, quoteRequest: { deadline: '2030-01-01T09:00:00.000Z' }, quote: { ...answer.quote, deadline: '2030-01-04T07:00:00.000Z' } }
+  const route = nearRoute(echoed, request, usdc, bch)
+  assert.equal(route.expiration, String(Date.parse('2030-01-01T09:00:00.000Z') / 1000))
+  assert.equal(nearLegOf(route).deadline, '2030-01-01T09:00:00.000Z')
+})
+
+test('an executable NEAR quote that needs a deposit memo is refused', async t => {
+  const original = globalThis.fetch
+  t.after(() => (globalThis.fetch = original))
+  globalThis.fetch = async (url, init) => {
+    if (String(url).endsWith('/tokens')) return Response.json([usdc, bch])
+    const body = JSON.parse(init.body)
+    return Response.json({ ...answer, quoteRequest: body, quote: { ...answer.quote, depositMemo: '12345' } })
+  }
+  await assert.rejects(
+    getNearQuote({ sellAsset: 'BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913', buyAsset: 'BCH.BCH', sellAmount: '5', recipient: binding.cashAddress, refundTo: '0xabc', dry: false, slippageBps: 100 }),
+    /deposit memo/
+  )
 })
 
 test('the better route is taken, THORChain on a tie or when NEAR does not quote', () => {
