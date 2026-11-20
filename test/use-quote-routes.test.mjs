@@ -24,13 +24,23 @@ const bch = { assetId: NEAR_BCH, decimals: 8, blockchain: 'bch', symbol: 'BCH', 
 
 test('forward bridge quotes buy native BCH while private quotes keep their destination', () => {
   assert.equal(BridgeConfig.buyAsset, 'BCH.BCH')
-  const expression = quoteSource.match(/^  const buyAsset = (.+)$/m)?.[1]
+  // buyAsset spans several lines once open-networks mode is present; pull the whole binding.
+  const expression = quoteSource.match(/const buyAsset = ([\s\S]*?)\n  const sellAmount/)?.[1]?.trim()
   assert.ok(expression)
-  const destination = new Function('reverse', 'assetFrom', 'assetTo', 'isPrivateSwap', 'BridgeConfig', `return ${expression}`)
-  assert.equal(destination(false, { identifier: 'BASE.USDC' }, { identifier: 'PUSD' }, false, BridgeConfig), 'BCH.BCH')
-  assert.equal(destination(false, { identifier: 'BASE.USDC' }, { identifier: 'ETH.ETH' }, true, BridgeConfig), 'ETH.ETH')
-  assert.equal(destination(true, { identifier: 'BASE.USDC' }, { identifier: 'BCH.BCH' }, false, BridgeConfig), 'BASE.USDC')
-  assert.match(quoteSource, /buyAsset: reverse \? buyAsset : BridgeConfig\.buyAsset/)
+  const destination = new Function(
+    'openNetworks',
+    'reverse',
+    'assetFrom',
+    'assetTo',
+    'isPrivateSwap',
+    'BridgeConfig',
+    `return (${expression})`
+  )
+  assert.equal(destination(false, false, { identifier: 'BASE.USDC' }, { identifier: 'PUSD' }, false, BridgeConfig), 'BCH.BCH')
+  assert.equal(destination(false, false, { identifier: 'BASE.USDC' }, { identifier: 'ETH.ETH' }, true, BridgeConfig), 'ETH.ETH')
+  assert.equal(destination(false, true, { identifier: 'BASE.USDC' }, { identifier: 'BCH.BCH' }, false, BridgeConfig), 'BASE.USDC')
+  assert.equal(destination(true, false, { identifier: 'ETH.ETH' }, { identifier: 'BASE.USDC' }, false, BridgeConfig), 'BASE.USDC')
+  assert.match(quoteSource, /buyAsset: openNetworks \|\| reverse \? buyAsset : BridgeConfig\.buyAsset/)
   const body = nearQuoteBody(
     { sellAsset: 'BASE.USDC-0X8335', buyAsset: BridgeConfig.buyAsset, sellAmount: '10', dry: true, slippageBps: 100, now: 0 },
     usdc,
