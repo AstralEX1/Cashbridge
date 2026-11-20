@@ -1075,5 +1075,17 @@
       "manual_review": "Operator review required"
     },
     "serviceUpdate": "Automatic service recovery or upgrade is in progress. Check this saved order before sending funds."
+  },
+  "bridgeHero": {
+    "title": "Bridge Hero",
+    "play": "Play while you wait",
+    "hold": "Hold to build",
+    "field": "Hold to build the bridge, release to drop it",
+    "best": "Best {score}",
+    "again": "Try again",
+    "close": "Close game",
+    "note": "Just for fun. Your transfer keeps going.",
+    "crossed": "{score} crossed",
+    "missed": "Missed. {score} crossed"
   }
 }
