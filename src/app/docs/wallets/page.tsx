@@ -25,8 +25,11 @@ export default function Page() {
         <tbody>
           <tr>
             <td>Source or destination chain</td>
-            <td>MetaMask, Rabby, Brave Wallet, OKX, Phantom, Trust Wallet, Exodus, Keplr, Vultisig, TronLink, Ledger, Trezor, and any wallet app over WalletConnect</td>
-            <td>Browser extension, hardware wallet, or WalletConnect with a QR code or a link</td>
+            <td>
+              MetaMask, Rabby, Brave Wallet, OKX, Phantom, Trust Wallet, Exodus, Keplr, Vultisig, TronLink, Ledger, Trezor, and any wallet app over WalletConnect. Sui: Slush. Cardano: Lace,
+              Eternl, Yoroi. TON: Telegram Wallet, Tonkeeper and the rest over TON Connect. NEAR: HOT, Meteor, Intear, MyNearWallet and the rest over NEAR Connect
+            </td>
+            <td>Browser extension, hardware wallet, WalletConnect, TON Connect or NEAR Connect with a QR code or a link</td>
           </tr>
           <tr>
             <td>Bitcoin Cash</td>
@@ -53,6 +56,9 @@ export default function Page() {
         </li>
         <li>
           <strong>Any wallet app, over WalletConnect.</strong> Choose <strong>WalletConnect</strong>, right after the detected wallets. On a computer, scan the QR code with your wallet app. On a phone, pick your wallet from the list and it opens to approve. Cash Bridge reconnects it on later visits for as long as the wallet keeps the session.
+        </li>
+        <li>
+          <strong>TON and NEAR.</strong> <strong>Telegram Wallet</strong> and <strong>Tonkeeper</strong> open their own TON Connect window: a QR code on a computer, the app on a phone. <strong>TON Connect</strong> lists every other TON wallet. <strong>NEAR wallets</strong> opens NEAR Connect, the wallet list NEAR&apos;s docs recommend. Both reconnect on later visits while the wallet keeps the session.
         </li>
         <li>
           <strong>On a phone.</strong> MetaMask is not detected in a normal mobile browser. The row then reads <strong>Open app</strong> and opens Cash Bridge inside the MetaMask app, where it can connect.
