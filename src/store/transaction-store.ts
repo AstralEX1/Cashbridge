@@ -1,4 +1,3 @@
-import { useSyncExternalStore } from 'react'
 import { ProviderName } from '@tcswap/helpers'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
@@ -429,28 +428,14 @@ export const useSetTransactionDetails = () => transactionStore(state => state.se
 export const useSetTransactionStatus = () => transactionStore(state => state.setTransactionStatus)
 export const useUpdateBridge = () => transactionStore(state => state.updateBridge)
 
-type BridgeRecord = SwapTransaction & { bridge: BridgeOperation }
+export type BridgeRecord = SwapTransaction & { bridge: BridgeOperation }
 const isUnfinishedBridge = (tx: Transaction): tx is BridgeRecord => tx.kind !== 'send' && !!tx.bridge && !isBridgeTerminal(tx.bridge)
 // One operation at a time per browser needs the user: the newest unfinished one that is not just
 // waiting on the network. Waiting ones run on in the background (isBridgeWaiting).
-const activeBridge = (state: TransactionStore) => state.transactions.find((tx): tx is BridgeRecord => isUnfinishedBridge(tx) && !isBridgeWaiting(tx.bridge))
-const unfinishedBridges = (state: TransactionStore) => state.transactions.filter(isUnfinishedBridge)
-// The store rehydrates from localStorage synchronously on the client, so the server and the first
-// client render would disagree about a saved operation. It is read only once hydration is over.
-const noSubscribe = () => () => {}
-export const useActiveBridge = () => {
-  const active = transactionStore(activeBridge)
-  const hydrated = useSyncExternalStore(noSubscribe, () => true, () => false)
-  return hydrated ? active : undefined
-}
-export const getActiveBridge = () => activeBridge(transactionStore.getState())
+export const activeBridge = (state: TransactionStore) => state.transactions.find((tx): tx is BridgeRecord => isUnfinishedBridge(tx) && !isBridgeWaiting(tx.bridge))
 // Every unfinished operation, the active one and those waiting in the background.
-export const useUnfinishedBridges = () => {
-  const list = transactionStore(useShallow(unfinishedBridges))
-  const hydrated = useSyncExternalStore(noSubscribe, () => true, () => false)
-  return hydrated ? list : NO_BRIDGES
-}
-const NO_BRIDGES: BridgeRecord[] = []
+export const unfinishedBridges = (state: TransactionStore) => state.transactions.filter(isUnfinishedBridge)
+export const getActiveBridge = () => activeBridge(transactionStore.getState())
 export const useTransactions = () => transactionStore(sortedTransactions)
 export const useHasTransactions = () => transactionStore(state => state.transactions.length > 0)
 export const useTransaction = (uid?: string) => transactionStore(state => (uid ? state.transactions.find(tx => tx.uid === uid) : undefined))

@@ -28,7 +28,7 @@ import { useTradingHalt } from '@/hooks/use-trading-halt'
 import { urlBuyAsset, useUrlParams } from '@/hooks/use-url-params'
 import { useIsPrivateSend } from '@/store/limit-swap-store'
 import { isNetworkAsset, isReverseTargetAsset, useSwapStore } from '@/store/swap-store'
-import { useActiveBridge } from '@/store/transaction-store'
+import { useActiveBridge } from '@/hooks/use-bridges'
 import './bridge.css'
 
 // Development-only preview of the progress screen (`?bridgeFlowPreview=<stage>`); the condition is

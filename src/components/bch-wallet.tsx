@@ -7,7 +7,7 @@ import { type BchChoice, BchWalletChooser, type BchConnection, WalletConnectDial
 import { hasWalletConnectSession, useBchWalletConnect, walletConnectEnabled } from '@/components/bch-walletconnect'
 import { type BchBinding, BINDING_PATHS, type BindingPath, bindingFromPubkey, isValidBinding, isWatchOnly } from '@/lib/bch'
 import type { BchSigner } from '@/lib/bch-signing'
-import { useActiveBridge } from '@/store/transaction-store'
+import { useActiveBridge } from '@/hooks/use-bridges'
 
 // The user's own BCH wallet, connected over WizardConnect (Selene, Paytaca, …) or, when a WalletConnect
 // project ID is configured, over WalletConnect v2 (Cashonize, Zapit, Paytaca extension; see bch-walletconnect.tsx).

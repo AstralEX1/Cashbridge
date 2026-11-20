@@ -15,7 +15,7 @@ import { buildDeposit, type BuiltDeposit, checkDepositMemo, checkInbound, Deposi
 import { cosmosPayout, type ChainPayout, evmTransferPayout, type PayoutExpectation, solanaPayout, thorchainPayout, tronPayout, utxoPayout, xrpPayout } from '@/lib/payout-check'
 import { getNearQuote, getNearStatus, interpretNearStatus, nearLegOf, nearSlippageBps } from '@/lib/near-intents'
 import { getShapeShiftBridgeRoute } from '@/lib/shapeshift'
-import { isEvmChain } from '@/lib/payout-chains'
+import { blockHeight, destinationChainOf, isEvmChain } from '@/lib/payout-chains'
 import { BLOCKCHAIR_CHAINS } from '@/lib/blockchair'
 import { postJson, rpcBase, XRPL_RPC_URL } from '@/lib/transfer-status'
 import { generateId } from '@/lib/utils'
@@ -51,7 +51,7 @@ export const tokenAsset = (token: CauldronToken): Asset => ({
   logoURI: token.icon
 })
 
-export const destinationChainOf = (buyAsset: string) => buyAsset.split('.')[0].toUpperCase()
+export { blockHeight, destinationChainOf }
 
 export { signInWallet, type Signable } from '@/lib/bch-signing'
 
@@ -393,10 +393,6 @@ export const nearReverseOutcome = async (op: BridgeOperation): Promise<NearRever
   const total = found.reduce((sum, p) => sum + BigInt(p.amount), 0n)
   return found.length && total >= BigInt(near.minAmountOut) ? { payout: { hash: found[0].hash, amount: total.toString() } } : undefined
 }
-
-// Where the payout search starts on an EVM chain; other chains are looked up by THORNode's outbound hash.
-export const blockHeight = async (chain: string) => (isEvmChain(chain) ? (await getProvider(chain as EVMChain)).getBlockNumber() : undefined)
-
 // --- Recording -----------------------------------------------------------------------------------
 
 // Records a reverse operation before anything is signed. One operation at a time per browser.

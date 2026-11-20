@@ -91,10 +91,10 @@ import {
   operationToken,
   type SwapTransaction,
   transactionStore,
-  useActiveBridge,
   useTransaction,
   useUpdateBridge
 } from '@/store/transaction-store'
+import { useActiveBridge } from '@/hooks/use-bridges'
 
 // The reverse bridge's UI: the form's button, the confirm dialog, the progress screen and the
 // tracker. Step 1 (a token only) sells it for BCH on Cauldron; step 2 deposits the BCH to THORChain,

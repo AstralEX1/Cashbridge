@@ -59,13 +59,13 @@ import {
   transactionStore,
   useSetTransactionDetails,
   useTransaction,
-  useUnfinishedBridges,
   isBridgeTerminal,
   isBridgeWaiting,
   isReverseOperation,
   operationToken,
   useUpdateBridge
 } from '@/store/transaction-store'
+import { useUnfinishedBridges } from '@/hooks/use-bridges'
 
 type BridgeTx = SwapTransaction & { bridge: BridgeOperation }
 
