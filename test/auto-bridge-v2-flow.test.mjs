@@ -9,7 +9,7 @@ import { orderUnlockBytes, WorkerWallet } from '../src/server/auto-bridge/wallet
 import { OrderStore } from '../src/server/auto-bridge/store.ts'
 import { createOrder } from '../src/server/auto-bridge/api.ts'
 import { processOrder } from '../src/server/auto-bridge/worker.ts'
-import { checkOrder } from '../src/lib/auto-bridge-order.ts'
+import { checkNewOrder, checkOrder } from '../src/lib/auto-bridge-order.ts'
 import { newPageKey, settleFromPage } from '../src/lib/page-settle.ts'
 import { rowFromOrder } from '../src/lib/scanner.ts'
 import { bindingFromPubkey, decodeTx, txidOf } from '../src/lib/bch.ts'
@@ -152,6 +152,20 @@ test('with no trade available before the deadline the Router gives the BCH back 
     assert.equal(createVirtualMachineBch2026(true).verify({ transaction: tx, sourceOutputs: [{ lockingBytecode: contract, valueSatoshis: 1000000n }] }), true)
     assert.equal(binToHex(tx.outputs[0].lockingBytecode), customer.lockingBytecode)
     assert.ok(tx.outputs[0].valueSatoshis + 2000n >= 1000000n)
+  } finally {
+    store.close()
+  }
+})
+
+test('the page pays a new order only through its contract, at a minimum near its own Cauldron quote', async () => {
+  const { store, order } = await openOrder()
+  try {
+    // The Router quoted 220 PUSD units for the order's BCH; the page's own quote of the same BCH is the reference.
+    assert.equal(checkNewOrder(order, 220n), order)
+    assert.equal(checkNewOrder(order, 225n), order, 'a pool move of a few percent is tolerated')
+    assert.throws(() => checkNewOrder(order, 300n), /lower minimum/)
+    assert.throws(() => checkNewOrder({ ...order, contract: undefined }, 220n), /without an order contract/)
+    assert.throws(() => checkNewOrder({ ...order, contract: undefined }), /without an order contract/, 'the agent path checks the contract alone')
   } finally {
     store.close()
   }

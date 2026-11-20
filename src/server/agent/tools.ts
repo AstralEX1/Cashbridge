@@ -6,7 +6,7 @@ import { Interface, ZeroAddress, getAddress, isAddress } from 'ethers'
 import { AppConfig, BridgeConfig } from '@/config'
 import { getInboundAddresses, getMidgardPools, getNetworkQuotes, getQuotes, getTxStatus, isBridgeRoute, type TxStatusResponse } from '@/lib/api'
 import { nearPaysBeforeRefund, type OrderIntent, type OrderState, type PublicOrder, type SaleIntent, type SaleRoute } from '@/lib/auto-bridge-contract'
-import { checkOrder } from '@/lib/auto-bridge-order'
+import { checkNewOrder, checkOrder } from '@/lib/auto-bridge-order'
 import { addressToLockingBytecode, bchAddressProblem, bindingFromAddress, listWalletCoins } from '@/lib/bch'
 import { formatBaseUnits, minOutputFor, secondLegSellAmount, toBaseUnits } from '@/lib/bridge'
 import { quoteToken } from '@/lib/cauldron'
@@ -860,6 +860,12 @@ const prepareBridge = async (args: Args, context: ToolContext) => {
   const capability = randomBytes(32).toString('hex')
   let order = verified(await routerCall('POST', '/orders', capability, context.ip, { id, ...intent }), id, intent)
   if (order.apiVersion !== 2 || order.recoveryRequired) throw new ToolError('Cashbridge Router is being updated; try again later')
+  // The contract is required here too; the minimum is shown to the user, who checks it before paying.
+  try {
+    checkNewOrder(order)
+  } catch (error) {
+    throw new ToolError(`${error instanceof Error ? error.message : 'Invalid order'}; nothing was sent, do not pay this order`)
+  }
 
   if (via === 'near_intents') {
     if (!BridgeConfig.routerNear) throw new ToolError('NEAR Intents is not enabled for Cashbridge Router orders; use route thorchain')

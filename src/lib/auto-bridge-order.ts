@@ -1,6 +1,7 @@
 import { BridgeConfig } from '@/config'
 import { addressToLockingBytecode } from '@/lib/bch'
-import { orderBinding, REFUND_AFTER_SECONDS, saleBinding, type OrderTerms } from '@/lib/router-contract'
+import { minOutputFor } from '@/lib/bridge'
+import { orderBinding, REFUND_AFTER_SECONDS, SALE_FLOOR_TOLERANCE_BPS, saleBinding, type OrderTerms } from '@/lib/router-contract'
 import { sameSale, type OrderIntent, type PublicOrder } from '@/lib/auto-bridge-contract'
 
 // Every order the Router answers with, for the page and the agent endpoint alike: it is this order, it echoes the
@@ -37,6 +38,15 @@ export const checkOrder = (order: PublicOrder | undefined, id: string, intent?: 
     if (intent?.pageKey && version === 2 && pageKey !== intent.pageKey) throw new Error('The automatic order does not match the confirmed transfer')
     if (orderBinding(orderTermsOf(order), 0).cashAddress !== order.depositAddress) throw new Error('The automatic order address is not its contract')
   }
+  return order
+}
+
+// A forward order about to be paid must pay through its contract, at a minimum near this side's own Cauldron quote of
+// the same BCH (`secondLegSellAmount` of its expected sats). Saved orders from before contracts still poll through checkOrder.
+export const checkNewOrder = (order: PublicOrder, quotedOutput?: bigint) => {
+  if (!order.contract) throw new Error('The Cashbridge Router answered without an order contract')
+  if (quotedOutput !== undefined && BigInt(order.minPusd) < minOutputFor(quotedOutput, BridgeConfig.pusdSlippageBps + SALE_FLOOR_TOLERANCE_BPS))
+    throw new Error('The Cashbridge Router offered a lower minimum than this quote')
   return order
 }
 

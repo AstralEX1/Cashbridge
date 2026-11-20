@@ -21,7 +21,9 @@ import { useAssetFrom, useSwap } from '@/hooks/use-swap'
 import { useSwapRates } from '@/hooks/use-rates'
 import { AppConfig, BridgeConfig } from '@/config'
 import { bchAddressProblem } from '@/lib/bch'
-import { toBaseUnits } from '@/lib/bridge'
+import { secondLegSellAmount, toBaseUnits } from '@/lib/bridge'
+import { quoteToken } from '@/lib/cauldron'
+import { checkNewOrder } from '@/lib/auto-bridge-order'
 import { firstLegSeconds } from '@/lib/bridge-summary'
 import { getQuotes, isBridgeRoute } from '@/lib/api'
 import { assertAutomaticSaved, createAutomaticOrder, orderRequest, RouterUnavailableError, startAutomaticSource } from '@/lib/auto-bridge-client'
@@ -96,6 +98,8 @@ export const prepareAutomatic = async ({
     assertAutomaticSaved(reference)
     const created = reference.order ?? (await createAutomaticOrder(reference))
     if (created.apiVersion !== 2 || created.recoveryRequired) throw new Error(messages.serviceUpdate)
+    const own = await quoteToken({ category: token.category, side: 'buy', amount: secondLegSellAmount(BigInt(created.expectedBchSats)) })
+    checkNewOrder(created, own.output)
     autoBridgeStore.getState().patch(reference.id, { order: created })
     return { reference, order: created }
   }
