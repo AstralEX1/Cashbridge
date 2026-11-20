@@ -40,10 +40,10 @@ beforeEach(() => {
   ui.onSingleWalletModalStateChange = subscribe(ui.single)
 })
 
-test('Tonkeeper opens directly and adds its mainnet account only after approval', async () => {
-  const pending = connect([Chain.Ton], { tonWallet: 'tonkeeper' })
+for (const tonWallet of ['telegram', 'tonkeeper']) test(`${tonWallet} opens directly and adds its mainnet account only after approval`, async () => {
+  const pending = connect([Chain.Ton], { tonWallet })
   await flush()
-  assert.deepEqual(ui.opened, ['tonkeeper'])
+  assert.deepEqual(ui.opened, [tonWallet])
   assert.equal(added, undefined)
   ui.account = { address: `0:${'1'.repeat(64)}`, chain: '-239' }
   for (const listener of [...ui.status]) listener({ account: ui.account })
@@ -54,7 +54,7 @@ test('Tonkeeper opens directly and adds its mainnet account only after approval'
   assert.equal(ui.modal.size + ui.single.size, 0)
 })
 
-for (const tonWallet of [undefined, 'tonkeeper']) {
+for (const tonWallet of [undefined, 'telegram', 'tonkeeper']) {
   test(`closing ${tonWallet ?? 'the picker'} cancels and removes all temporary listeners`, async () => {
     const pending = connect([Chain.Ton], { tonWallet })
     const rejected = assert.rejects(pending, isTonConnectDismissed)

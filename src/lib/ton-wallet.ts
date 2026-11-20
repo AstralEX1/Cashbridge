@@ -27,12 +27,16 @@ let connector: Promise<TonConnectUI> | undefined
 const tonConnect = () =>
   (connector ??= import('@tonconnect/ui').then(({ TonConnectUI }) => new TonConnectUI({ manifestUrl: `${window.location.origin}/tonconnect-manifest.json` })))
 
+// Wallets the picker offers on their own, by their `app_name` in TON's wallets list (github.com/ton-blockchain/wallets-list):
+// Telegram's built-in wallet and Tonkeeper. Any other wallet is in TON Connect's own modal.
+export type TonWallet = 'telegram' | 'tonkeeper'
+
 // Closing the modal is a cancel, not a failure, as WalletConnect's dismissal is.
 class TonConnectDismissed extends Error {}
 export const isTonConnectDismissed = (error: unknown) => error instanceof TonConnectDismissed
 
 // Resolves once a wallet is connected; rejects when the user closes the modal.
-const openModal = (ui: TonConnectUI, tonWallet?: 'tonkeeper') =>
+const openModal = (ui: TonConnectUI, tonWallet?: TonWallet) =>
   new Promise<void>((resolve, reject) => {
     const stop = () => {
       stopStatus()
@@ -97,7 +101,7 @@ export const tonconnectWallet = createWallet({
   walletType: TONCONNECT,
   connect:
     ({ addChain, walletType }) =>
-    async (chains: Chain[], config?: { restoreOnly?: boolean; tonWallet?: 'tonkeeper' }) => {
+    async (chains: Chain[], config?: { restoreOnly?: boolean; tonWallet?: TonWallet }) => {
       if (!chains.includes(Chain.Ton)) throw new Error('TON Connect only supports TON')
       const ui = await tonConnect()
       await ui.connectionRestored

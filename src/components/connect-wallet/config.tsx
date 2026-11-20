@@ -7,7 +7,7 @@ import { BridgeConfig } from '@/config'
 import { CIP30_IDS, cip30Entry, ETERNL, LACE, YOROI } from '@/lib/cardano-wallet'
 import { NEARCONNECT } from '@/lib/near-connect-wallet'
 import { findSlush, SLUSH } from '@/lib/sui-wallet'
-import { TONCONNECT } from '@/lib/ton-wallet'
+import { TONCONNECT, type TonWallet } from '@/lib/ton-wallet'
 import { supportedChains } from '@/lib/wallets'
 
 export enum WalletType {
@@ -24,7 +24,7 @@ export type WalletParams = {
   option: WalletOption
   link: string
   supportedChains: Chain[]
-  tonWallet?: 'tonkeeper'
+  tonWallet?: TonWallet
 }
 
 export const ALL_CHAINS = [
@@ -173,6 +173,16 @@ export const WALLETS: WalletParams[] = [
     link: 'https://yoroi-wallet.com',
     supportedChains: supportedChains[YOROI]
   },
+  // Telegram's own wallet, opened straight from its row: a QR code on a computer, the Telegram app on a phone.
+  {
+    key: 'telegram',
+    type: WalletType.mobile,
+    label: 'Telegram Wallet',
+    option: TONCONNECT,
+    link: 'https://telegram.org',
+    supportedChains: supportedChains[TONCONNECT],
+    tonWallet: 'telegram'
+  },
   {
     key: 'tonkeeper',
     type: WalletType.mobile,
@@ -182,7 +192,7 @@ export const WALLETS: WalletParams[] = [
     supportedChains: supportedChains[TONCONNECT],
     tonWallet: 'tonkeeper'
   },
-  // TON Connect's own modal lists the other TON wallets, including Telegram Wallet.
+  // TON Connect's own modal lists every other TON wallet (MyTonWallet, Tonhub, Bitget, OKX, …).
   {
     key: 'tonconnect',
     type: WalletType.mobile,
