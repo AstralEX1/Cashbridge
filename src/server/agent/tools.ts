@@ -5,7 +5,7 @@ import type { QuoteRequest, QuoteResponseRoute } from '@tcswap/helpers/api'
 import { Interface, ZeroAddress, getAddress, isAddress } from 'ethers'
 import { AppConfig, BridgeConfig } from '@/config'
 import { getInboundAddresses, getMidgardPools, getNetworkQuotes, getQuotes, getTxStatus, isBridgeRoute, type TxStatusResponse } from '@/lib/api'
-import type { OrderIntent, OrderState, PublicOrder, SaleIntent } from '@/lib/auto-bridge-contract'
+import { nearPaysBeforeRefund, type OrderIntent, type OrderState, type PublicOrder, type SaleIntent } from '@/lib/auto-bridge-contract'
 import { checkOrder } from '@/lib/auto-bridge-order'
 import { addressToLockingBytecode, bchAddressProblem, bindingFromAddress, listWalletCoins } from '@/lib/bch'
 import { formatBaseUnits, minOutputFor, secondLegSellAmount, toBaseUnits } from '@/lib/bridge'
@@ -13,7 +13,7 @@ import { quoteToken } from '@/lib/cauldron'
 import { FEATURED_TOKENS, fetchCauldronTokens, readTokenSlug, searchCauldronTokens, type CauldronToken } from '@/lib/cauldron-tokens'
 import { isDollarStable } from '@/lib/dollar-stable'
 import { resolveQuoteError } from '@/lib/errors'
-import { getNearQuote, getNearStatus, interpretNearStatus, isNearChain, nearExplorerUrl, nearSlippageBps, submitNearDeposit, type NearRoute, type NearQuoteRequest } from '@/lib/near-intents'
+import { FORWARD_DEADLINE_MS, getNearQuote, getNearStatus, interpretNearStatus, isNearChain, nearExplorerUrl, nearSlippageBps, submitNearDeposit, type NearRoute, type NearQuoteRequest } from '@/lib/near-intents'
 import { REFUND_AFTER_SECONDS } from '@/lib/router-contract'
 import { buildTokenSend } from '@/lib/router-sale-client'
 import { getShapeShiftQuote, getShapeShiftStatus, interpretShapeShiftStatus, shapeShiftAssetId, type ShapeShiftRoute } from '@/lib/shapeshift'
@@ -313,9 +313,9 @@ const listSupportedAssets = async (args: Args) => {
       to_bch: 'Any other_side asset to BCH.BCH or to a bch_side token.',
       from_bch: 'BCH.BCH or a bch_side token to any other_side asset. Token sales prepare through the Cashbridge Router when it admits them.',
       near_intents:
-        'Between BCH.BCH and assets on ADA, ARB, AVAX, BASE, BERA, BSC, BTC, DASH, DOGE, ETH, GNO, LTC, MONAD, NEAR, OP, POL, SOL, SUI, TON, TRON, XLAYER and ZEC, both ways, NEAR Intents is quoted too; name them the same way (CHAIN.SYMBOL-CONTRACT). Into a CashToken, NEAR can carry the first leg when the Router admits NEAR orders.',
+        'Between BCH.BCH and assets on ADA, ARB, AURORA, AVAX, BASE, BERA, BSC, BTC, DASH, DOGE, ETH, GNO, LTC, MONAD, NEAR, OP, POL, SOL, SUI, TON, TRON, XLAYER and ZEC, both ways, NEAR Intents is quoted too; name them the same way (CHAIN.SYMBOL-CONTRACT). Into a CashToken, NEAR can carry the first leg when the Router admits NEAR orders.',
       shapeshift:
-        'Any-network free pairs (two other_side assets) quote ShapeShift beside THORChain when ShapeShift maps both (including GNO, MAYA and MONAD). Plain BCH pairs are quoted the same way when both assets map.',
+        'Any-network free pairs (two other_side assets) quote ShapeShift beside THORChain when ShapeShift maps both (including GNO, MAYA, MEGAETH, MONAD, NEAR, SUI and TON). Plain BCH pairs are quoted the same way when both assets map.',
       free_pairs: 'Two THORChain assets with no BCH side (for example ETH.ETH to BTC.BTC) use Any-network Manual: THORChain and ShapeShift.'
     }
   }
@@ -793,6 +793,7 @@ const prepareBridge = async (args: Args, context: ToolContext) => {
 
   if (via === 'near_intents') {
     if (!BridgeConfig.routerNear) throw new ToolError('NEAR Intents is not enabled for Cashbridge Router orders; use route thorchain')
+    const now = Date.now()
     const near = await nearQuote({
       sellAsset: external,
       buyAsset: BridgeConfig.buyAsset,
@@ -801,13 +802,14 @@ const prepareBridge = async (args: Args, context: ToolContext) => {
       recipient: order.depositAddress,
       refundTo: source,
       dry: false,
-      slippageBps: nearSlippageBps(percent)
+      slippageBps: nearSlippageBps(percent),
+      now
     })
     if (!near?.near.quote.depositAddress) throw new ToolError('NEAR Intents gave no deposit for this Router order; use route thorchain')
     if (!isBridgeRoute(near, { sellAsset: external, destinationAddress: order.depositAddress }))
       throw new ToolError('NEAR Intents quoted a deposit that does not pay this order; nothing was sent, ask for a new quote')
-    const deadline = near.near.quote.deadline ? Date.parse(near.near.quote.deadline) : NaN
-    if (order.contract && Number.isFinite(deadline) && deadline + order.maxWaitSeconds * 1000 >= order.contract.refundAfter * 1000)
+    // 1Click's `quote.deadline` is when the deposit address goes inactive (days later); the swap refunds at the one we asked for.
+    if (!nearPaysBeforeRefund(order, now + FORWARD_DEADLINE_MS))
       throw new ToolError('NEAR Intents payout may arrive after this order can expire; use route thorchain or ask for a new quote')
     const depositAddress = near.near.quote.depositAddress
     try {

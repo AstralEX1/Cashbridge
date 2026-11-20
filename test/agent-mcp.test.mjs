@@ -58,7 +58,7 @@ const router = createServer((req, res) => {
     res.setHeader('content-type', 'application/json')
     if (req.method === 'POST' && req.url === '/orders') {
       const input = JSON.parse(body)
-      const contract = { routerKey, refundAfter: 1_900_000_000 }
+      const contract = { routerKey, refundAfter: Math.floor(Date.now() / 1000) + 3 * 60 * 60 }
       const terms = { ...contract, recipientScript: recipient.lockingBytecode, refundScript: recipient.lockingBytecode, category: input.category ?? BridgeConfig.pusd.category, minPusd: '123' }
       const order = { apiVersion: 2, ...input, contract, depositAddress: orderBinding(terms, 0).cashAddress, minPusd: '123', maxWaitSeconds: 1800, state: 'awaiting_deposit', receivedSats: '0', attempts: [] }
       const published = routerOrder(order)
@@ -103,7 +103,7 @@ before(async () => {
         correlationId: 'c-1',
         timestamp: '2030-01-01T00:00:00.000Z',
         signature: 'ed25519:sig',
-        quote: { ...(!body.dry && { depositAddress: body.originAsset === 'nep141:bch.omft.near' ? nearBchDeposit : NEAR_DEPOSIT }), amountIn: body.amount, amountInFormatted: '25', minAmountIn: body.amount, amountOut: '6000000', amountOutFormatted: '0.06', minAmountOut: '5900000', deadline: '2030-01-01T01:00:00.000Z', timeEstimate: 40 }
+        quote: { ...(!body.dry && { depositAddress: body.originAsset === 'nep141:bch.omft.near' ? nearBchDeposit : NEAR_DEPOSIT }), amountIn: body.amount, amountInFormatted: '25', minAmountIn: body.amount, amountOut: '6000000', amountOutFormatted: '0.06', minAmountOut: '5900000', deadline: new Date(Date.parse(body.deadline) + 3 * 86400_000).toISOString(), timeEstimate: 40 }
       })
     }
     if (url.startsWith('https://gateway.liquify.com/chain/thorchain_api/thorchain/pool/')) return Response.json({ asset: decodeURIComponent(url.split('/').pop()), decimals: 6 })

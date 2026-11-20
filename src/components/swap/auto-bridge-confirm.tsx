@@ -25,7 +25,7 @@ import { toBaseUnits } from '@/lib/bridge'
 import { firstLegSeconds } from '@/lib/bridge-summary'
 import { getQuotes, isBridgeRoute } from '@/lib/api'
 import { assertAutomaticSaved, createAutomaticOrder, orderRequest, RouterUnavailableError, startAutomaticSource } from '@/lib/auto-bridge-client'
-import { getNearQuote, isNearRoute, nearSlippageBps, submitNearDeposit } from '@/lib/near-intents'
+import { FORWARD_DEADLINE_MS, getNearQuote, isNearRoute, nearSlippageBps, submitNearDeposit } from '@/lib/near-intents'
 import { getUSwap } from '@/lib/wallets'
 import { resolvePriceImpact } from '@/lib/swap-helpers'
 import { autoBridgeStore, type SavedAutoOrder } from '@/store/auto-bridge-store'
@@ -89,6 +89,7 @@ export const prepareAutomatic = async ({
 
   if (provider === ProviderName.NEAR) {
     const attachNear = async (reference: SavedAutoOrder, current: typeof order) => {
+      const now = Date.now()
       const near = await getNearQuote({
         sellAsset: source.asset,
         buyAsset: BridgeConfig.buyAsset,
@@ -97,12 +98,14 @@ export const prepareAutomatic = async ({
         recipient: current.depositAddress,
         refundTo: source.address,
         dry: false,
-        slippageBps: nearSlippageBps(slippage)
+        slippageBps: nearSlippageBps(slippage),
+        now
       })
       if (!near?.near.quote.depositAddress || !validFor(current.depositAddress, near)) return { status: 'unavailable' as const }
-      const deadline = near.near.quote.deadline ? Date.parse(near.near.quote.deadline) : NaN
+      // 1Click answers `quote.deadline` as when the deposit address goes inactive (days later); the swap itself
+      // refunds at the deadline we asked for.
       // A reused draft may be too close to refund for NEAR's window; caller opens a fresh order.
-      if (!nearPaysBeforeRefund(current, deadline)) return { status: 'deadline' as const }
+      if (!nearPaysBeforeRefund(current, now + FORWARD_DEADLINE_MS)) return { status: 'deadline' as const }
       const depositAddress = near.near.quote.depositAddress
       // The Router learns the deposit address before Confirm, so it finds the payout even if this tab closes.
       const noted = await orderRequest(reference, 'POST', { nearDepositAddress: depositAddress })

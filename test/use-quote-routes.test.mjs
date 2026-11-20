@@ -78,7 +78,8 @@ test('Automatic prepare keeps a selected NEAR route on NEAR (no silent THOR fall
   const nearBranch = prepareSource.match(/if \(provider === ProviderName\.NEAR\) \{([\s\S]*?)\n  \}\n\n  const quotes = await getQuotes/)?.[1]
   assert.ok(nearBranch, 'NEAR prepare must return before getQuotes')
   assert.doesNotMatch(nearBranch, /getQuotes/)
-  assert.match(nearBranch, /nearPaysBeforeRefund/)
+  assert.match(nearBranch, /nearPaysBeforeRefund\(current, now \+ FORWARD_DEADLINE_MS\)/)
+  assert.doesNotMatch(nearBranch, /quote\.deadline \?/, '1Click quote.deadline is the deposit address lifetime, not the refund deadline')
   assert.match(nearBranch, /openOrder\(\)/)
   assert.match(nearBranch, /return \{ reference: \{ \.\.\.ref, order: result\.order \}, route: result\.route \}/)
 })
