@@ -2047,7 +2047,7 @@ button.bridge-flow-primary:disabled {
 .bridge-router button:disabled { cursor: default; pointer-events: none; }
 .bridge-router[data-disabled] button:disabled { opacity: .5; }
 .bridge-router:not([data-hydrated]) { visibility: hidden; }
-.bridge-router button:focus-visible, .bridge-auto-history:focus-visible, .bridge-open-networks:focus-visible { outline: 2px solid #0ac18e; outline-offset: 3px; }
+.bridge-router button:focus-visible, .bridge-auto-card:focus-visible, .bridge-open-networks:focus-visible { outline: 2px solid #0ac18e; outline-offset: 3px; }
 .bridge-router-hint { margin: -2px 4px 12px; color: #c4d2d6; font-size: 13px; line-height: 1.4; }
 .bridge-open-networks {
   padding: 7px 12px;
@@ -2089,11 +2089,39 @@ button.bridge-flow-primary:disabled {
 .bridge-auto-recipient input[aria-invalid='true'] { outline: 1px solid #bd493e; }
 .bridge-paste-error { margin: 6px 0 0; color: #bd493e; font-size: 12px; font-weight: 600; }
 .bridge-auto-orders { display: grid; gap: 8px; margin-top: 20px; color: #c4d2d6; }
-.bridge-auto-history { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-radius: 16px; text-align: left; background: #1b2c35; color: #eaf0ef; cursor: pointer; }
-.bridge-auto-history > span { display: flex; min-width: 0; gap: 8px; font-size: 13px; overflow-wrap: anywhere; }
-.bridge-auto-history > span:first-child { flex-direction: column; gap: 4px; }
-.bridge-auto-history small { color: #a6b9c0; }
-.bridge-auto-history svg { flex: none; }
+/* A running order under the form: sent coin, state, bought token - the same card as a finished transfer. */
+.bridge-auto-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #ffffff1a;
+  border-radius: 16px;
+  background: #ffffff0a;
+  color: #eaf0ef;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease-out, transform 160ms ease-out;
+}
+.bridge-auto-card:active { transform: scale(0.99); }
+.bridge-auto-side { display: flex; min-width: 0; align-items: center; gap: 10px; }
+.bridge-auto-side.is-end { justify-content: flex-end; text-align: right; }
+.bridge-auto-side > span:not(.bridge-flow-icon) { display: grid; min-width: 0; gap: 2px; }
+.bridge-auto-side strong { overflow: hidden; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bridge-auto-card small { color: #a6b9c0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.bridge-auto-state { display: grid; justify-items: center; gap: 4px; max-width: 120px; color: #a6b9c0; text-align: center; }
+.bridge-auto-state small { font-size: 11px; font-weight: 600; line-height: 1.2; }
+.bridge-auto-card svg, .bridge-auto-card img { flex: none; }
+@media (max-width: 480px) {
+  .bridge-auto-card { gap: 8px; padding: 12px; }
+  .bridge-auto-side { gap: 8px; }
+  .bridge-auto-side strong { white-space: normal; overflow-wrap: anywhere; }
+  .bridge-auto-state { max-width: 92px; }
+}
+@media (hover: hover) and (pointer: fine) { .bridge-auto-card:hover { border-color: #0ac18e66; } }
+@media (prefers-reduced-motion: reduce) { .bridge-auto-card { transition: none; } .bridge-auto-card:active { transform: none; } }
 
 /* Refresh in the tools row, a white square like Settings: a ring around the icon fills up until the
    quote and balances reload on their own. */

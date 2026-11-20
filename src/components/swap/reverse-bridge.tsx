@@ -16,7 +16,6 @@ import { ConnectWallet } from '@/components/connect-wallet/connect-wallet'
 import { GenericButton } from '@/components/generic-button'
 import { BridgeHop } from '@/components/bridge-hop/bridge-hop'
 import { useDialog } from '@/components/global-dialog'
-import { TransactionHistoryDialog } from '@/components/header/transaction-history-dialog'
 import type { Asset } from '@/components/swap/asset'
 import { BchMark, CauldronMark, HoverCard, NearMark, ShapeShiftMark, ThorchainMark, TokenMark } from '@/components/swap/bridge-marks'
 import { shortBridgeAddress } from '@/components/swap/bridge-wallet-badge'
@@ -1110,7 +1109,6 @@ const DepositQuoteBlock = ({ route, amountSats, minerFeeSats, ticker, bchUsd, ne
 export const ReverseOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => void }) => {
   const t = useTranslations('bridge')
   const tx = useTransaction(uid)
-  const { openDialog } = useDialog()
   const [dismissed, setDismissed] = useState<string[]>([])
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -1238,7 +1236,6 @@ export const ReverseOperationPanel = ({ uid, onClose }: { uid?: string; onClose:
     toasts,
     onDismissToast: (id: string) => setDismissed(list => [...list, id]),
     persistToasts: !terminal,
-    onHistory: () => openDialog(TransactionHistoryDialog, {}),
     onClose,
     onBridgeAnother: isBridgeWaiting(op) ? onClose : undefined,
     animateCollapse: true

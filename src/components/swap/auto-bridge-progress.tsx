@@ -3,13 +3,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Chain } from '@tcswap/core'
 import { useTranslations } from 'next-intl'
-import { ExternalLink, LoaderCircle } from 'lucide-react'
+import { LoaderCircle } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { GenericButton } from '@/components/generic-button'
 import { Input } from '@/components/ui/input'
 import { AssetIcon } from '@/components/asset-icon'
 import { useDialog } from '@/components/global-dialog'
-import { TransactionHistoryDialog } from '@/components/header/transaction-history-dialog'
 import { BchMark, TokenMark } from '@/components/swap/bridge-marks'
 import { SwapError } from '@/components/swap/swap-error'
 import { FlowToasts, type FlowToast } from '@/components/swap/flow-toasts'
@@ -40,21 +39,59 @@ import { automaticCompletion, automaticTransactions } from '@/lib/auto-bridge-su
 import { formatBaseUnits } from '@/lib/bridge'
 import { orderRequest, pollAutomaticOrders, restoreAutomaticOrder, type OrderPollSchedule } from '@/lib/auto-bridge-client'
 import { sourceTransactionId } from '@/lib/source-transaction'
+import { sideOf } from '@/lib/scanner'
 import { autoBridgeStore, type SavedAutoOrder } from '@/store/auto-bridge-store'
 
 const BCH_STAGES = ['awaiting_deposit', 'streaming']
 
-export const AutomaticHistoryRow = ({ reference }: { reference: SavedAutoOrder }) => {
+// Sent, with nothing on a chain yet: the page saved the order, but no wallet sent anything to it.
+const isDraft = (reference: SavedAutoOrder) => !reference.sourceAttempted && !reference.order?.sourceHash && reference.order?.state === 'awaiting_deposit'
+
+// One running order under the form, as a card: what was sent, where it is, what it buys. Opens its progress.
+const AutomaticOrderRow = ({ reference }: { reference: SavedAutoOrder }) => {
   const t = useTranslations('automatic')
   const { openDialog } = useDialog()
+  const { assets } = useAssets()
   const order = reference.order
   const token = reference.token ?? PUSD_TOKEN
+  const source = order?.source ?? reference.intent?.source
+  const asset = source && assets?.find(item => item.identifier.toLowerCase() === source.asset.toLowerCase())
+  const { rates } = useRates(asset ? [asset.identifier] : [])
+  const rate = asset && rates[asset.identifier]
+  const usd = rate && source ? usdText(Number(source.amount) * Number(rate.toSignificant(12))) : undefined
+  // Before the asset list loads, the coin's own mark from its THORChain id (BASE.USDC-0X…).
+  const ticker = asset?.ticker ?? source?.asset.split('.')[1]?.split('-')[0] ?? 'BCH'
+  const mark = !asset && source ? sideOf(ticker, source.chain).icon : undefined
   const receipt = order && automaticCompletion(order, token)
-  const draft = !reference.sourceAttempted && !order?.sourceHash && order?.state === 'awaiting_deposit'
-  return <button type="button" className="bridge-auto-history" onClick={() => openDialog(AutomaticOrderDialog, { id: reference.id })}>
-    <span><strong>{t('automatic')} · {token.ticker}</strong><small>{t(draft ? 'draft' : order ? `states.${order.state}` : 'restoring')}</small></span>
-    <span>{receipt ? `${receipt.amount} ${receipt.ticker}` : t('viewTransfer')}<ExternalLink size={14} aria-hidden="true" /></span>
-  </button>
+  const state = t(order ? `states.${order.state}` : 'restoring')
+  return (
+    <button type="button" className="bridge-auto-card" onClick={() => openDialog(AutomaticOrderDialog, { id: reference.id })} aria-label={`${t('viewTransfer')}: ${state}`}>
+      <span className="bridge-auto-side">
+        {asset ? (
+          <span className="bridge-flow-icon"><AssetIcon asset={asset} showNetworkIcons={false} /></span>
+        ) : mark ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={mark} width={34} height={34} alt="" className="bridge-mark" />
+        ) : (
+          <BchMark size={34} />
+        )}
+        <span>
+          <strong>{source ? `${formatAmount(Number(source.amount))} ${ticker}` : 'BCH'}</strong>
+          {usd && <small>{usd}</small>}
+        </span>
+      </span>
+      <span className="bridge-auto-state">
+        <LoaderCircle size={20} className="animate-spin" aria-hidden="true" />
+        <small>{state}</small>
+      </span>
+      <span className="bridge-auto-side is-end">
+        <span>
+          <strong>{receipt ? `${receipt.amount} ${receipt.ticker}` : token.ticker}</strong>
+        </span>
+        {receipt?.refund ? <BchMark size={34} /> : <TokenMark token={token} size={34} />}
+      </span>
+    </button>
+  )
 }
 
 // Mounted for both modes: turning automatic off must not stop existing-order recovery.
@@ -82,7 +119,8 @@ export const AutomaticOrders = () => {
     return () => { stopped = true; clearInterval(timer); window.removeEventListener('storage', rehydrate) }
   }, [ids])
   if (!hydrated) return null
-  const active = references.filter(ref => !ref.order || !isTerminal(ref.order.state)).slice(-3)
+  // A draft is not a transfer: it stays polled, but is listed only once something is sent to it.
+  const active = references.filter(ref => (!ref.order || !isTerminal(ref.order.state)) && !isDraft(ref)).slice(-3)
   return (
     <>
       {/* Toasts stay on the bridge tab after the tracking dialog is closed. */}
@@ -91,7 +129,7 @@ export const AutomaticOrders = () => {
         <section className="bridge-auto-orders" aria-label={t('transfers')}>
           {offline && <p role="status" className="bridge-flow-message">{t('offline')}</p>}
           {active.map(reference => (
-            <AutomaticHistoryRow key={reference.id} reference={reference} />
+            <AutomaticOrderRow key={reference.id} reference={reference} />
           ))}
         </section>
       )}
@@ -337,7 +375,6 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
         } : undefined}
         toasts={[]}
         onDismissToast={() => {}}
-        onHistory={() => openDialog(TransactionHistoryDialog, {})}
         onClose={close}
         onBridgeAnother={handsOff ? close : undefined}
         animateCollapse={animateCollapse}

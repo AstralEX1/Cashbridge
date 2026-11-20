@@ -1,15 +1,14 @@
 import { EVMChains, USwapNumber, type EVMChain } from '@tcswap/core'
 import type { QuoteResponseRoute } from '@tcswap/helpers/api'
 import { ProviderName } from '@tcswap/helpers'
-import { getNetworkQuotes, getTxStatus, isNetworkRoute, type TxStatusResponse } from '@/lib/api'
+import { getNetworkQuotes, isNetworkRoute, type TxStatusResponse } from '@/lib/api'
 import { BridgeBlocked, FirstLegRejected, withLock } from '@/lib/bridge-first-leg'
 import { isUserRejection } from '@/lib/errors'
 import { generateId } from '@/lib/utils'
 import { toBaseUnits } from '@/lib/bridge'
 import { sameAddress } from '@/lib/payout-chains'
-import { sameSourceTransaction, sourceTransactionId } from '@/lib/source-transaction'
-import { getNearQuote, getNearStatus, isNearRoute, nearSlippageBps, submitNearDeposit } from '@/lib/near-intents'
-import { getShapeShiftQuote, getShapeShiftStatus, isShapeShiftRoute, SHAPESHIFT_PROVIDER } from '@/lib/shapeshift'
+import { getNearQuote, isNearRoute, nearSlippageBps, submitNearDeposit } from '@/lib/near-intents'
+import { getShapeShiftQuote, isShapeShiftRoute, SHAPESHIFT_PROVIDER } from '@/lib/shapeshift'
 import { type SwapTransaction, transactionStore } from '@/store/transaction-store'
 
 // Save before opening the wallet: a lost answer or closed tab must never look like an unsent swap.
@@ -118,30 +117,4 @@ export const networkIntentMatches = (tx: SwapTransaction, deposit: TxStatusRespo
       deposit.coins?.length === 1 && deposit.coins[0].asset.toUpperCase() === tx.assetFrom.identifier.toUpperCase() &&
       BigInt(deposit.coins[0].amount) === toBaseUnits(tx.amountFrom, 8)
   } catch { return false }
-}
-
-export const resumeNetworkSwap = async (tx: SwapTransaction, hash: string) => {
-  if (!sourceTransactionId(hash)) throw new Error('Enter the source transaction hash from your wallet')
-  const nearAddress = tx.networkSwap?.near?.depositAddress
-  if (nearAddress) {
-    // 1Click lists the deposits it has seen at the address: the hash entered must be one of them.
-    const seen = await getNearStatus(nearAddress)
-    if (!(seen.swapDetails?.originChainTxHashes ?? []).some(t => sameSourceTransaction(t.hash, hash)))
-      throw new Error('NEAR Intents has not seen this transaction for the saved transfer. Check the hash and retry later.')
-    transactionStore.setState(state => ({ transactions: state.transactions.map(current => current.uid === tx.uid && current.status === 'unknown' && !current.hash ? { ...current, hash: hash.trim(), status: 'pending' } : current) }))
-    return
-  }
-  const quoteId = tx.networkSwap?.shapeshift?.quoteId
-  if (quoteId) {
-    // ShapeShift fills in the deposit's hash once it sees it: it must be the one entered.
-    const seen = await getShapeShiftStatus(quoteId)
-    if (!sameSourceTransaction(seen.txHash, hash)) throw new Error('ShapeShift has not seen this transaction for the saved transfer. Check the hash and retry later.')
-    transactionStore.setState(state => ({ transactions: state.transactions.map(current => current.uid === tx.uid && current.status === 'unknown' && !current.hash ? { ...current, hash: hash.trim(), status: 'pending' } : current) }))
-    return
-  }
-  const status = await getTxStatus(hash)
-  if (!sameSourceTransaction(status.tx?.id, hash) || !networkIntentMatches(tx, status.tx)) {
-    throw new Error('This transaction has not been observed matching the saved transfer. Check the hash and retry later.')
-  }
-  transactionStore.setState(state => ({ transactions: state.transactions.map(current => current.uid === tx.uid && current.status === 'unknown' && !current.hash ? { ...current, hash: hash.trim(), status: 'pending' } : current) }))
 }

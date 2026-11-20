@@ -108,7 +108,7 @@ export default function Page() {
         <summary>The BCH arrived, but not the PUSD</summary>
         <div>
           <p>
-            In manual mode the BCH to PUSD swap is a second transaction that you sign in your BCH wallet. Press <strong>Swap BCH → PUSD (2/2)</strong> on the progress screen, or open <strong>History</strong> and continue the transfer from there. If you press <strong>Keep BCH instead</strong>, the BCH stays in your wallet and the transfer ends.
+            In manual mode the BCH to PUSD swap is a second transaction that you sign in your BCH wallet. Press <strong>Swap BCH → PUSD (2/2)</strong> on the progress screen. If you press <strong>Keep BCH instead</strong>, the BCH stays in your wallet and the transfer ends.
           </p>
         </div>
       </details>

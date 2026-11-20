@@ -112,7 +112,7 @@ export default function Page() {
 
         <Step title="Follow the order">
           <p>
-            History lists it as an <em>Automatic transfer</em>. You can close the tab; the Router continues. Reopen the site in the same browser for the result.
+            A row under the form follows it, and the <Link href="/scanner">scanner</Link> finds it by your wallet address. You can close the tab; the Router continues.
           </p>
         </Step>
       </Steps>

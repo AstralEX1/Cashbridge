@@ -121,7 +121,6 @@ export const BridgeFlowPreview = ({ stage = 'bridging' }: { stage?: string }) =>
         }
         toasts={toasts}
         onDismissToast={id => setDismissed(list => [...list, id])}
-        onHistory={() => {}}
         onClose={() => {}}
         onBridgeAnother={flow === 'plain' ? () => {} : undefined}
       />

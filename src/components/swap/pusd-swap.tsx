@@ -5,16 +5,15 @@ import { useTranslations } from 'next-intl'
 import { useQuery } from '@tanstack/react-query'
 import { Chain, EVMChain, EVMChains, getChainConfig, getExplorerTxUrl } from '@tcswap/core'
 import { getProvider } from '@tcswap/toolboxes/evm'
-import { ArrowRight, Check, ChevronDown, Clock, Coins, ExternalLink, History, LoaderCircle, X } from 'lucide-react'
+import { ArrowRight, Check, ChevronDown, Clock, Coins, ExternalLink, LoaderCircle, ScanSearch, X } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { AssetIcon } from '@/components/asset-icon'
-import { useDialog } from '@/components/global-dialog'
-import { TransactionHistoryDialog } from '@/components/header/transaction-history-dialog'
 import { BchMark, TokenMark } from '@/components/swap/bridge-marks'
 import { BridgeCompletion, type BridgeCompletionProps } from '@/components/swap/bridge-completion'
 import { type FlowToast, FlowToasts } from '@/components/swap/flow-toasts'
 import { WalletAddressBadge } from '@/components/swap/bridge-wallet-badge'
 import { useBchWallet } from '@/components/bch-wallet'
+import { useSyncTransactions } from '@/hooks/use-sync-transactions'
 import { GenericButton } from '@/components/generic-button'
 import { BridgeHop } from '@/components/bridge-hop/bridge-hop'
 import { SwapError } from '@/components/swap/swap-error'
@@ -344,6 +343,8 @@ const syncSecondLeg = async (tx: BridgeTx, update: ReturnType<typeof useUpdateBr
 // while another starts) and keeps tabs in step.
 export const BridgeTracker = () => {
   const operations = useUnfinishedBridges()
+  // Plain swaps and sends too, on every page: no list has to be open for them to be followed.
+  useSyncTransactions()
 
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
@@ -447,7 +448,6 @@ export interface BridgeFlowProps {
   onDismissToast: (id: string) => void
   // Keep sonner toasts when this flow unmounts (BackgroundBridgeToasts / BackgroundAutomaticToasts keep them).
   persistToasts?: boolean
-  onHistory: () => void
   onClose: () => void
   // Set once nothing more is asked of the user: leaves this operation running and opens a fresh form.
   onBridgeAnother?: () => void
@@ -581,10 +581,11 @@ export const BridgeFlow = (props: BridgeFlowProps) => {
   return (
     <div className="bridge-flow">
       <div className="bridge-flow-corner">
-        <button type="button" className="bridge-flow-corner-btn" onClick={props.onHistory}>
-          <History size={16} aria-hidden="true" />
-          {t('history')}
-        </button>
+        {/* This wallet's transfers, in the scanner. */}
+        <a className="bridge-flow-corner-btn" href={`/scanner?address=${encodeURIComponent(props.bchAddress)}`} target="_blank" rel="noopener noreferrer">
+          <ScanSearch size={16} aria-hidden="true" />
+          {t('scanner')}
+        </a>
         <button type="button" className="bridge-flow-corner-btn is-icon" aria-label={t('close')} onClick={props.onClose}>
           <X size={18} aria-hidden="true" />
         </button>
@@ -785,20 +786,42 @@ export const BackgroundBridges = ({ onOpen, openUid }: { onOpen: (uid: string) =
       <BackgroundBridgeToasts openUid={openUid} />
       {waiting.length > 0 && (
         <section className="bridge-auto-orders" aria-label={t('progress.inFlight')}>
-          {waiting.map(tx => (
-            <button key={tx.uid} type="button" className="bridge-auto-history" onClick={() => onOpen(tx.uid)}>
-              <span>
-                <strong>
-                  {tx.assetFrom.ticker} → {tx.assetTo.ticker}
-                </strong>
-                <small>{t(isReverseOperation(tx.bridge) ? `reverse.history.${tx.bridge.stage}` : `stage.${tx.bridge.stage}`)}</small>
-              </span>
-              <span>
-                {tAuto('viewTransfer')}
-                <ExternalLink size={14} aria-hidden="true" />
-              </span>
-            </button>
-          ))}
+          {waiting.map(tx => {
+            const state = t(isReverseOperation(tx.bridge) ? `reverse.history.${tx.bridge.stage}` : `stage.${tx.bridge.stage}`)
+            const token = !isReverseOperation(tx.bridge) ? operationToken(tx.bridge) : undefined
+            return (
+              <button key={tx.uid} type="button" className="bridge-auto-card" onClick={() => onOpen(tx.uid)} aria-label={`${tAuto('viewTransfer')}: ${state}`}>
+                <span className="bridge-auto-side">
+                  <span className="bridge-flow-icon">
+                    <AssetIcon asset={tx.assetFrom} showNetworkIcons={false} />
+                  </span>
+                  <span>
+                    <strong>
+                      {formatAmount(Number(tx.amountFrom))} {tx.assetFrom.ticker}
+                    </strong>
+                  </span>
+                </span>
+                <span className="bridge-auto-state">
+                  <LoaderCircle size={20} className="animate-spin" aria-hidden="true" />
+                  <small>{state}</small>
+                </span>
+                <span className="bridge-auto-side is-end">
+                  <span>
+                    <strong>
+                      {formatAmount(Number(tx.amountTo))} {token?.ticker ?? tx.assetTo.ticker}
+                    </strong>
+                  </span>
+                  {token ? (
+                    <TokenMark token={token} size={34} />
+                  ) : (
+                    <span className="bridge-flow-icon">
+                      <AssetIcon asset={tx.assetTo} showNetworkIcons={false} />
+                    </span>
+                  )}
+                </span>
+              </button>
+            )
+          })}
         </section>
       )}
     </>
@@ -922,7 +945,6 @@ export const BridgeOperationPanel = ({ uid, onClose }: { uid?: string; onClose: 
 const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => void }) => {
   const t = useTranslations('bridge')
   const tx = useTransaction(uid)
-  const { openDialog } = useDialog()
   const [dismissed, setDismissed] = useState<string[]>([])
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -1095,7 +1117,6 @@ const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => 
     onDismissToast: (id: string) => setDismissed(list => [...list, id]),
     // Leaving the dialog must not wipe live status/tx toasts; BackgroundBridgeToasts keeps them.
     persistToasts: !terminal,
-    onHistory: () => openDialog(TransactionHistoryDialog, {}),
     onClose,
     onBridgeAnother: isBridgeWaiting(op) ? onClose : undefined,
     animateCollapse

@@ -8,7 +8,6 @@ import { useTranslations } from 'next-intl'
 import { AssetValue } from '@tcswap/core'
 import { BridgeConfig } from '@/config'
 import { Asset } from '@/components/swap/asset'
-import { TransactionHistoryButton } from '@/components/header/transaction-history-button'
 import { SwapButton } from '@/components/swap/swap-button'
 import { ReverseSwapButton } from '@/components/swap/reverse-bridge'
 import { BchInputFrom, ReverseInputTo } from '@/components/swap/reverse-inputs'
@@ -131,10 +130,9 @@ export const Swap = () => {
       <div className="bridge-heading">
         <h1>{tBridge(openNetworks ? 'headingOpen' : reverse ? 'headingReverse' : 'heading')}</h1>
       </div>
-      {/* One row: Manual/Router, History, then refresh/settings. Any network lives in the BCH asset picker. */}
+      {/* One row: Manual/Router, then refresh/settings. Any network lives in the BCH asset picker. */}
       <div className="bridge-tools mb-3 flex flex-nowrap items-center gap-2 overflow-x-auto">
         <RouterSelector />
-        <TransactionHistoryButton />
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <RefreshButton />
           <SwapSettings />

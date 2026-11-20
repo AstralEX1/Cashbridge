@@ -8,13 +8,10 @@ import { CredenzaDescription, CredenzaHeader, CredenzaTitle } from '@/components
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { CopyButton } from '@/components/button-copy'
 import { GenericButton } from '@/components/generic-button'
-import { useDialog } from '@/components/global-dialog'
 import { chainLabel } from '@/components/connect-wallet/config'
-import { TransactionHistoryDialog } from '@/components/header/transaction-history-dialog'
 import { Asset } from '@/components/swap/asset'
 import { DepositChannel } from '@/components/swap/instant-swap-dialog'
 import { SwapAddressWarning } from '@/components/swap/swap-address-warning'
-import { useSyncTransactions } from '@/hooks/use-sync-transactions'
 import { isHoudiniProvider, toXrpXAddress } from '@/lib/swap-helpers'
 import { cn } from '@/lib/utils'
 import { hasDepositArrived, useTransaction } from '@/store/transaction-store'
@@ -26,7 +23,7 @@ interface SwapMemolessChannelProps {
 }
 
 interface InstantSwapProps extends SwapMemolessChannelProps {
-  // Closes the dialog showing this screen, before History takes over.
+  // Closes the dialog showing this screen, before the Scanner takes over.
   onClose?: () => void
 }
 
@@ -36,10 +33,10 @@ export const InstantSwap = ({ assetFrom, assetTo, channel, onClose }: InstantSwa
   const [now, setNow] = useState(() => Date.now())
 
   // Once the deposit has arrived (or the window has closed) the details are withdrawn, so nobody
-  // sends a second time; the swap itself is followed in History from then on. The window is closed
+  // sends a second time; the swap itself is followed in the Scanner from then on. The window is closed
   // by the local clock too - but a Houdini order still takes a deposit sent just before the deadline
-  // (it reports that, or EXPIRED, itself), so its screen says "closed" and points to History, which
-  // goes on tracking it; the screen itself stops polling once the window is over.
+  // (it reports that, or EXPIRED, itself), so its screen says "closed" and points to the Scanner, while
+  // the site's background tracker goes on polling it.
   const tx = useTransaction(channel.txUid)
   const depositArrived = !!tx && hasDepositArrived(tx)
   const lapsed = !!channel.expiration && channel.expiration * 1000 <= now
@@ -78,7 +75,7 @@ export const InstantSwap = ({ assetFrom, assetTo, channel, onClose }: InstantSwa
       <ScrollArea className="flex min-h-0 flex-1 px-4 md:px-8" classNameViewport="flex-1 h-auto">
         <div className="flex flex-col gap-4 pb-8">
           {status ? (
-            <DepositStatus state={status} ticker={assetFrom.ticker} onClose={onClose} />
+            <DepositStatus state={status} ticker={assetFrom.ticker} address={tx?.addressTo} onClose={onClose} />
           ) : (
             <DepositDetails assetFrom={assetFrom} assetTo={assetTo} channel={channel} isTracked={!!tx} now={now} />
           )}
@@ -198,11 +195,9 @@ const DepositDetails = ({ assetFrom, assetTo, channel, isTracked, now }: SwapMem
   )
 }
 
-// Tracking otherwise only runs while History is open, so the screen polls while it waits for the
-// deposit - and only then: once the deposit is seen this unmounts and History takes over.
+// The site's background tracker (BridgeTracker) polls the deposit; this only says so.
 const WaitingForDeposit = () => {
   const t = useTranslations('swap')
-  useSyncTransactions()
 
   return (
     <div className="text-txt-label-small flex items-center gap-2 text-xs font-semibold">
@@ -214,15 +209,14 @@ const WaitingForDeposit = () => {
 
 type DepositState = 'arrived' | 'expired' | 'closed'
 
-const DepositStatus = ({ state, ticker, onClose }: { state: DepositState; ticker: string; onClose?: () => void }) => {
+const DepositStatus = ({ state, ticker, address, onClose }: { state: DepositState; ticker: string; address?: string; onClose?: () => void }) => {
   const t = useTranslations('swap')
-  const { dialogs, openDialog } = useDialog()
   const key = state === 'arrived' ? 'depositReceived' : state
 
-  const openHistory = () => {
+  // The swap goes on in the background; the Scanner shows it under the receiving wallet.
+  const openScanner = () => {
     onClose?.()
-    // Reopened from History, the list is still underneath: closing this screen is enough.
-    if (!dialogs.some(dialog => dialog.Component === TransactionHistoryDialog)) openDialog(TransactionHistoryDialog, {})
+    window.open(address ? `/scanner?address=${encodeURIComponent(address)}` : '/scanner', '_blank', 'noopener')
   }
 
   return (
@@ -240,8 +234,8 @@ const DepositStatus = ({ state, ticker, onClose }: { state: DepositState; ticker
       </div>
 
       {state !== 'expired' && (
-        <GenericButton colorType="1" size="large" className="w-full" onClick={openHistory}>
-          {t('instant.openHistory')}
+        <GenericButton colorType="1" size="large" className="w-full" onClick={openScanner}>
+          {t('instant.openScanner')}
         </GenericButton>
       )}
     </>

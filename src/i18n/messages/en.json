@@ -151,15 +151,15 @@
       "tagRequired": "Memo / Tag / Comment (required)",
       "xAddressLabel": "Wallet has no tag field? Send to this address instead - the tag is built in",
       "waitingForDeposit": "Waiting for your deposit…",
-      "openHistory": "Open History",
+      "openScanner": "Open in Scanner",
       "status": {
         "depositReceived": {
           "title": "Deposit received",
-          "description": "Your {ticker} has arrived - do not send it again. Follow the swap's status in History."
+          "description": "Your {ticker} has arrived - do not send it again. Follow the swap's status in the Scanner."
         },
         "closed": {
           "title": "Deposit window closed",
-          "description": "Do not send funds to this address. If you already sent your {ticker}, it can still arrive - follow it in History."
+          "description": "Do not send funds to this address. If you already sent your {ticker}, it can still arrive - follow it in the Scanner."
         },
         "expired": {
           "title": "Deposit window expired",
@@ -722,7 +722,7 @@
       "reconnectBch": "Close this window and reconnect your BCH wallet using the main button.",
       "retry": "Retry quote",
       "done": "Done",
-      "history": "History",
+      "scanner": "Scanner",
       "close": "Close",
       "bridge": "Bridge",
       "bridgeStep": "Bridge (1/2)",

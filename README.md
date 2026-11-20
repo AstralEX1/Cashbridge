@@ -16,13 +16,13 @@ Forked from the [swap.thorchain.org](https://github.com/thorchain/swap.thorchain
 
 1. Open the [bridge](https://www.cashbridge.space/bridge), choose the source asset and receive BCH, PUSD, MUSD or another Cauldron token.
 2. Enter an amount, connect the source wallet and choose the BCH recipient. In Manual mode, connect your BCH wallet to sign the token purchase; with the Cashbridge Router, you can paste a receiving address.
-3. Review the route (THORChain, NEAR Intents or ShapeShift, whichever quote), minimum, fees and fallback before signing. Follow the transfer in History, with links to its transactions.
+3. Review the route (THORChain, NEAR Intents or ShapeShift, whichever quote), minimum, fees and fallback before signing. Follow the transfer on its progress screen, and later in the [scanner](https://www.cashbridge.space/scanner) by wallet address, with links to its transactions.
 
 To bridge back, reverse the form. Manual mode sells the CashToken to BCH and then asks your BCH wallet to sign the bridge deposit. When available, Router sales let your wallet send the token to a sale contract; the service sells it and deposits the BCH to the chosen bridge (THORChain’s vault with the agreed memo, or a NEAR Intents or ShapeShift deposit address), or returns the funds. These are several on-chain steps, not an atomic swap. See [bridging back](https://www.cashbridge.space/docs/guides/bridge-from-bch).
 
 The [wallet guide](https://www.cashbridge.space/docs/wallets) covers WizardConnect and WalletConnect on BCH, and browser, mobile and hardware wallets on the other chains. Availability depends on the wallet and network. Cash Bridge adds no application fee; network, bridge and Cauldron pool fees still apply, and liquidity and provider limits affect each quote. See [fees and limits](https://www.cashbridge.space/docs/fees).
 
-History is stored in your browser. The Router service continues an order after the tab closes; Manual steps still need your wallet. If a wallet answer is lost, check the transaction or use **Already paid?** before sending again. See [tracking and recovery](https://www.cashbridge.space/docs/guides/track-a-transfer).
+The scanner finds a wallet's Router orders and THORChain swaps from any device, and this browser's own transfers on this device. The Router service continues an order after the tab closes; Manual steps still need your wallet. If a wallet answer is lost, check the transaction or use **Already paid?** before sending again. See [tracking and recovery](https://www.cashbridge.space/docs/guides/track-a-transfer).
 
 ## Proof on mainnet
 
