@@ -5,6 +5,7 @@ import { getBraveEVMProvider, getBraveSolanaProvider } from '@tcswap/wallets/bra
 import type {} from '@tcswap/wallet-extensions'
 import { BridgeConfig } from '@/config'
 import { CIP30_IDS, cip30Entry, ETERNL, LACE, YOROI } from '@/lib/cardano-wallet'
+import { NEARCONNECT } from '@/lib/near-connect-wallet'
 import { findSlush, SLUSH } from '@/lib/sui-wallet'
 import { TONCONNECT } from '@/lib/ton-wallet'
 import { supportedChains } from '@/lib/wallets'
@@ -190,6 +191,15 @@ export const WALLETS: WalletParams[] = [
     link: 'https://docs.ton.org/applications/ton-connect',
     supportedChains: supportedChains[TONCONNECT]
   },
+  // NEAR Connect's own picker lists HOT, Meteor, Intear, MyNearWallet and the rest of NEAR's wallet manifest.
+  {
+    key: 'nearconnect',
+    type: WalletType.mobile,
+    label: 'NEAR wallets',
+    option: NEARCONNECT,
+    link: 'https://docs.near.org/tools/near-connect',
+    supportedChains: supportedChains[NEARCONNECT]
+  },
   // Listed only with a WalletConnect (Reown) project id; the same one the BCH wallets pair with.
   ...(BridgeConfig.walletConnectProjectId
     ? [
@@ -267,6 +277,7 @@ export const isWalletAvailable = (option: WalletOption) => {
     case SLUSH:
       return findSlush()
     case TONCONNECT:
+    case NEARCONNECT:
       return true
     case LACE:
     case ETERNL:

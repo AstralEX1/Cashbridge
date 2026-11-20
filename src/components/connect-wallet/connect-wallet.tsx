@@ -20,6 +20,7 @@ import { Trezor } from '@/components/connect-wallet/trezor'
 import { WalletIcon } from '@/components/wallet-icon'
 import { useWallets } from '@/hooks/use-wallets'
 import { isMobileBrowser, metaMaskAppLink } from '@/lib/metamask-link'
+import { NEARCONNECT } from '@/lib/near-connect-wallet'
 import { preloadWalletConnect } from '@/lib/wallets'
 import { cn } from '@/lib/utils'
 
@@ -119,7 +120,8 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
         ) : !isInstalled ? (
           <span className="connect-wallet-status connect-wallet-install">{t(appLink ? 'openApp' : 'install')}</span>
         ) : isWalletConnect ? (
-          <span className="connect-wallet-status">{t(isMobileBrowser() ? 'walletconnectApps' : 'walletconnectQr')}</span>
+          // NEAR Connect opens a list of wallets, not a QR code.
+          <span className="connect-wallet-status">{t(isMobileBrowser() || wallet.option === NEARCONNECT ? 'walletconnectApps' : 'walletconnectQr')}</span>
         ) : null}
       </>
     )

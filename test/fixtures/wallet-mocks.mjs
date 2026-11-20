@@ -40,6 +40,8 @@ export const isWalletconnectDismissed = error => String(error?.message).startsWi
 export const onWalletconnectDisconnect = listener => { controls.walletconnectDisconnect = listener }
 export const TONCONNECT = 'TONCONNECT'
 export const isTonConnectDismissed = () => false
+export const NEARCONNECT = 'NEARCONNECT'
+export const isNearConnectDismissed = () => false
 export const RESTORE_ONLY = new Set([WalletOption.WALLETCONNECT, TONCONNECT])
 export const RESTORE_CHECKED = new Set([WalletOption.METAMASK, WalletOption.RABBY])
 export const watchEvmAccounts = (provider, listener) => {

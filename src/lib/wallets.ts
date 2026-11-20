@@ -15,6 +15,7 @@ import { phantomWallet } from '@tcswap/wallets/phantom'
 import { trezorWallet } from '@tcswap/wallets/trezor'
 import { tronlinkWallet } from '@/lib/tronlink'
 import { ETERNL, eternlWallet, LACE, laceWallet, YOROI, yoroiWallet } from '@/lib/cardano-wallet'
+import { NEARCONNECT, nearconnectWallet } from '@/lib/near-connect-wallet'
 import { SLUSH, slushWallet } from '@/lib/sui-wallet'
 import { TONCONNECT, tonconnectWallet } from '@/lib/ton-wallet'
 import { vultisigWallet } from '@tcswap/wallets/vultisig'
@@ -35,7 +36,8 @@ const defaultPlugins = {
   ...ShapeShiftPlugin
 }
 
-// Sui, TON and Cardano have no browser-wallet connector in the SDK; ours send the NEAR Intents deposit.
+// Sui, TON and Cardano have no browser-wallet connector in the SDK; ours send the NEAR Intents deposit. The SDK's NEAR
+// one is built on the deprecated Wallet Selector, so NEAR wallets connect through NEAR Connect.
 const defaultWallets = {
   ...braveWallet,
   ...eternlWallet,
@@ -44,6 +46,7 @@ const defaultWallets = {
   ...keplrWallet,
   ...laceWallet,
   ...ledgerWallet,
+  ...nearconnectWallet,
   ...okxWallet,
   ...phantomWallet,
   ...slushWallet,
@@ -179,6 +182,8 @@ export async function connectWallet(option: WalletOption, chains: Chain[], confi
       return uSwap.connectSlush(chains, { restoreOnly: config?.restoreOnly })
     case TONCONNECT:
       return uSwap.connectTonConnect(chains, { restoreOnly: config?.restoreOnly, tonWallet: config?.tonWallet })
+    case NEARCONNECT:
+      return uSwap.connectNearConnect(chains, { restoreOnly: config?.restoreOnly })
     case LACE:
       return uSwap.connectLace(chains, { restoreOnly: config?.restoreOnly })
     case ETERNL:
@@ -296,7 +301,7 @@ export function watchEvmAccounts(option: WalletOption, onChange: (addresses: str
 }
 
 // Restored from a stored session or an earlier grant only: on page load these never show a QR code or a prompt.
-export const RESTORE_ONLY = new Set<WalletOption>([WalletOption.WALLETCONNECT, SLUSH, TONCONNECT, LACE, ETERNL, YOROI])
+export const RESTORE_ONLY = new Set<WalletOption>([WalletOption.WALLETCONNECT, SLUSH, TONCONNECT, NEARCONNECT, LACE, ETERNL, YOROI])
 
 export async function getAccounts(
   option: WalletOption,
@@ -390,6 +395,7 @@ export const supportedChains = {
   [WalletOption.WALLET_SELECTOR]: [Chain.Near],
   [SLUSH]: slushWallet.connectSlush.supportedChains,
   [TONCONNECT]: tonconnectWallet.connectTonConnect.supportedChains,
+  [NEARCONNECT]: nearconnectWallet.connectNearConnect.supportedChains,
   [LACE]: laceWallet.connectLace.supportedChains,
   [ETERNL]: eternlWallet.connectEternl.supportedChains,
   [YOROI]: yoroiWallet.connectYoroi.supportedChains
