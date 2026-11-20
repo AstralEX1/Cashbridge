@@ -2,8 +2,8 @@ import type { BchBinding } from '@/lib/bch'
 import { checkSigned, type ReviewedSwap, sourcesOf } from '@/lib/cauldron'
 
 // Signing in the bound BCH wallet, over WizardConnect or WalletConnect (see bch-walletconnect.ts). The
-// wallet is asked only to sign, never to broadcast (Paytaca broadcasts anyway; sending the same bytes
-// again is harmless). The result is checked to carry signatures by the bound key on our own inputs
+// wallet is asked only to sign, never to broadcast (`broadcast: false`, which current Paytaca honors; a wallet that
+// broadcasts anyway is harmless, as sending the same bytes again is). The result is checked to carry signatures by the bound key on our own inputs
 // alone, and to verify.
 // Every way a request can end without a signature has its own error, so the UI can say what
 // happened and offer the next step. Only a request still open in the wallet (stillOpen) may yet be sent.

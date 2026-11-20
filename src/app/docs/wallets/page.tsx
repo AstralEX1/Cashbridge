@@ -78,8 +78,8 @@ export default function Page() {
       <p>
         Choose <strong>Cashonize</strong> to open cashonize.com on its WalletConnect screen with the pairing link already filled in. Choose <strong>Zapit</strong> to open its browser extension when it is installed, or to show a QR code and link otherwise. On a phone, <strong>Open wallet</strong> jumps to the app. Your wallet asks you to approve a short connection message. It proves that the address is yours and sends nothing.
       </p>
-      <Callout kind="note" title="Paytaca sends the transaction itself">
-        Paytaca broadcasts a transaction after you approve it, even though Cash Bridge only asks for a signature. Cash Bridge allows for this: it follows the transaction by its id, and broadcasting the same signed transaction a second time does nothing extra.
+      <Callout kind="note" title="A wallet may send the transaction itself">
+        Cash Bridge asks the wallet only to sign. A wallet that also broadcasts the transaction after you approve it is fine: Cash Bridge follows the transaction by its id, and broadcasting the same signed transaction a second time does nothing extra.
       </Callout>
 
       <h2 id="reconnect">Reconnecting</h2>
