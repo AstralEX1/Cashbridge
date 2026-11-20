@@ -1,6 +1,6 @@
 import { binToHex, lockingBytecodeToCashAddress } from '@bitauth/libauth'
 import { address, networks, type Network } from 'bitcoinjs-lib'
-import { BCH_PREFIX, decodeTx, RpcError, txidOf, WsRpc } from '@/lib/bch'
+import { BCH_PREFIX, decodeTx, ELECTRUM_PROTOCOL, RpcError, txidOf, WsRpc } from '@/lib/bch'
 
 // Keyless public explorers behind the Blockchair-shaped routes the UTXO toolbox and this app call
 // (src/app/api/blockchair), in five HTTP dialects: Esplora (mempool.space and its forks), Bitcore,
@@ -254,7 +254,7 @@ function fulcrum(url: string): Explorer {
     const rpc = new WsRpc(url, { jsonrpc: true, timeoutMs: TIMEOUT_MS })
     try {
       await rpc.open()
-      await rpc.request('server.version', ['cashbridge', '1.4'])
+      await rpc.request('server.version', ['cashbridge', ELECTRUM_PROTOCOL])
       return await run(rpc)
     } finally {
       rpc.close()

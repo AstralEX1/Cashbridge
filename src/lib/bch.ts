@@ -267,13 +267,17 @@ export class RpcTimeoutError extends Error {}
 
 // --- Fulcrum lookups ---------------------------------------------------------------------------
 
+// Token outputs (`token_data`, the `include_tokens` filter) are protocol 1.5.0; 1.6.0 changes result shapes this code
+// reads, so the range stops at 1.5.3. A 1.4-only server still answers, as 1.4.
+export const ELECTRUM_PROTOCOL = ['1.4', '1.5.3']
+
 const electrum = async () => {
   let lastError: unknown
   for (const url of BridgeConfig.electrumUrls) {
     const client = new WsRpc(url, { jsonrpc: true })
     try {
       await client.open()
-      await client.request('server.version', ['thorchain-bch-bridge', '1.4'])
+      await client.request('server.version', ['thorchain-bch-bridge', ELECTRUM_PROTOCOL])
       return client
     } catch (error) {
       client.close()
