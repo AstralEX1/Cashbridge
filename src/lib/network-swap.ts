@@ -74,7 +74,8 @@ export const startNetworkSwap = async ({ base, route, execute }: {
     return hash
   })
   if (result === undefined) throw new BridgeBlocked('Another tab is submitting a swap')
-  if (near) void submitNearDeposit(depositAddress!, result)
+  // ShapeShift's NEAR Intents swapper quotes a 1Click deposit address, which takes the same notice.
+  if (near || /near/i.test(shapeshift?.swapper ?? '')) void submitNearDeposit(depositAddress!, result)
   return result
 }
 
