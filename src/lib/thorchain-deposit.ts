@@ -192,6 +192,9 @@ export const pickBchFunding = (funding: DepositIntent['funding'], amountSats: bi
 
 // keccak256("TransferOut(address,address,address,uint256,string)") of THORChain's router.
 export const TRANSFER_OUT_TOPIC = '0xa9cd03aa3c1b4515114539cd53d22085129d495cb9e9f9af77864526240f1bf7'
+// keccak256("TransferFailed(address,address,address,uint256,string)"). The router's _sendEth emits it when the recipient
+// refuses native ETH (the ETH goes back to the vault), and transferOut still emits TransferOut after it.
+export const TRANSFER_FAILED_TOPIC = '0xa6a370fa655359af5f69091e908830c250b8daffb80f6b578741423ae4c47ab1'
 
 export interface RouterLog {
   address: string
@@ -207,8 +210,10 @@ export const matchPayout = (logs: RouterLog[], { destination, depositTxid, route
   const recipient = `0x${'0'.repeat(24)}${destination.toLowerCase().replace(/^0x/, '')}`
   const memo = `OUT:${normalizeTxid(depositTxid)}`.toUpperCase()
   const expectedAsset = buyAsset.split('-')[1]?.toLowerCase() ?? `0x${'00'.repeat(20)}`
+  const from = (log: RouterLog, topic: string) => log.address.toLowerCase() === router.toLowerCase() && log.topics[0]?.toLowerCase() === topic && log.topics[2]?.toLowerCase() === recipient
+  const failed = new Set(logs.filter(log => from(log, TRANSFER_FAILED_TOPIC)).map(log => log.transactionHash.toLowerCase()))
   for (const log of logs) {
-    if (log.address.toLowerCase() !== router.toLowerCase() || log.topics[0]?.toLowerCase() !== TRANSFER_OUT_TOPIC || log.topics[2]?.toLowerCase() !== recipient) continue
+    if (!from(log, TRANSFER_OUT_TOPIC) || failed.has(log.transactionHash.toLowerCase())) continue
     try {
       const [asset, amount, text] = AbiCoder.defaultAbiCoder().decode(['address', 'uint256', 'string'], log.data)
       if (asset.toLowerCase() === expectedAsset && amount > 0n && text.toUpperCase() === memo)

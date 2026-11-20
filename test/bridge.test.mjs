@@ -922,7 +922,7 @@ test('a deposit pays the vault first, carries the memo, returns change, signs an
 })
 
 test('the payout is the router’s TransferOut to the destination with the deposit’s OUT memo', async () => {
-  const { matchPayout, TRANSFER_OUT_TOPIC } = await import('../src/lib/thorchain-deposit.ts')
+  const { matchPayout, TRANSFER_FAILED_TOPIC, TRANSFER_OUT_TOPIC } = await import('../src/lib/thorchain-deposit.ts')
   const { AbiCoder } = await import('ethers')
   const destination = '0x76ff6F88f58e083b88A80B1764ae7002e303D1A6'
   const deposit = 'e3a1b0c2d4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c6d8e0f2a4b6c8d0e2f4a6b8'
@@ -947,6 +947,8 @@ test('the payout is the router’s TransferOut to the destination with the depos
   const native = { ...log(`OUT:${deposit}`), data: AbiCoder.defaultAbiCoder().encode(['address', 'uint256', 'string'], ['0x' + '00'.repeat(20), 1000n, `OUT:${deposit}`]) }
   assert.equal(matchPayout([native], want), undefined, 'receiving native currency is not receiving USDC')
   assert.equal(matchPayout([native], { ...want, buyAsset: 'BASE.ETH' }).amount, '1000')
+  const bounced = { ...native, topics: [TRANSFER_FAILED_TOPIC, ...native.topics.slice(1)], data: AbiCoder.defaultAbiCoder().encode(['address', 'uint256', 'string'], ['0x' + '00'.repeat(20), 1000n, '']) }
+  assert.equal(matchPayout([bounced, native], { ...want, buyAsset: 'BASE.ETH' }), undefined, 'ETH the recipient refused went back to the vault')
   const zero = { ...log(`OUT:${deposit}`), data: AbiCoder.defaultAbiCoder().encode(['address', 'uint256', 'string'], ['0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', 0n, `OUT:${deposit}`]) }
   assert.equal(matchPayout([zero], want), undefined)
   assert.equal(matchPayout([{ ...log(`OUT:${deposit}`), data: '0x00' }], want), undefined)

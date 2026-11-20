@@ -11,7 +11,7 @@ import { formatBaseUnits, minOutputFor } from '@/lib/bridge'
 import { withLock } from '@/lib/bridge-first-leg'
 import { BroadcastRejected, broadcastBchTransaction, parseP2pkhUnlock, prepareTokenTrade } from '@/lib/cauldron'
 import type { CauldronToken } from '@/lib/cauldron-tokens'
-import { buildDeposit, type BuiltDeposit, checkDepositMemo, checkInbound, DepositError, type InboundAddress, matchPayout, pickBchFunding, TRANSFER_OUT_TOPIC } from '@/lib/thorchain-deposit'
+import { buildDeposit, type BuiltDeposit, checkDepositMemo, checkInbound, DepositError, type InboundAddress, matchPayout, pickBchFunding, TRANSFER_FAILED_TOPIC, TRANSFER_OUT_TOPIC } from '@/lib/thorchain-deposit'
 import { cosmosPayout, type ChainPayout, evmTransferPayout, type PayoutExpectation, solanaPayout, thorchainPayout, tronPayout, utxoPayout, xrpPayout } from '@/lib/payout-check'
 import { getNearQuote, getNearStatus, interpretNearStatus, nearLegOf, nearSlippageBps } from '@/lib/near-intents'
 import { getShapeShiftBridgeRoute } from '@/lib/shapeshift'
@@ -437,7 +437,7 @@ export const findPayout = async (op: BridgeOperation) => {
   const recipient = `0x${'0'.repeat(24)}${reverse.destination.toLowerCase().replace(/^0x/, '')}`
   for (let i = 0; i < PAYOUT_SCAN_CHUNKS_PER_POLL && from <= head; i++) {
     const to = Math.min(head, from + PAYOUT_SCAN_CHUNK - 1)
-    const logs = await provider.getLogs({ address: deposit.router, topics: [TRANSFER_OUT_TOPIC, null, recipient], fromBlock: from, toBlock: to })
+    const logs = await provider.getLogs({ address: deposit.router, topics: [[TRANSFER_OUT_TOPIC, TRANSFER_FAILED_TOPIC], null, recipient], fromBlock: from, toBlock: to })
     const match = matchPayout(
       logs.map(l => ({ address: l.address, topics: [...l.topics], data: l.data, transactionHash: l.transactionHash, blockNumber: l.blockNumber })),
       { destination: reverse.destination, depositTxid: deposit.txid, router: deposit.router, buyAsset: reverse.buyAsset }
