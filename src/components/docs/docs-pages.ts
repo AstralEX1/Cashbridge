@@ -9,7 +9,8 @@ export const DOCS_SECTIONS: DocsSection[] = [
     pages: [
       { href: '/docs', title: 'Introduction' },
       { href: '/docs/how-it-works', title: 'How it works' },
-      { href: '/docs/mainnet', title: 'Proof on mainnet' }
+      { href: '/docs/mainnet', title: 'Proof on mainnet' },
+      { href: '/docs/bounty', title: 'The bounty, line by line' }
     ]
   },
   {

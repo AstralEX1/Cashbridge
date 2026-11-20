@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState } from 'react'
 import { AppConfig, BlazeConfig } from '@/config'
 import './blaze-banner.css'
@@ -37,6 +38,7 @@ export function BlazeBanner() {
         <a href={AppConfig.repoUrl} target="_blank" rel="noreferrer">
           Source code
         </a>
+        <Link href="/docs/bounty">Bounty checklist</Link>
         {emberAddress && (
           <span className="blaze-ember">
             EMBER2026 votes:{' '}
