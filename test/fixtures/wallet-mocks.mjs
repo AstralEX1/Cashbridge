@@ -12,6 +12,8 @@ export const controls = {
   errors: [],
   account: undefined,
   asset: { chain: Chain.Ethereum, identifier: 'ETH.ETH', ticker: 'ETH', decimals: 18 },
+  // Open-networks buy side; defaults to the same fixture asset until a test overrides it.
+  assetTo: { chain: Chain.Base, identifier: 'BASE.USDC', ticker: 'USDC', decimals: 6 },
   bch: { state: 'idle', connect() {}, pairAgain() {}, disconnect() {} },
   balance: null,
   loading: false,
@@ -47,6 +49,7 @@ export const useHasHydrated = () => true
 export const useSetExternalWalletMode = () => enabled => { controls.external = enabled }
 export const useWallets = () => controls.walletState
 export const useAssetFrom = () => controls.asset
+export const useAssetTo = () => controls.assetTo
 export const useSwap = () => ({
   setValueFrom: value => { controls.amount = value.toSignificant() },
   valueFrom: { eqValue: () => false }
