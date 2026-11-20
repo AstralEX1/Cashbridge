@@ -1,7 +1,8 @@
 // The customer's page settles its own forward order, as soon as the bridge's BCH reaches the order's contract
 // (mempool included): it buys the token on Cauldron with the one-use key that the version 2 contract accepts next to
-// the Router's. The contract lets that key pay only the customer, and the Router settles the same coin when the page
-// is closed, so nothing here can strand or misdirect the BCH.
+// the Router's. The contract checks only the coin's own output (the customer's token payout of at least the coin's share
+// of the minimum), so the rest of the trade is what this code builds and checks; the Router settles the same coin when
+// the page is closed.
 import { binToHex, encodeTransaction, generatePrivateKey, generateSigningSerializationBch, hash256, hexToBin, secp256k1, type Output, type Transaction } from '@bitauth/libauth'
 import { decodeTx, listWalletCoins, txidOf } from '@/lib/bch'
 import { broadcastBchTransaction, buildTokenTrade, checkPoolCovenants, checkSigned, reviewBuild, sourcesOf } from '@/lib/cauldron'

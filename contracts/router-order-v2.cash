@@ -7,9 +7,9 @@ pragma cashscript ^0.14.0;
 //
 // The order's bridge (THORChain, NEAR Intents or ShapeShift) pays its BCH here. Two keys can settle it: the Router's
 // and a one-use key the customer's page made for this order, so the page can buy the token the moment the BCH lands
-// and the Router finishes when the page is closed. Neither key can move a coin anywhere but to the customer: as the
-// ordered CashToken (at least the coin's share of the quoted minimum) or back as BCH. Each check looks at the output
-// with the same index as the coin being spent, so one output can never settle two coins.
+// and the Router finishes when the page is closed. Each check looks only at the output with the same index as the coin
+// being spent, so one output can never settle two coins: it must pay the customer the ordered CashToken (at least the
+// coin's share of the quoted minimum) or the BCH back. BCH the trade does not need goes where the signing key sends it.
 contract RouterOrderV2(
     // The Router's public key for this order.
     pubkey router,
