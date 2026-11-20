@@ -144,3 +144,6 @@ export const firstLegSeconds = (estimated?: { inbound?: number; swap?: number; o
   if (![inbound, swap, outbound].every(v => typeof v === 'number' && Number.isFinite(v))) return estimated.total || undefined
   return inbound! + swap! + Math.min(outbound!, OUTBOUND_BROADCAST_SECONDS) + Math.max(0, outbound! - BCH_BLOCK_SECONDS)
 }
+
+// The bridge by name. ShapeShift's BCH swaps are NEAR Intents swaps it quoted, so they carry both marks.
+export const bridgeName = (via: { near?: boolean; shapeshift?: boolean }) => (via.shapeshift ? 'ShapeShift' : via.near ? 'NEAR Intents' : 'THORChain')

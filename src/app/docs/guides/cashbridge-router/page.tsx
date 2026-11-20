@@ -131,8 +131,8 @@ export default function Page() {
             <td>Your source transfer is in flight. The bridge has not paid BCH to the order yet.</td>
           </tr>
           <tr>
-            <td>THORChain transfer in progress</td>
-            <td>THORChain is swapping and sending BCH to the order address.</td>
+            <td>THORChain, NEAR Intents or ShapeShift transfer in progress</td>
+            <td>The bridge you picked is swapping and sending BCH to the order address.</td>
           </tr>
           <tr>
             <td>Waiting for BCH confirmations</td>
@@ -159,8 +159,8 @@ export default function Page() {
             <td>Minimum could not be met in time. BCH went to the fallback, less the miner fee.</td>
           </tr>
           <tr>
-            <td>Source refund reported by THORChain</td>
-            <td>The bridge refunded your source asset. Check your source wallet (NEAR refunds are reported similarly).</td>
+            <td>Source refund reported by THORChain, NEAR Intents or ShapeShift</td>
+            <td>The bridge refunded your source asset. Check your source wallet.</td>
           </tr>
           <tr>
             <td>Operator review required</td>

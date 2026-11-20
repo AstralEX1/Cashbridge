@@ -156,3 +156,13 @@ describe('ShapeShift route times', async () => {
     assert.equal(timedLikeNear(undefined, near), undefined)
   })
 })
+
+describe('bridgeName', async () => {
+  const { bridgeName } = await import('../src/lib/bridge-summary.ts')
+
+  it('names ShapeShift before NEAR Intents, and THORChain otherwise', () => {
+    assert.equal(bridgeName({ near: true, shapeshift: true }), 'ShapeShift')
+    assert.equal(bridgeName({ near: true }), 'NEAR Intents')
+    assert.equal(bridgeName({}), 'THORChain')
+  })
+})

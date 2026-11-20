@@ -29,7 +29,7 @@ import { useAutomaticHydrated } from '@/hooks/use-automatic-bridge'
 import { nearExplorerUrl } from '@/lib/near-intents'
 import { useAssets } from '@/hooks/use-assets'
 import { useRates } from '@/hooks/use-rates'
-import { formatAmount, formatMinutes, PUSD_LEG_SECONDS } from '@/lib/bridge-summary'
+import { bridgeName, formatAmount, formatMinutes, PUSD_LEG_SECONDS } from '@/lib/bridge-summary'
 import { isDollarStable } from '@/lib/dollar-stable'
 import { formatStepTime, stepTime } from '@/lib/bridge-tracking'
 import { PUSD_TOKEN } from '@/lib/cauldron-tokens'
@@ -44,6 +44,10 @@ import { sideOf } from '@/lib/scanner'
 import { autoBridgeStore, type SavedAutoOrder } from '@/store/auto-bridge-store'
 
 const BCH_STAGES = ['awaiting_deposit', 'streaming']
+
+// The bridge an order's BCH comes through: a NEAR Intents deposit address, quoted by ShapeShift when it has its id.
+const orderBridge = (order?: { nearDepositAddress?: string; shapeshiftQuoteId?: string }) =>
+  bridgeName({ near: !!order?.nearDepositAddress, shapeshift: !!order?.shapeshiftQuoteId })
 
 
 // One running order under the form, as a card: what was sent, where it is, what it buys. Opens its progress.
@@ -62,7 +66,7 @@ const AutomaticOrderRow = ({ reference }: { reference: SavedAutoOrder }) => {
   const ticker = asset?.ticker ?? source?.asset.split('.')[1]?.split('-')[0] ?? 'BCH'
   const mark = !asset && source ? sideOf(ticker, source.chain).icon : undefined
   const receipt = order && automaticCompletion(order, token)
-  const state = t(order ? `states.${order.state}` : 'restoring')
+  const state = t(order ? `states.${order.state}` : 'restoring', { bridge: orderBridge(order) })
   return (
     <button type="button" className="bridge-auto-card" onClick={() => openDialog(AutomaticOrderDialog, { id: reference.id })} aria-label={`${t('viewTransfer')}: ${state}`}>
       <span className="bridge-auto-side">
@@ -203,7 +207,7 @@ function BackgroundAutomaticToasts({ active }: { active: SavedAutoOrder[] }) {
       items.push({
         id: `auto:${reference.id}:status`,
         title: `${t('automatic')} · ${token.ticker}`,
-        description: t(draft ? 'draft' : order ? `states.${order.state}` : 'restoring'),
+        description: t(draft ? 'draft' : order ? `states.${order.state}` : 'restoring', { bridge: orderBridge(order) }),
         icon,
         pending: true,
         actionLabel: t('viewTransfer'),
@@ -330,9 +334,9 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
   const details = <>
     {!order && <p role="status" className="bridge-flow-message">{t('restoring')}</p>}
     {draft && <p className="bridge-flow-message">{t('draft')}</p>}
-    {waiting && <p role="status" className="bridge-flow-message">{t(`states.${order.state}`)}</p>}
-    {stage === 'ended' && <p className="bridge-flow-message">{t(`states.${order!.state}`)}</p>}
-    {order?.sourceRefunds?.map((refund, i) => <p className="bridge-flow-message" key={i}>{t('sourceRefund', { asset: refund.asset, amount: formatBaseUnits(refund.amount, 8) })}</p>)}
+    {waiting && <p role="status" className="bridge-flow-message">{t(`states.${order.state}`, { bridge: orderBridge(order) })}</p>}
+    {stage === 'ended' && <p className="bridge-flow-message">{t(`states.${order!.state}`, { bridge: orderBridge(order) })}</p>}
+    {order?.sourceRefunds?.map((refund, i) => <p className="bridge-flow-message" key={i}>{t('sourceRefund', { bridge: refund.evidence === 'thorchain' ? 'THORChain' : orderBridge(order), asset: refund.asset.split('.')[1]?.split('-')[0] || refund.asset, amount: formatBaseUnits(refund.amount, 8) })}</p>)}
     {order?.recoveryRequired && <p role="alert" className="bridge-flow-message">{t('recoveryRequired')}</p>}
     {order?.recoverySats && order.recoverySats !== '0' && <p role="status" className="bridge-flow-message">{t('recoveryFunds', { amount: formatBaseUnits(order.recoverySats, 8) })}</p>}
     {order?.error && <SwapError error={new Error(order.error)} />}

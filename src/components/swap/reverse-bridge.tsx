@@ -44,7 +44,7 @@ import { withLock } from '@/lib/bridge-first-leg'
 import { bridgeCompletionTransactions } from '@/lib/bridge-completion'
 import { hasSecondAuthorization, OPEN_SECOND_REQUEST_NOTE, recoverSecondSigning, rememberAttempt, sameSecondAttempt, signingDefinitelyStopped, signingRequest } from '@/lib/bridge-signing-recovery'
 import { formatStepTime, stepTime } from '@/lib/bridge-tracking'
-import { formatAmount, formatMinutes, formatPercent, formatUsd, PUSD_LEG_SECONDS, valueImpact } from '@/lib/bridge-summary'
+import { bridgeName, formatAmount, formatMinutes, formatPercent, formatUsd, PUSD_LEG_SECONDS, valueImpact } from '@/lib/bridge-summary'
 import { isDollarStable } from '@/lib/dollar-stable'
 import { type ReviewedSwap } from '@/lib/cauldron'
 import { SignCancelled, SignDeclined, SignSessionLost, SignTimedOut, SignUndelivered } from '@/lib/bch-signing'
@@ -484,6 +484,7 @@ const RouteSteps = ({ token, asset, thorMinutes, total, near, shapeshift }: { to
   const tConfirm = useTranslations('bridge.confirm')
   const chain = chainLabel(asset.chain)
   const BridgeMark = shapeshift ? ShapeShiftMark : near ? NearMark : ThorchainMark
+  const bridge = bridgeName({ near, shapeshift })
   return (
     <HoverCard
       label={
@@ -512,12 +513,12 @@ const RouteSteps = ({ token, asset, thorMinutes, total, near, shapeshift }: { to
             <BridgeMark size={22} />
             <span>
               <strong>{t('routeBridge', { to: asset.ticker })}</strong>
-              <span className="bridge-tip-label">{t(near ? 'routeBridgeDetailNear' : 'routeBridgeDetail', { chain, minutes: thorMinutes ?? '—' })}</span>
+              <span className="bridge-tip-label">{t('routeBridgeDetail', { bridge, chain, minutes: thorMinutes ?? '—' })}</span>
             </span>
           </span>
         </span>
       ) : (
-        <span className="bridge-tip-label">{t(near ? 'routeSingleNear' : 'routeSingle', { to: asset.ticker, chain })}</span>
+        <span className="bridge-tip-label">{t('routeSingle', { bridge, to: asset.ticker, chain })}</span>
       )}
     </HoverCard>
   )
@@ -903,7 +904,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
                         </span>
                         <span className="bridge-tip-sep" />
                         <span className="bridge-tip-row">
-                          <span className="bridge-tip-label">{t(viaNear ? 'nearFee' : 'thorFee')}</span>
+                          <span className="bridge-tip-label">{viaNear ? t('nearFee', { bridge: bridgeName({ near: true, shapeshift: via === 'shapeshift' }) }) : t('thorFee')}</span>
                           <span>{viaNear ? t('nearFeeIncluded') : (usdText(thorFeeUsd === undefined ? undefined : -thorFeeUsd) ?? '—')}</span>
                         </span>
                         {token && (
@@ -1063,7 +1064,7 @@ const useDepositStep = (tx: BridgeTx) => {
   }
 }
 
-const DepositQuoteBlock = ({ route, amountSats, minerFeeSats, ticker, bchUsd, near }: { route: QuoteResponseRoute; amountSats: bigint; minerFeeSats: bigint; ticker: string; bchUsd?: number; near?: boolean }) => {
+const DepositQuoteBlock = ({ route, amountSats, minerFeeSats, ticker, bchUsd, bridge }: { route: QuoteResponseRoute; amountSats: bigint; minerFeeSats: bigint; ticker: string; bchUsd?: number; bridge: string }) => {
   const t = useTranslations('bridge.reverse')
   const tProgress = useTranslations('bridge.progress')
   const [open, setOpen] = useState(true)
@@ -1079,7 +1080,7 @@ const DepositQuoteBlock = ({ route, amountSats, minerFeeSats, ticker, bchUsd, ne
       {open && (
         <dl className="bridge-confirm-rows">
           <div>
-            <dt>{t(near ? 'depositNear' : 'deposit')}</dt>
+            <dt>{t('deposit', { bridge })}</dt>
             <dd>{formatAmount(bch, 8)} BCH</dd>
           </div>
           <div>
@@ -1210,7 +1211,7 @@ export const ReverseOperationPanel = ({ uid, onClose }: { uid?: string; onClose:
   const toasts: FlowToast[] = [
     ...(reverse.sale?.txid ? [{ id: `sale:${reverse.sale.txid}`, title: t('reverse.toastSwap', { ticker: token?.ticker ?? '' }), hash: reverse.sale.txid, chain: Chain.BitcoinCash, time: timeOf(start), icon: sent.icon, pending: !saleDone }] : []),
     // THORChain waits for BCH confirmations before it swaps, so the deposit turns until the payout (or refund) arrives.
-    ...(reverse.deposit?.txid ? [{ id: `deposit:${reverse.deposit.txid}`, title: t(op.near ? 'reverse.toastDepositNear' : 'reverse.toastDeposit'), hash: reverse.deposit.txid, chain: Chain.BitcoinCash, icon: bch.icon, pending: !reverse.payout && !reverse.refund }] : []),
+    ...(reverse.deposit?.txid ? [{ id: `deposit:${reverse.deposit.txid}`, title: t('reverse.toastDeposit', { bridge: bridgeName({ near: !!op.near, shapeshift: !!op.near?.shapeshiftQuoteId }) }), hash: reverse.deposit.txid, chain: Chain.BitcoinCash, icon: bch.icon, pending: !reverse.payout && !reverse.refund }] : []),
     ...(reverse.payout ? [{ id: `payout:${reverse.payout.hash}`, title: t('reverse.toastPayout', { ticker: target.ticker }), hash: reverse.payout.hash, chain: target.chain, icon: out.icon }] : []),
     ...(reverse.refund?.txid ? [{ id: `refund:${reverse.refund.txid}`, title: t('reverse.toastRefund'), hash: reverse.refund.txid, chain: Chain.BitcoinCash, icon: bch.icon }] : [])
   ]
@@ -1316,7 +1317,7 @@ const ReverseReadyStage = ({ tx, bchUsd, common }: { tx: BridgeTx; bchUsd?: numb
               minerFeeSats={prepared.built.minerFeeSats}
               ticker={tx.assetTo.ticker}
               bchUsd={bchUsd}
-              near={!!prepared.near}
+              bridge={bridgeName({ near: !!prepared.near, shapeshift: !!prepared.near?.shapeshiftQuoteId })}
             />
           )}
           {!step.walletMatches && (!step.walletAway || reconnectStalled) && (

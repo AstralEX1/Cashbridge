@@ -49,7 +49,7 @@ import {
 } from '@/lib/cauldron'
 import { type CauldronToken, PUSD_TOKEN } from '@/lib/cauldron-tokens'
 import { generateId } from '@/lib/utils'
-import { formatAmount, formatMinutes, formatUsd, PUSD_LEG_SECONDS } from '@/lib/bridge-summary'
+import { bridgeName, formatAmount, formatMinutes, formatUsd, PUSD_LEG_SECONDS } from '@/lib/bridge-summary'
 import { isDollarStable } from '@/lib/dollar-stable'
 import { useSwapStore } from '@/store/swap-store'
 import {
@@ -853,7 +853,7 @@ function BackgroundBridgeToasts({ openUid }: { openUid?: string }) {
       if (reverse.deposit?.txid) {
         items.push({
           id: `deposit:${reverse.deposit.txid}`,
-          title: t(op.near ? 'reverse.toastDepositNear' : 'reverse.toastDeposit'),
+          title: t('reverse.toastDeposit', { bridge: bridgeName({ near: !!op.near, shapeshift: !!op.near?.shapeshiftQuoteId }) }),
           hash: reverse.deposit.txid,
           chain: Chain.BitcoinCash,
           icon: <BchMark size={30} />,
@@ -1263,7 +1263,7 @@ const UnknownFirstLeg = ({ tx }: { tx: BridgeTx }) => {
     try {
       if (tx.bridge.near) {
         const seen = await nearDeposits(tx.bridge.near)
-        if (!seen.some(id => id.toLowerCase() === hash.trim().toLowerCase())) return setError(t('unknown.notOursNear'))
+        if (!seen.some(id => id.toLowerCase() === hash.trim().toLowerCase())) return setError(t('unknown.notOursNear', { bridge: bridgeName({ near: true, shapeshift: !!tx.bridge.near.shapeshiftQuoteId }) }))
       } else {
         const status = await getTxStatus(bare)
         if (!inboundMatchesBinding(status, tx.bridge.binding.lockingBytecode)) return setError(t('unknown.notOurs'))

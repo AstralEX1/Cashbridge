@@ -24,7 +24,7 @@ import { shortBridgeAddress } from '@/components/swap/bridge-wallet-badge'
 import { useTokenQuoteFor } from '@/components/swap/pusd-swap'
 import type { CauldronToken } from '@/lib/cauldron-tokens'
 import { formatBaseUnits, minOutputFor } from '@/lib/bridge'
-import { bridgeSummary, firstLegSeconds, formatAmount, formatMinutes, formatPercent, formatUsd, PUSD_LEG_SECONDS } from '@/lib/bridge-summary'
+import { bridgeName, bridgeSummary, firstLegSeconds, formatAmount, formatMinutes, formatPercent, formatUsd, PUSD_LEG_SECONDS } from '@/lib/bridge-summary'
 import type { Asset } from '@/components/swap/asset'
 import { BchMark, CauldronMark, HoverCard, NearMark, ShapeShiftMark, ThorchainMark, TokenMark as CauldronTokenMark } from '@/components/swap/bridge-marks'
 import { isNearRoute } from '@/lib/near-intents'
@@ -32,6 +32,7 @@ import { isShapeShiftRoute } from '@/lib/shapeshift'
 
 const THORCHAIN_FEES_URL = 'https://docs.thorchain.org/technical-documentation/technical-deep-dive/fees'
 const NEAR_FEES_URL = 'https://docs.near-intents.org/resources/fees'
+const SHAPESHIFT_FEES_URL = 'https://shapeshift.com/faq'
 const toNumber = (value?: USwapNumber) => (value ? Number(value.toSignificant(12)) : undefined)
 
 const TokenMark = ({ asset }: { asset: Asset }) => (
@@ -62,6 +63,7 @@ export const BridgeConfirm = ({ quote, token, bchAddress, automatic }: BridgeCon
   const shapeshift = isShapeShiftRoute(quote)
   const near = isNearRoute(quote) || shapeshift
   const BridgeMark = shapeshift ? ShapeShiftMark : near ? NearMark : ThorchainMark
+  const bridge = bridgeName({ near, shapeshift })
   const pusdQuote = useTokenQuoteFor(token ? quote.expectedBuyAmount : undefined, token)
 
   const identifiers = useMemo(() => quote.fees.map(f => f.asset).sort(), [quote.fees])
@@ -204,7 +206,7 @@ export const BridgeConfirm = ({ quote, token, bchAddress, automatic }: BridgeCon
                             <span>
                               <strong>{t('routeBridge', { from: assetFrom.ticker })}</strong>
                               <span className="bridge-tip-label">
-                                {t(near ? 'routeBridgeDetailNear' : 'routeBridgeDetail', { chain, minutes: thorMinutes ?? '—' })}
+                                {t('routeBridgeDetail', { bridge, chain, minutes: thorMinutes ?? '—' })}
                               </span>
                             </span>
                           </span>
@@ -217,7 +219,7 @@ export const BridgeConfirm = ({ quote, token, bchAddress, automatic }: BridgeCon
                           </span>
                         </span>
                       ) : (
-                        <span className="bridge-tip-label">{t(near ? 'routeSingleNear' : 'routeSingle', { from: assetFrom.ticker, chain })}</span>
+                        <span className="bridge-tip-label">{t('routeSingle', { bridge, from: assetFrom.ticker, chain })}</span>
                       )}
                     </HoverCard>
                   </dd>
@@ -284,7 +286,7 @@ export const BridgeConfirm = ({ quote, token, bchAddress, automatic }: BridgeCon
                       </span>
                       <span className="bridge-tip-sep" />
                       <span className="bridge-tip-row">
-                        <span className="bridge-tip-label">{t(near ? 'nearFee' : 'thorFee')}</span>
+                        <span className="bridge-tip-label">{near ? t('nearFee', { bridge }) : t('thorFee')}</span>
                         <span>{near ? t('nearFeeIncluded') : usd(included.gt(0) ? -toNumber(included)! : undefined)}</span>
                       </span>
                       {pusd && (
@@ -297,7 +299,7 @@ export const BridgeConfirm = ({ quote, token, bchAddress, automatic }: BridgeCon
                         <span className="bridge-tip-label">{t('poolImpact')}</span>
                         <span>{usd(impact?.poolImpactUsd)}</span>
                       </span>
-                      <a className="bridge-tip-link" href={near ? NEAR_FEES_URL : THORCHAIN_FEES_URL} target="_blank" rel="noopener noreferrer">
+                      <a className="bridge-tip-link" href={shapeshift ? SHAPESHIFT_FEES_URL : near ? NEAR_FEES_URL : THORCHAIN_FEES_URL} target="_blank" rel="noopener noreferrer">
                         {t('learnFees')}
                       </a>
                     </HoverCard>
