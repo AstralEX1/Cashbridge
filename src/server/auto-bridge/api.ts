@@ -9,7 +9,7 @@ import { REFUND_FEE_CAP } from '@/lib/router-contract'
 import { OrderError, orderCategory, positiveAmount, type OrderIntent } from '@/server/auto-bridge/types'
 import { SALE_KEYS, SALE_ROUTE_KEYS, isScanAddress, type SaleIntent } from '@/lib/auto-bridge-contract'
 import { addressToLockingBytecode } from '@/lib/bch'
-import { findNearToken, getNearStatus, getNearTokens, type NearStatusResponse, type OneClickToken } from '@/lib/near-intents'
+import { findNearToken, getNearStatus, getNearTokens, submitNearDeposit, type NearStatusResponse, type OneClickToken } from '@/lib/near-intents'
 import { SALE_ROUTE_OPEN_MS, saleRouteProblem } from '@/server/auto-bridge/sale-route'
 import type { OrderStore } from '@/server/auto-bridge/store'
 
@@ -23,8 +23,16 @@ type Service = {
   near?: NearService
   admit?: () => boolean
 }
-export type NearService = { status: (depositAddress: string) => Promise<NearStatusResponse | undefined>; tokens: () => Promise<OneClickToken[]> }
-const defaultNear: NearService = { status: depositAddress => getNearStatus(depositAddress), tokens: getNearTokens }
+export type NearService = {
+  status: (depositAddress: string) => Promise<NearStatusResponse | undefined>
+  tokens: () => Promise<OneClickToken[]>
+  // 1Click's deposit notice (POST /v0/deposit/submit): optional, it only makes the solvers pick the deposit up sooner.
+  submit?: (depositAddress: string, txHash: string) => Promise<boolean>
+}
+const defaultNear: NearService = { status: depositAddress => getNearStatus(depositAddress), tokens: getNearTokens, submit: submitNearDeposit }
+// The hash as the source chain writes it: stored EVM hashes lose their 0x, and an EVM deposit address is 0x + 40 hex.
+const nearTxHash = (depositAddress: string, hash: string) =>
+  /^0x[0-9a-f]{40}$/i.test(depositAddress) && /^[0-9a-f]{64}$/.test(hash) ? `0x${hash}` : hash.replace(/-\d+$/, '')
 const headers = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }
 const reply = (body: unknown, status = 200) => NextResponse.json(body, { status, headers })
 const errorReply = (error: unknown) =>
@@ -216,6 +224,9 @@ export async function attachSource(req: NextRequest, id: string, service: Servic
     const route = near !== undefined && near !== order.nearDepositAddress ? { nearDepositAddress: near, ...(quoteId && { shapeshiftQuoteId: quoteId }) } : {}
     if (!store.update(id, order.version, { ...(sourceHash && { sourceHash }), ...route }))
       throw new OrderError(409, 'Order changed; retry the source hint')
+    // The page tells 1Click too; this covers a page that closed first and hashes from agents. A failure only slows the swap.
+    const deposit = near ?? order.nearDepositAddress
+    if (sourceHash && deposit && !order.sourceHash) void (service.near ?? defaultNear).submit?.(deposit, nearTxHash(deposit, sourceHash)).catch(() => false)
     return reply(store.public(id, cap))
   } catch (error) {
     return errorReply(error)

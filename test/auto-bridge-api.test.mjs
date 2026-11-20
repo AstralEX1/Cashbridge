@@ -200,11 +200,14 @@ test('a NEAR Intents deposit address is noted once, before the source hash, only
       headers: { Authorization: `Bearer ${cap}`, 'Content-Type': 'application/json', 'sec-fetch-site': 'same-origin', 'cf-connecting-ip': `near-${randomUUID()}` },
       body: JSON.stringify(body)
     })
+  // 1Click deposit notices the Router sends, as [deposit address, tx hash].
+  const notices = []
+  const nearService = { status: async () => undefined, tokens: async () => [], submit: async (...notice) => (notices.push(notice), true) }
   const open = (nearOrders, contractOrders = false) => {
     const store = new OrderStore(':memory:', signer.xpub, { maxOrderSats: 100000000n, maxPendingSats: 1000000000n, maxOpenOrders: 20 }, undefined, undefined, contractOrders, false, nearOrders)
     const cap = randomBytes(32).toString('hex')
     const order = store.create(randomUUID(), cap, { recipientAddress: bindingFromPubkey(pubkey, 0).tokenAddress, refundAddress: address, expectedBchSats: '1000000' }, '980')
-    return { store, cap, id: order.id, service: { store, quote: async () => ({ output: 1000n }) } }
+    return { store, cap, id: order.id, service: { store, quote: async () => ({ output: 1000n }), near: nearService } }
   }
   const off = open(false)
   const contract = open(true, true)
@@ -219,6 +222,7 @@ test('a NEAR Intents deposit address is noted once, before the source hash, only
     const suiDeposit = `0x${'1f'.repeat(32)}`
     assert.equal((await attachSource(request(sui.cap, { nearDepositAddress: suiDeposit, sourceHash: suiDigest }), sui.id, sui.service)).status, 200)
     assert.equal(sui.store.get(sui.id).sourceHash, suiDigest)
+    assert.deepEqual(notices.splice(0), [[suiDeposit, suiDigest]], 'a Sui digest goes to 1Click as it is')
     assert.equal((await attachSource(request(off.cap, { nearDepositAddress: near }), off.id, off.service)).status, 400)
     const onContract = await attachSource(request(contract.cap, { nearDepositAddress: near }), contract.id, contract.service)
     assert.equal(onContract.status, 200)
@@ -231,6 +235,9 @@ test('a NEAR Intents deposit address is noted once, before the source hash, only
     assert.equal((await attachSource(request(on.cap, { nearDepositAddress: near, sourceHash: 'ab'.repeat(32) }), on.id, on.service)).status, 200)
     assert.equal(on.store.get(on.id).sourceHash, 'ab'.repeat(32))
     assert.equal(on.store.get(on.id).nearDepositAddress, near)
+    assert.deepEqual(notices.splice(0), [[near, `0x${'ab'.repeat(32)}`]], 'an EVM deposit is reported to 1Click with its 0x hash')
+    assert.equal((await attachSource(request(on.cap, { sourceHash: 'ab'.repeat(32) }), on.id, on.service)).status, 200)
+    assert.deepEqual(notices, [], 'the same hash again is not reported twice')
     assert.equal((await attachSource(request(on.cap, { nearDepositAddress: near, shapeshiftQuoteId: 'late' }), on.id, on.service)).status, 409, 'the route is set once')
 
     // TON friendly addresses are base64url, so a fresh quote may contain either symbol.
