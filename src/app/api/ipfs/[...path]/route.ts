@@ -68,7 +68,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     return apiError(502, 'upstream_unreachable', 'IPFS gateway unreachable', 'Retry in a moment.')
   }
 
-  return new NextResponse(body, {
+  return new NextResponse(new Blob([body], { type }), {
     status: 200,
     headers: {
       'Content-Type': type,
