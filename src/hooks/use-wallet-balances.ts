@@ -6,6 +6,7 @@ import { useRates } from '@/hooks/use-rates'
 import { useAccounts } from '@/hooks/use-wallets'
 import { getAlchemyTokenBalances, getThorBankBalances } from '@/lib/api'
 import { isThorNativeToken, thorBalanceKey } from '@/lib/swap-helpers'
+import { isDollarStable } from '@/lib/dollar-stable'
 import { getUSwap } from '@/lib/wallets'
 import { WalletAccount } from '@/store/wallets-store'
 
@@ -158,11 +159,13 @@ export const useWalletBalances = () => {
       const tokens: TokenBalance[] = balances
         .filter(b => b.ticker && b.ticker.toLowerCase() !== 'unknown')
         .map(b => {
-          const rate = rates[assetIdentifier(b)]
-          const amount = parseFloat(b.toSignificant())
-          const usdValue = rate ? rate.mul(amount) : undefined
           const identifier = assetIdentifier(b)
           const key = identifier.toLowerCase()
+          // Rates peg every USD-named token at $1, so an uncurated one (an airdropped fake USDC) gets no price and stays hidden.
+          const fakeStable = !curatedIdentifiers.has(key) && !isThorNativeToken(b) && isDollarStable(identifier)
+          const rate = fakeStable ? undefined : rates[identifier]
+          const amount = parseFloat(b.toSignificant())
+          const usdValue = rate ? rate.mul(amount) : undefined
           const logoURI = iconMap.get(key) ?? dexScreenerLogos[identifier] ?? (b.address ? alchemyLogoMap.get(b.address.toLowerCase()) : undefined)
           return { balance: b, amount, usdValue, logoURI }
         })
