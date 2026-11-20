@@ -17,6 +17,7 @@ import {
 import { addressToLockingBytecode, bindingFromPubkey, decodeTx, addressPaysScript } from '@/lib/bch'
 import { checkPoolCovenants, checkSigned, parseP2pkhUnlock, reviewBuild, sourcesOf, type BuildResult } from '@/lib/cauldron'
 import {
+  coinFloor,
   memoScript,
   orderBinding,
   orderRedeemScript,
@@ -63,6 +64,9 @@ export const orderUnlockBytes = (order: Order) =>
     ? saleUnlock(saleTermsOf(order, order.binding.pubkey), 'sell', new Uint8Array(65)).length + 2
     : order.contract ? orderUnlock(termsOf(order, order.binding.pubkey), 'convert', new Uint8Array(65)).length + 2 : undefined
 
+// The fewest tokens a forward order's swap may pay: a version 2 contract's one coin buys its share of the minimum.
+export const orderMinimum = (order: Order) =>
+  order.contract && order.funding.length === 1 ? coinFloor(termsOf(order, order.binding.pubkey), BigInt(order.funding[0].value)) : BigInt(order.minPusd)
 
 // What a token output needs to relay, with room for its larger size.
 const TOKEN_DUST = 800n
@@ -189,7 +193,7 @@ export class WorkerWallet extends PublicWallet {
       cashAddress: order.refundAddress,
       payout: { tokenScript: order.recipientScript, changeScript: order.refundScript },
       sell: sellSats,
-      minOutput: BigInt(order.minPusd),
+      minOutput: orderMinimum(order),
       ownUnlockBytes: orderUnlockBytes(order)
     })
     checkPoolCovenants(reviewed)

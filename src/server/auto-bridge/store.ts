@@ -2,7 +2,7 @@ import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import { chmodSync, mkdirSync, existsSync, readFileSync, openSync, writeSync, fsyncSync, closeSync, renameSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { addressToLockingBytecode, decodeTx } from '@/lib/bch'
+import { addressToLockingBytecode, decodeTx, type VerifiedOutput } from '@/lib/bch'
 import { binToHex, hexToBin, secp256k1, utf8ToBin } from '@bitauth/libauth'
 import { MAX_MEMO_BYTES } from '@/lib/thorchain-deposit'
 import { REFUND_AFTER_SECONDS, SALE_EXACT_RESERVE } from '@/lib/router-contract'
@@ -307,6 +307,19 @@ export class OrderStore {
       if (!this.update(order.id, order.version, { state: 'broadcasting', error: undefined }, now)) {
         return false
       }
+      this.db.prepare('INSERT INTO attempts VALUES (?, ?, ?, ?)').run(attempt.txid, order.id, attempt.status, JSON.stringify(attempt))
+      this.dirty = true
+      return true
+    })
+  }
+
+  // A settlement of a contract order that the Router did not sign, already on the network. The Router's own attempts
+  // spent the same coins, so none can confirm any more; the worker still watches them, as it does every rejected one.
+  recordSettlement(order: Order, attempt: Attempt, funding: VerifiedOutput[], now = Date.now()) {
+    return this.write(() => {
+      const patch = { state: 'submitted' as const, payoutTxid: attempt.txid, funding, receivedAt: order.receivedAt ?? now, error: undefined }
+      if (!this.update(order.id, order.version, patch, now)) return false
+      for (const prior of this.attempts(order.id)) if (prior.status !== 'rejected') this.attemptStatus(prior.txid, 'rejected', true)
       this.db.prepare('INSERT INTO attempts VALUES (?, ?, ?, ?)').run(attempt.txid, order.id, attempt.status, JSON.stringify(attempt))
       this.dirty = true
       return true

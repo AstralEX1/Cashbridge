@@ -8,7 +8,7 @@ import { interpretNearStatus, NEAR_BCH, type NearStatusResponse } from '@/lib/ne
 import { SALE_ROUTE_DEPOSIT_MS, saleRouteProblem } from '@/server/auto-bridge/sale-route'
 import { OrderStore } from '@/server/auto-bridge/store'
 import { isTerminal, orderCategory, type Attempt, type Order, type SaleCoin } from '@/server/auto-bridge/types'
-import { orderUnlockBytes, WorkerWallet } from '@/server/auto-bridge/wallet'
+import { orderMinimum, orderUnlockBytes, WorkerWallet } from '@/server/auto-bridge/wallet'
 import { sourceIdFromMemo, sourceTransactionId, sameSourceTransaction } from '@/lib/source-transaction'
 
 export interface Gateway {
@@ -42,7 +42,7 @@ export const buildOrderTrade: TradeBuilder = async order =>
     tokenAddress: order.recipientAddress,
     cashAddress: order.refundAddress,
     sell: order.funding.reduce((sum, coin) => sum + BigInt(coin.value), 0n),
-    minOutput: BigInt(order.minPusd),
+    minOutput: orderMinimum(order),
     ownUnlockBytes: orderUnlockBytes(order)
   })
 
@@ -198,6 +198,8 @@ export async function processOrder(
       return
     }
   }
+  const history = new Set((await gateway.history(order.binding.lockingBytecode)).map(normalizeTxid))
+  if (order.contract && (await externalSettlement(store, gateway, order, history, attempts, clock))) return
   const unresolved = [...attempts].reverse().find(attempt => attempt.status !== 'rejected')
   if (unresolved && (await conflicted(gateway, order, unresolved))) {
     // Every attempt spends the order's funding, so a replacement can never pay out twice.
@@ -225,14 +227,15 @@ export async function processOrder(
     return
   }
 
-  const history = new Set((await gateway.history(order.binding.lockingBytecode)).map(normalizeTxid))
   await observeDeposit(store, gateway, order, history, clock())
   order = store.get(order.id)!
   if (store.isDepositScript(order.recipientScript) || store.isDepositScript(order.refundScript)) {
     store.update(order.id, order.version, { state: 'manual_review', error: 'A customer destination is a service deposit address; operator verification is required.' }, clock())
     return
   }
-  const found = order.nearDepositAddress ? await nearFunding(store, gateway, order, clock) : await thorchainFunding(store, gateway, order, history, clock)
+  const found =
+    (order.contract && (await contractFunding(gateway, order))) ||
+    (order.nearDepositAddress ? await nearFunding(store, gateway, order, clock) : await thorchainFunding(store, gateway, order, history, clock))
   if (!found) return
   const { received, evidence } = found
   const funding = [...new Map(received.map(coin => [`${coin.txid}:${coin.vout}`, coin])).values()]
@@ -260,6 +263,7 @@ export async function processOrder(
     return
   order = store.get(order.id)!
   if (order.state !== 'ready') return
+  if (pageSettles(order) && clock() < order.receivedAt! + PAGE_FIRST_MS) return
   try {
     const deadline = order.deadline ?? order.receivedAt! + Math.min(order.maxWaitMs, policy.maxWaitMs)
     let trade: Awaited<ReturnType<TradeBuilder>> | undefined
@@ -275,7 +279,7 @@ export async function processOrder(
         category: orderCategory(order),
         side: 'buy',
         payout: { tokenScript: order.recipientScript, changeScript: order.refundScript },
-        minOutput: BigInt(order.minPusd)
+        minOutput: orderMinimum(order)
       })
       await assertInputsLive(gateway, reviewed.unsignedHex, sourcesOf(reviewed), order, depth)
     }
@@ -313,6 +317,61 @@ export async function processOrder(
 }
 
 type Funding = { received: VerifiedOutput[]; evidence: Pick<Order, 'inboundHash' | 'sourceRefunds'> }
+
+// How long the Router leaves a coin to the page that holds the order's second key before it settles the coin itself.
+export const PAGE_FIRST_MS = 12_000
+const pageSettles = (order: Order) => order.contract?.version === 2 && !!order.contract.pageKey && order.contract.pageKey !== order.binding.pubkey
+
+// A contract pays its coin only to the customer, so a coin there is settled the moment the node shows it (mempool
+// included), before THORChain or 1Click call the swap done; their status still decides an order with no coin yet.
+async function contractFunding(gateway: Gateway, order: Order): Promise<Funding | undefined> {
+  const received: VerifiedOutput[] = []
+  for (const coin of order.observedFunding ?? []) {
+    // A CashToken sent to the contract is no BCH to swap; it stays in custody accounting.
+    const live = await gateway.coin(coin.txid, coin.vout)
+    if (live && !live.output.token) received.push(coin)
+  }
+  if (!received.length) return
+  // THORChain's outbound names its inbound in an OUT memo: the scanner's link and the later refund lookup.
+  let inboundHash = order.inboundHash
+  const hex = !inboundHash && !order.nearDepositAddress ? await gateway.raw(received[0].txid) : undefined
+  for (const output of hex ? decodeTx(hex).outputs : []) {
+    const memo = opReturnText(output.lockingBytecode)
+    inboundHash ??= memo ? sourceIdFromMemo(memo) : undefined
+  }
+  return { received, evidence: inboundHash ? { inboundHash } : {} }
+}
+
+// A contract coin spent by a transaction the Router did not sign: the page's own settlement, or a refund anyone may
+// send after the refund time. The node accepted it and the contract lets it pay only the customer, so it is the payout.
+async function externalSettlement(store: OrderStore, gateway: Gateway, order: Order, history: Set<string>, attempts: Attempt[], clock: () => number) {
+  const txs = new Map<string, { hex: string; tx: Transaction }>()
+  for (const id of history) {
+    if (!isTxid(id)) continue
+    const hex = await gateway.raw(id)
+    if (!hex) continue
+    if (txidOf(hex) !== id) throw new Error('BCH transaction hash mismatch')
+    txs.set(id, { hex, tx: decodeTx(hex) })
+  }
+  const coins = new Map<string, VerifiedOutput>()
+  for (const [txid, { tx }] of txs)
+    tx.outputs.forEach((output, vout) => {
+      if (binToHex(output.lockingBytecode) === order.binding.lockingBytecode)
+        coins.set(`${txid}:${vout}`, { txid, vout, value: output.valueSatoshis.toString(), confirmations: 0, unspent: false })
+    })
+  for (const [txid, { hex, tx }] of txs) {
+    if (attempts.some(attempt => attempt.txid === txid)) continue
+    const spent = tx.inputs.flatMap((input, index) => {
+      const coin = coins.get(`${binToHex(input.outpointTransactionHash)}:${input.outpointIndex}`)
+      return coin ? [{ coin, paid: tx.outputs[index] }] : []
+    })
+    if (!spent.length) continue
+    const swap = spent.every(({ paid }) => paid?.token && !paid.token.nft && binToHex(paid.token.category) === orderCategory(order))
+    const pusdOut = swap ? spent.reduce((sum, { paid }) => sum + paid.token!.amount, 0n).toString() : '0'
+    return store.recordSettlement(order, { txid, hex, kind: swap ? 'swap' : 'refund', pusdOut, status: 'accepted' }, spent.map(({ coin }) => coin), clock())
+  }
+  return false
+}
 
 // The order-address outputs of `tx` that the node still holds unspent, as the receipt checks read them.
 async function orderUtxos(gateway: Gateway, order: Order, txid: string, tx: Transaction, tip: number) {
