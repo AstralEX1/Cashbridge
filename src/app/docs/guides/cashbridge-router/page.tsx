@@ -147,15 +147,15 @@ export default function Page() {
             <td>Pools cannot meet the minimum yet; retries continue until the conversion deadline.</td>
           </tr>
           <tr>
-            <td>Payout submitted · verifying the chain</td>
-            <td>Token transaction is in the network; receipt is provisional until six confirmations.</td>
+            <td>Payout sent: the transfer is done</td>
+            <td>The token transaction is in the network. The transfer counts as done right away; nobody waits for blocks.</td>
           </tr>
           <tr>
-            <td>Token payout confirmed</td>
+            <td>Token payout received</td>
             <td>Done. The token is at your address.</td>
           </tr>
           <tr>
-            <td>BCH fallback confirmed</td>
+            <td>BCH fallback sent</td>
             <td>Minimum could not be met in time. BCH went to the fallback, less the miner fee.</td>
           </tr>
           <tr>

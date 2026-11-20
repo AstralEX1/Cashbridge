@@ -1227,7 +1227,7 @@ const ORDER_STATES: Record<OrderState, string> = {
   ready: 'Funds arrived; the Router is buying the token or depositing the sale.',
   retrying: 'The Router is retrying settlement.',
   broadcasting: 'The Router is sending the payout.',
-  submitted: 'The payout is in the BCH mempool.',
+  submitted: 'Done: the payout is in the BCH mempool. Nothing waits for confirmations.',
   completed: 'Done: the order settled.',
   refunded: 'Funds were returned to the refund address.',
   source_refunded: 'The first leg refunded the source transaction.',

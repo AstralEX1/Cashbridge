@@ -1061,9 +1061,9 @@
       "ready": "Preparing the token payout",
       "retrying": "Waiting for a trade meeting your minimum",
       "broadcasting": "Checking the saved payout transaction",
-      "submitted": "Payout submitted · verifying the chain",
-      "completed": "Token payout confirmed",
-      "refunded": "BCH fallback confirmed",
+      "submitted": "Payout sent: the transfer is done",
+      "completed": "Token payout received",
+      "refunded": "BCH fallback sent",
       "source_refunded": "Source refund reported by {bridge}",
       "manual_review": "Operator review required"
     },

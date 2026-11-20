@@ -174,7 +174,7 @@ export default function Page() {
       <h2 id="speed">How long it takes</h2>
       <p>Confirm shows an estimate per step; a first transfer commonly takes a few minutes. Most of that is the cross-chain bridge. Bitcoin Cash steps are quick.</p>
       <p>
-        Cash Bridge does not wait for Bitcoin Cash blocks before starting the next BCH step when configured for mempool acceptance. Cashbridge Router receipts are marked provisional until six confirmations.
+        Cash Bridge does not wait for Bitcoin Cash blocks before starting the next BCH step when configured for mempool acceptance. A transfer counts as done as soon as its payout is in the network; neither the page nor the scanner waits for confirmations.
       </p>
 
       <h2 id="status">Where status comes from</h2>
