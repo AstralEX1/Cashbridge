@@ -461,7 +461,8 @@ async function thorchainFunding(store: OrderStore, gateway: Gateway, order: Orde
     store.update(order.id, order.version, { state: 'source_refunded', inboundHash, sourceRefunds: view.refunds.map(r => ({ ...r, evidence: 'thorchain' as const })) }, clock())
     return
   }
-  if (view.kind !== 'outbound' || status.stages?.swap_finalised?.completed !== true || status.stages.swap_status?.pending === true) {
+  // THORNode marks swap_finalised "to be deprecated in favor of swap_status"; it is read only from a node without the latter.
+  if (view.kind !== 'outbound' || (status.stages?.swap_status ? status.stages.swap_status.pending === true : status.stages?.swap_finalised?.completed !== true)) {
     store.update(order.id, order.version, { state: 'streaming', inboundHash }, clock())
     return
   }
