@@ -35,7 +35,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     return apiError(400, 'bad_request', 'Invalid IPFS path', 'Only CIDv0/CIDv1 icon paths are forwarded.')
   }
 
-  let body: Uint8Array | undefined
+  let payload: ArrayBuffer | undefined
   let type = ''
   for (const base of UPSTREAMS) {
     let upstream: Response
@@ -55,20 +55,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     }
     const contentType = (upstream.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
     // Some gateways omit content-type or send octet-stream; sniff later.
-    const bytes = new Uint8Array(await upstream.arrayBuffer())
-    if (bytes.byteLength === 0 || bytes.byteLength > MAX_BYTES) continue
+    const buffer = await upstream.arrayBuffer()
+    if (buffer.byteLength === 0 || buffer.byteLength > MAX_BYTES) continue
+    const bytes = new Uint8Array(buffer)
     const sniffed = contentType && contentType !== 'application/octet-stream' ? contentType : sniffImageType(bytes)
     if (!sniffed || !ALLOWED_TYPES.has(sniffed)) continue
-    body = bytes
+    payload = buffer
     type = sniffed
     break
   }
 
-  if (!body || !type) {
+  if (!payload || !type) {
     return apiError(502, 'upstream_unreachable', 'IPFS gateway unreachable', 'Retry in a moment.')
   }
 
-  return new NextResponse(new Blob([body], { type }), {
+  return new NextResponse(payload, {
     status: 200,
     headers: {
       'Content-Type': type,
