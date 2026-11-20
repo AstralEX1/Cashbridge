@@ -6,7 +6,7 @@ import { useTokenQuoteFor } from '@/components/swap/pusd-swap'
 import { useQuote } from '@/hooks/use-quote'
 import { useAssetFrom, useSwap } from '@/hooks/use-swap'
 import { formatBaseUnits } from '@/lib/bridge'
-import { firstLegSeconds, formatMinutes } from '@/lib/bridge-summary'
+import { firstLegSeconds, formatAmount, formatMinutes } from '@/lib/bridge-summary'
 import { useSwapStore } from '@/store/swap-store'
 
 const ROUTES = [
@@ -16,7 +16,7 @@ const ROUTES = [
 ] as const
 
 // The routes side by side when NEAR or ShapeShift is allowed and an amount is set — even if one quote fails.
-// What each would deliver (into BCH: the token through the same Cauldron swap, else BCH; back from BCH:
+// What each would deliver, all rounded alike (into BCH: the token through the same Cauldron swap, else BCH; back from BCH:
 // the other chain's asset) and how long it takes. The better one is taken unless the user picks the other.
 export const RouteCompare = () => {
   const t = useTranslations('bridge.routes')
@@ -49,9 +49,9 @@ export const RouteCompare = () => {
             ? estimate.output === undefined
               ? estimate.isLoading
                 ? '…'
-                : `${route.expectedBuyAmount} BCH`
+                : `${formatAmount(Number(route.expectedBuyAmount))} BCH`
               : `${formatBaseUnits(estimate.output, token.decimals)} ${token.ticker}`
-            : `${route.expectedBuyAmount} ${reverse ? (payout?.ticker ?? '') : 'BCH'}`
+            : `${formatAmount(Number(route.expectedBuyAmount))} ${reverse ? (payout?.ticker ?? '') : 'BCH'}`
         const seconds = route ? firstLegSeconds(route.estimatedTime) : undefined
         const selected = !!route && !!quote && route === quote
         return (
