@@ -1,4 +1,5 @@
 import { AppConfig } from '@/config'
+import { AGENT_RULES, CLAUDE_CODE_COMMAND, SKILL_INSTALL_COMMAND } from '@/server/agent/kit'
 import { REQUEST_LIMIT, WRITE_LIMIT } from '@/server/agent/mcp'
 import { TOOLS } from '@/server/agent/tools'
 
@@ -15,17 +16,14 @@ MCP server: ${site}/mcp (Streamable HTTP, stateless JSON, no authentication).
 Limits: ${REQUEST_LIMIT} requests and ${WRITE_LIMIT} order writes per 10 minutes per client IP.
 Server card: ${site}/.well-known/mcp/server-card.json
 
-Add it to Claude Code: \`claude mcp add --transport http cash-bridge ${site}/mcp\`
+Add it to Claude Code: \`${CLAUDE_CODE_COMMAND}\`
+Install it as an Agent Skill (Claude Code, Codex, Cursor and more): \`${SKILL_INSTALL_COMMAND}\`
 
 Tools:
 ${TOOLS.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}
 
 Rules:
-- This server holds no keys and never signs or sends. prepare_bridge returns unsigned transactions or deposit instructions for the user's wallet.
-- Show the quote, the destination address and the deposit to the user before they sign.
-- Quotes and deposits expire within minutes. Never reuse a deposit after its expires_at.
-- Never ask for a seed phrase or a private key.
-- A Cashbridge Router order returns an order token. Keep it: it is the only way to read the order later.
+${AGENT_RULES.map(rule => `- ${rule}`).join('\n')}
 
 ## Docs
 

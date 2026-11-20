@@ -1,6 +1,7 @@
 // The MCP endpoint for AI agents, against stand-ins for the aggregator, THORNode and the Cashbridge Router: it never
 // hands out a transaction that does not match its quote, and a Router order is checked against its contract.
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -430,4 +431,20 @@ test('a CashToken purchase can ride ShapeShift: its NEAR Intents deposit pays th
   } finally {
     shapeQuote = forged
   }
+})
+
+test('the agent prompt and skill name every tool, and the skill index digest covers the served SKILL.md', async () => {
+  const { AGENT_PROMPT, SKILL_INDEX, SKILL_MD, SKILL_PATH } = await import('../src/server/agent/kit.ts')
+  const { TOOLS } = await import('../src/server/agent/tools.ts')
+  for (const tool of TOOLS) assert.ok(AGENT_PROMPT.includes(`- ${tool.name}(`), tool.name)
+  const [entry] = SKILL_INDEX.skills
+  const [, frontmatter] = SKILL_MD.match(/^---\n([\s\S]*?)\n---\n/)
+  const fields = Object.fromEntries(frontmatter.split('\n').map(line => line.split(/: (.*)/s).slice(0, 2)))
+  assert.deepEqual(fields, { name: entry.name, description: entry.description })
+  assert.ok(!entry.description.includes(': ') && entry.description.length <= 1024, 'a plain YAML scalar that skill installers parse')
+  // The route lives where the index points, and the bytes it serves are the ones the digest covers.
+  const { GET } = await import(`../src/app${SKILL_PATH}/route.ts`)
+  const served = Buffer.from(await (await GET()).arrayBuffer())
+  assert.equal(entry.url, SKILL_PATH)
+  assert.equal(entry.digest, `sha256:${createHash('sha256').update(served).digest('hex')}`)
 })
