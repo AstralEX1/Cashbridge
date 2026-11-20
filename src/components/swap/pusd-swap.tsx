@@ -15,7 +15,8 @@ import { WalletAddressBadge } from '@/components/swap/bridge-wallet-badge'
 import { useBchWallet } from '@/components/bch-wallet'
 import { useSyncTransactions } from '@/hooks/use-sync-transactions'
 import { GenericButton } from '@/components/generic-button'
-import { BridgeHop } from '@/components/bridge-hop/bridge-hop'
+import { BridgeHero } from '@/components/bridge-hero/bridge-hero'
+import { bridgeHeroEligible } from '@/components/bridge-hero/game'
 import { SwapError } from '@/components/swap/swap-error'
 import { BridgeConfig } from '@/config'
 import { useQuote } from '@/hooks/use-quote'
@@ -1097,7 +1098,7 @@ const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => 
     .reverse()
 
   const common = {
-    waitGame: <BridgeHop key={active.uid} operation={op} />,
+    waitGame: <BridgeHero key={active.uid} eligible={bridgeHeroEligible(op)} />,
     sourceChain: active.assetFrom.chain,
     sourceAddress: active.addressFrom,
     bchAddress: op.binding.cashAddress,

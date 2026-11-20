@@ -14,7 +14,8 @@ import { useBchWallet } from '@/components/bch-wallet'
 import { chainLabel } from '@/components/connect-wallet/config'
 import { ConnectWallet } from '@/components/connect-wallet/connect-wallet'
 import { GenericButton } from '@/components/generic-button'
-import { BridgeHop } from '@/components/bridge-hop/bridge-hop'
+import { BridgeHero } from '@/components/bridge-hero/bridge-hero'
+import { bridgeHeroEligible } from '@/components/bridge-hero/game'
 import { useDialog } from '@/components/global-dialog'
 import type { Asset } from '@/components/swap/asset'
 import { BchMark, CauldronMark, HoverCard, NearMark, ShapeShiftMark, ThorchainMark, TokenMark } from '@/components/swap/bridge-marks'
@@ -1217,7 +1218,7 @@ export const ReverseOperationPanel = ({ uid, onClose }: { uid?: string; onClose:
     .reverse()
 
   const common = {
-    waitGame: <BridgeHop key={active.uid} operation={op} />,
+    waitGame: <BridgeHero key={active.uid} eligible={bridgeHeroEligible(op)} />,
     reverse: true,
     sourceChain: target.chain,
     sourceAddress: reverse.destination,
