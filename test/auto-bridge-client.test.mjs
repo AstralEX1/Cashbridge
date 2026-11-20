@@ -246,7 +246,7 @@ test('a contract order is accepted only when its deposit is the contract of the 
   const { orderBinding } = await import('../src/lib/router-contract.ts')
   const recipient = bindingFromPubkey(pubkey, 0), refund = bindingFromPubkey(otherPubkey, 0)
   const intent = { recipientAddress: recipient.tokenAddress, refundAddress: refund.cashAddress, expectedBchSats: '1000000' }
-  const contract = { routerKey: bindingFromPubkey(otherPubkey, 1).pubkey, refundAfter: 1_800_000_000 }
+  const contract = { routerKey: bindingFromPubkey(otherPubkey, 1).pubkey, refundAfter: Math.floor(Date.now() / 1000) + 3 * 60 * 60 }
   const terms = { ...contract, recipientScript: recipient.lockingBytecode, refundScript: refund.lockingBytecode, category: BridgeConfig.pusd.category, minPusd: '123' }
   const reference = { id: randomUUID(), capability: randomBytes(32).toString('hex'), intent }
   const oldFetch = globalThis.fetch
@@ -261,5 +261,29 @@ test('a contract order is accepted only when its deposit is the contract of the 
     await assert.rejects(restoreAutomaticOrder(reference), /not its contract/)
     depositAddress = refund.cashAddress
     await assert.rejects(restoreAutomaticOrder(reference), /not its contract/)
+  } finally { globalThis.fetch = oldFetch }
+})
+
+test('a version 2 order must name the page key it was asked for, and no order may hold a refund far off', async () => {
+  const { orderBinding } = await import('../src/lib/router-contract.ts')
+  const recipient = bindingFromPubkey(pubkey, 0), refund = bindingFromPubkey(otherPubkey, 0)
+  const pageKey = recipient.pubkey
+  const intent = { recipientAddress: recipient.tokenAddress, refundAddress: refund.cashAddress, expectedBchSats: '1000000', pageKey }
+  let contract = { routerKey: bindingFromPubkey(otherPubkey, 1).pubkey, refundAfter: Math.floor(Date.now() / 1000) + 3 * 60 * 60, version: 2, pageKey }
+  const address = c => orderBinding({ ...c, recipientScript: recipient.lockingBytecode, refundScript: refund.lockingBytecode, category: BridgeConfig.pusd.category, minPusd: '123', quotedSats: '1000000' }, 0).cashAddress
+  const reference = { id: randomUUID(), capability: randomBytes(32).toString('hex'), intent }
+  const oldFetch = globalThis.fetch
+  globalThis.fetch = async () => Response.json({ id: reference.id, ...intent, contract, depositAddress: address(contract), minPusd: '123' })
+  try {
+    assert.equal((await restoreAutomaticOrder(reference)).contract.pageKey, pageKey)
+    contract = { ...contract, pageKey: contract.routerKey }
+    await assert.rejects(restoreAutomaticOrder(reference), /does not match/, 'the Router dropped the page key')
+    contract = { ...contract, pageKey, version: 3 }
+    await assert.rejects(restoreAutomaticOrder(reference), /invalid/)
+    contract = { ...contract, version: 2, refundAfter: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60 }
+    await assert.rejects(restoreAutomaticOrder(reference), /invalid/, 'a refund a month away')
+    // A Router that has no version 2 yet answers version 1: the order still works, settled by the Router alone.
+    contract = { routerKey: contract.routerKey, refundAfter: Math.floor(Date.now() / 1000) + 3 * 60 * 60 }
+    assert.equal((await restoreAutomaticOrder(reference)).contract.version, undefined)
   } finally { globalThis.fetch = oldFetch }
 })

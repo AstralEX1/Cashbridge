@@ -20,7 +20,7 @@ const terms = {
   memo: '=:e:0x1111111111111111111111111111111111111111:0/1/0',
   refundScript: customer.lockingBytecode,
   minSats: '300000',
-  refundAfter: 1_800_000_000
+  refundAfter: Math.floor(Date.now() / 1000) + 3 * 60 * 60
 }
 const contract = saleBinding(terms, 0)
 const coin = (vout, value, amount) => ({ txid: String(vout).padStart(64, '0'), vout, value, height: 1, hasToken: amount !== undefined, ...(amount !== undefined && { token: { category, amount, nft: false } }) })
