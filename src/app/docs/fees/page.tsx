@@ -46,6 +46,13 @@ export default function Page() {
             </td>
           </tr>
           <tr>
+            <td>ShapeShift fee</td>
+            <td>ShapeShift swappers — embedded in the quoted output on Any network Manual pairs</td>
+            <td>
+              The route compare card and Confirm, when ShapeShift quotes beside THORChain
+            </td>
+          </tr>
+          <tr>
             <td>Cauldron swap fee</td>
             <td>The liquidity providers of the Cauldron pool, a small percentage of the amount traded</td>
             <td>
@@ -67,7 +74,7 @@ export default function Page() {
 
       <h2 id="impact">Reading the price impact</h2>
       <p>
-        Next to the amount you receive, the form shows the price impact of the whole route: what you lose between the value you send and the value you receive, without gas. Hover over it for the breakdown into bridge fee (THORChain when that route wins), Cauldron fee and pool price impact. When both THORChain and NEAR Intents quote, compare their outputs side by side before you choose. A small transfer pays mostly fees. A large one pays mostly price impact, because the pools have limited depth.
+        Next to the amount you receive, the form shows the price impact of the whole route: what you lose between the value you send and the value you receive, without gas. Hover over it for the breakdown into bridge fee (THORChain when that route wins), Cauldron fee and pool price impact. When THORChain, NEAR Intents or ShapeShift quote together, compare their outputs side by side before you choose. A small transfer pays mostly fees. A large one pays mostly price impact, because the pools have limited depth.
       </p>
       <p>
         If the Cauldron pools price PUSD away from its peg of one dollar, the form shows the rate at which one PUSD costs. A smaller amount, or waiting for the pools to recover, gives a better result. Transfers with the Cashbridge Router ask you to tick a box before you accept a price impact above about 2%.

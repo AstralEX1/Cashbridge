@@ -3,7 +3,7 @@
 ## Manual (Cashbridge Router off, the default)
 
 Forward: source wallet → THORChain → BCH in the user's BCH wallet → optional Cauldron CashToken trade signed through WizardConnect. Native BCH skips the token trade. Reverse: BCH wallet sells the chosen token when needed, then signs the THORChain BCH deposit; the target chain proves payout. Existing manual 0-conf behavior and wallet sessions remain unchanged.
-NEAR Intents (1Click) quotes beside THORChain both ways; the form takes the better route. Its leg is a plain transfer to a one-use deposit address, and its payout is found on the paying chain like THORChain's.
+NEAR Intents (1Click) quotes beside THORChain both ways; the form takes the better route. Its leg is a plain transfer to a one-use deposit address, and its payout is found on the paying chain like THORChain's. On **Any network** Manual pairs, [ShapeShift](https://shapeshift.com) also quotes as a deposit-address route beside THORChain.
 
 ## Automatic (Cashbridge Router on, forward to a Cauldron token)
 

@@ -2,7 +2,7 @@
 
 Bridge assets to Bitcoin Cash and Cauldron CashTokens, and back. Live at https://www.cashbridge.space.
 
-Two bridges carry the cross-chain leg: [THORChain](https://thorchain.org) and [NEAR Intents](https://docs.near-intents.org) (1Click). When both quote a transfer, the form shows what each would deliver and takes the better one. NEAR Intents is a plain transfer to a one-use deposit address — there is no Cashbridge contract on that leg; its payout is checked on the destination chain like THORChain’s.
+Two bridges carry the BCH path: [THORChain](https://thorchain.org) and [NEAR Intents](https://docs.near-intents.org) (1Click). When both quote a transfer, the form shows what each would deliver and takes the better one. NEAR Intents is a plain transfer to a one-use deposit address — there is no Cashbridge contract on that leg; its payout is checked on the destination chain like THORChain’s. **Any network** Manual pairs also quote [ShapeShift](https://shapeshift.com) (public swap API) as a deposit-address route beside THORChain.
 
 By default (**Manual**) the user signs every step in their own wallets. For transfers that settle a Cauldron token (and for plain BCH when you prefer), the **Cashbridge Router** lets the user sign once in the source wallet while the service finishes settlement under the order’s terms. When the service returns a contract order (`apiVersion=2`), the deposit is a per-order P2SH purchase or sale covenant: spending is limited to paying the quoted minimum (or the fixed THORChain deposit on a sale) or returning funds to the fallback; after `refundAfter` (set about three hours from order creation; Bitcoin Cash median time runs about an hour behind wall clock) anyone may return them on those terms. Legacy orders used temporary P2PKH custody — the published Router proof row is that model, not covenant settlement. ERC-20 approval may still need a separate transaction. See the [docs](https://www.cashbridge.space/docs), [transaction flows](docs/how-it-works.md) and [security and custody](https://www.cashbridge.space/docs/security).
 
@@ -16,7 +16,7 @@ Forked from the [swap.thorchain.org](https://github.com/thorchain/swap.thorchain
 
 1. Open the [bridge](https://www.cashbridge.space/bridge), choose the source asset and receive BCH, PUSD, MUSD or another Cauldron token.
 2. Enter an amount, connect the source wallet and choose the BCH recipient. In Manual mode, connect your BCH wallet to sign the token purchase; with the Cashbridge Router, you can paste a receiving address.
-3. Review the route (THORChain vs NEAR Intents when both quote), minimum, fees and fallback before signing. Follow the transfer in History, with links to its transactions.
+3. Review the route (THORChain vs NEAR Intents, or ShapeShift on Any network when it quotes), minimum, fees and fallback before signing. Follow the transfer in History, with links to its transactions.
 
 To bridge back, reverse the form. Manual mode sells the CashToken to BCH and then asks your BCH wallet to sign the bridge deposit. When available, Router sales let your wallet send the token to a sale contract; the service sells it and deposits BCH to THORChain with the agreed destination memo, or returns the funds. These are several on-chain steps, not an atomic swap. See [bridging back](https://www.cashbridge.space/docs/guides/bridge-from-bch).
 

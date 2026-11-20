@@ -14,7 +14,7 @@ export default function Page() {
     <DocsArticle
       href="/docs/how-it-works"
       title="How it works"
-      lead="A transfer is a short chain of ordinary transactions. Cash Bridge quotes two bridges when both are available, plans the steps, and follows them — in Manual mode with your wallets, or through the Cashbridge Router with per-order contracts."
+      lead="A transfer is a short chain of ordinary transactions. Cash Bridge quotes THORChain, NEAR Intents and (on Any network) ShapeShift when available, plans the steps, and follows them — in Manual mode with your wallets, or through the Cashbridge Router with per-order contracts."
     >
       <DocsDemoFlow />
 
@@ -101,11 +101,18 @@ export default function Page() {
         <a href="https://docs.near-intents.org" target="_blank" rel="noopener noreferrer">
           NEAR Intents
         </a>{' '}
-        is the second bridge. Its 1Click service gives each transfer a one-use deposit address on the source chain. You send a plain transfer — no memo — and market makers pay native BCH to the destination. There is no Cashbridge contract on the NEAR leg. When both bridges quote, the form shows both outputs and takes the better one; you can pick the other.
+        is the second bridge for the BCH path. Its 1Click service gives each transfer a one-use deposit address on the source chain. You send a plain transfer — no memo — and market makers pay native BCH to the destination. There is no Cashbridge contract on the NEAR leg. When both bridges quote, the form shows both outputs and takes the better one; you can pick the other.
       </p>
       <DocsDemoQuotes />
       <p>
         NEAR Intents carries Manual transfers both ways. For the Cashbridge Router, it can carry the <strong>forward</strong> first leg when the service admits NEAR orders: 1Click still uses a plain deposit address, and its BCH payout targets the Router order address. Router <strong>sales</strong> stay on THORChain.
+      </p>
+      <h3>ShapeShift</h3>
+      <p>
+        <a href="https://shapeshift.com" target="_blank" rel="noopener noreferrer">
+          ShapeShift
+        </a>
+        &apos;s public swap API quotes <strong>Any network</strong> Manual pairs (turn it on from the Bitcoin Cash asset picker). Cash Bridge keeps deposit-address swappers so you sign a plain transfer in the source wallet — the same style of send as NEAR Intents. ShapeShift sits beside THORChain on those pairs; it is not used for CashToken Router settlement.
       </p>
       <h3>Cauldron</h3>
       <p>

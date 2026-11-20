@@ -44,7 +44,8 @@ const CHAINS: [string, string, boolean?][] = [
 
 const ROUTES = [
   { name: 'THORChain', icon: '/providers/thorchain.svg' },
-  ...(NEAR_INTENTS ? [{ name: 'NEAR Intents', icon: '/providers/near.svg' }] : [])
+  ...(NEAR_INTENTS ? [{ name: 'NEAR Intents', icon: '/providers/near.svg' }] : []),
+  { name: 'ShapeShift', icon: '/providers/shapeshift.svg' }
 ]
 
 const INTEGRATIONS: { name: string; logo?: string; href: string; show?: boolean }[] = [
@@ -160,7 +161,7 @@ export default function Page() {
               <KeyRound size={18} aria-hidden /> Your keys never leave your wallet
             </li>
             <li>
-              <Globe size={18} aria-hidden /> THORChain and NEAR Intents to native BCH
+              <Globe size={18} aria-hidden /> THORChain, NEAR Intents and ShapeShift
             </li>
             <li>
               <FileLock2 size={18} aria-hidden /> Router orders settle in a CashScript covenant

@@ -14,14 +14,14 @@ export default function Page() {
     <DocsArticle
       href="/docs"
       title="Cash Bridge docs"
-      lead="Move value between Bitcoin Cash (and Cauldron CashTokens) and the rest of crypto. Two bridges carry the cross-chain leg — THORChain and NEAR Intents — and two modes decide who signs: Manual or the Cashbridge Router."
+      lead="Move value between Bitcoin Cash (and Cauldron CashTokens) and the rest of crypto. THORChain and NEAR Intents carry the BCH path; ShapeShift quotes Any network Manual pairs; two modes decide who signs: Manual or the Cashbridge Router."
     >
-      <Shot name="form-forward" alt="The Cash Bridge form: 25 USDC on Ethereum to about 24.63 PUSD on Bitcoin Cash" caption="The bridge form. Pick what to send, what to receive and an amount; when both bridges quote, the form compares them." />
+      <Shot name="form-forward" alt="The Cash Bridge form: 25 USDC on Ethereum to about 24.63 PUSD on Bitcoin Cash" caption="The bridge form. Pick what to send, what to receive and an amount; when several routes quote, the form compares them." />
 
       <h2 id="start-here">Start here</h2>
       <CardGroup title="Protocol">
         <Card href="/docs/how-it-works" title="How it works" eyebrow="Schemas">
-          Manual vs Cashbridge Router, THORChain vs NEAR Intents, forward and reverse — with a live route storyboard.
+          Manual vs Cashbridge Router, THORChain vs NEAR Intents vs ShapeShift, forward and reverse — with a live route storyboard.
         </Card>
         <Card href="/docs/guides/cashbridge-router" title="Cashbridge Router" eyebrow="Covenants">
           One source signature, apiVersion=2 P2SH covenants, refundAfter and BCH fallback.
@@ -53,7 +53,7 @@ export default function Page() {
           <strong>Bridge back.</strong> Sell BCH or a CashToken and receive an asset on another chain.
         </li>
         <li>
-          <strong>Compare routes.</strong> When THORChain and NEAR Intents both quote, the form shows both outputs and takes the better one unless you pick the other.
+          <strong>Compare routes.</strong> When THORChain and NEAR Intents both quote the BCH path, or ShapeShift quotes beside THORChain on Any network, the form shows the outputs and takes the better one unless you pick the other.
         </li>
         <li>
           <strong>Sign once, if you prefer.</strong> The Cashbridge Router lets you approve a single source transaction while a per-order contract (or, for older proof rows, a legacy address) settles the Cauldron leg.
@@ -72,12 +72,16 @@ export default function Page() {
             <td>
               <a href="https://thorchain.org" target="_blank" rel="noopener noreferrer">
                 THORChain
-              </a>{' '}
-              and{' '}
+              </a>
+              ,{' '}
               <a href="https://docs.near-intents.org" target="_blank" rel="noopener noreferrer">
                 NEAR Intents
               </a>{' '}
-              (1Click). Availability depends on each network&apos;s listings and liquidity.
+              (1Click) for the BCH path, and{' '}
+              <a href="https://shapeshift.com" target="_blank" rel="noopener noreferrer">
+                ShapeShift
+              </a>{' '}
+              on Any network Manual pairs. Availability depends on each network&apos;s listings and liquidity.
             </td>
           </tr>
           <tr>
@@ -137,16 +141,20 @@ export default function Page() {
         Cash Bridge is an interface, not a new chain.{' '}
         <a href="https://thorchain.org" target="_blank" rel="noopener noreferrer">
           THORChain
-        </a>{' '}
-        and{' '}
+        </a>
+        ,{' '}
         <a href="https://docs.near-intents.org" target="_blank" rel="noopener noreferrer">
           NEAR Intents
+        </a>{' '}
+        and{' '}
+        <a href="https://shapeshift.com" target="_blank" rel="noopener noreferrer">
+          ShapeShift
         </a>{' '}
         move native assets across networks.{' '}
         <a href="https://cauldron.quest" target="_blank" rel="noopener noreferrer">
           Cauldron
         </a>{' '}
-        markets BCH and CashTokens on Bitcoin Cash. Cash Bridge quotes both bridges when available, builds the transactions, and follows them until funds arrive.
+        markets BCH and CashTokens on Bitcoin Cash. Cash Bridge quotes the available routes, builds the transactions, and follows them until funds arrive.
       </p>
     </DocsArticle>
   )

@@ -12,7 +12,7 @@ export default function Page() {
     <DocsArticle
       href="/docs/security"
       title="Security and custody"
-      lead="Who can touch your funds depends on the mode and on the order the service returns. Manual: your wallets sign every step. Cashbridge Router contract orders: a per-order P2SH covenant that can only pay you or refund you under its terms. Legacy Router orders used temporary P2PKH custody. Both modes still rely on THORChain or NEAR Intents for the cross-chain leg, and on Cauldron for CashTokens."
+      lead="Who can touch your funds depends on the mode and on the order the service returns. Manual: your wallets sign every step. Cashbridge Router contract orders: a per-order P2SH covenant that can only pay you or refund you under its terms. Legacy Router orders used temporary P2PKH custody. Cross-chain legs still rely on THORChain, NEAR Intents or ShapeShift (Any network), and on Cauldron for CashTokens."
     >
       <h2 id="manual">Manual mode: you stay in control</h2>
       <p>With the Cashbridge Router off (the default), Cash Bridge never holds funds and never sees a private key.</p>
@@ -73,7 +73,7 @@ export default function Page() {
       <h2 id="third-parties">What you rely on</h2>
       <ul>
         <li>
-          <strong>THORChain</strong> and <strong>NEAR Intents</strong> hold or route funds during a cross-chain swap and can refund or pause. A fault there affects any interface built on them.
+          <strong>THORChain</strong>, <strong>NEAR Intents</strong> and <strong>ShapeShift</strong> hold or route funds during a cross-chain swap and can refund or pause. A fault there affects any interface built on them.
         </li>
         <li>
           <strong>Cauldron</strong> pools set CashToken prices. Cash Bridge builds from live pools but does not control them.
