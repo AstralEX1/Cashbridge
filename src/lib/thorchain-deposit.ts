@@ -55,10 +55,11 @@ export const checkInbound = (inbounds: InboundAddress[], quotedVault: string, de
 
 // THORNode's own asset short codes (common/asset.go, Asset.ShortCode). The aggregator writes them in
 // memos even where its token list leaves `shortCode` empty: SOL.SOL is quoted as `=:o:...`.
+// THORNode looks them up exactly as written, so only the lowercase form expands; `B` alone would be a THOR-chain asset.
 const THORNODE_SHORT_CODES: Record<string, string> = {
-  'THOR.RUNE': 'R', 'BTC.BTC': 'B', 'ETH.ETH': 'E', 'GAIA.ATOM': 'G', 'DOGE.DOGE': 'D', 'LTC.LTC': 'L', 'BCH.BCH': 'C',
-  'AVAX.AVAX': 'A', 'BSC.BNB': 'S', 'BASE.ETH': 'F', 'TRON.TRX': 'TR', 'XRP.XRP': 'X', 'SOL.SOL': 'O', 'TAO.TAO': 'TA',
-  'ZEC.ZEC': 'Z', 'XMR.XMR': 'M', 'POL.POL': 'P', 'SUI.SUI': 'U', 'DOT.DOT': 'DO', 'ADA.ADA': 'AD'
+  'THOR.RUNE': 'r', 'BTC.BTC': 'b', 'ETH.ETH': 'e', 'GAIA.ATOM': 'g', 'DOGE.DOGE': 'd', 'LTC.LTC': 'l', 'BCH.BCH': 'c',
+  'AVAX.AVAX': 'a', 'BSC.BNB': 's', 'BASE.ETH': 'f', 'TRON.TRX': 'tr', 'XRP.XRP': 'x', 'SOL.SOL': 'o', 'TAO.TAO': 'ta',
+  'ZEC.ZEC': 'z', 'XMR.XMR': 'm', 'POL.POL': 'p', 'SUI.SUI': 'u', 'DOT.DOT': 'do', 'ADA.ADA': 'ad'
 }
 
 // The quoted memo must swap to the asked asset and pay the asked address: `=:ASSET:DEST[:LIMIT...]`
@@ -72,8 +73,8 @@ export const checkDepositMemo = (memo: string, { buyAsset, destination, shortCod
   const want = buyAsset.toUpperCase()
   const got = asset.toUpperCase()
   const [chainSymbol] = want.split('-')
-  const codes = [THORNODE_SHORT_CODES[want], shortCode?.toUpperCase()]
-  if (got !== want && got !== chainSymbol && !codes.includes(got)) throw new DepositError('The memo swaps to a different asset')
+  const codes = [THORNODE_SHORT_CODES[want], shortCode?.toLowerCase()]
+  if (got !== want && got !== chainSymbol && !codes.includes(asset)) throw new DepositError('The memo swaps to a different asset')
   if (!sameAddress(dest, destination)) throw new DepositError('The memo pays a different address')
 }
 

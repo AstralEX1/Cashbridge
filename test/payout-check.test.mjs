@@ -170,6 +170,7 @@ test('a deposit to RUNE needs no THOR inbound; memos may name the asset by its s
   checkDepositMemo(`=:o:${sol}:55280894`, { buyAsset: 'SOL.SOL', destination: sol })
   checkDepositMemo('=:z:t1dest', { buyAsset: 'ZEC.ZEC', destination: 't1dest' })
   assert.throws(() => checkDepositMemo(`=:o:${sol}`, { buyAsset: 'BTC.BTC', destination: sol, shortCode: 'b' }), /different asset/)
+  assert.throws(() => checkDepositMemo('=:B:bc1qdest:0', { buyAsset: 'BTC.BTC', destination: 'bc1qdest', shortCode: 'b' }), /different asset/, 'THORNode expands only the lowercase code')
   assert.throws(() => checkDepositMemo(`=:SOL.SOL:${sol.toLowerCase()}`, { buyAsset: 'SOL.SOL', destination: sol }), /different address/)
 })
 
