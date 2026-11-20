@@ -148,7 +148,6 @@ export const BridgeConfirm = ({ quote, token, bchAddress, automatic }: BridgeCon
             </div>
             {pusdQuote.error && <p className="bridge-confirm-note">{t('pusdUnavailable', { ticker: receivedTicker })}</p>}
             {automatic && <div className="bridge-confirm-note">
-              <p>{tAuto(automatic.contract ? 'contractCustody' : 'custody', { ticker: receivedTicker })}</p>
               <p title={automatic.refundAddress}>{tAuto('fallback', { address: shortBridgeAddress(automatic.refundAddress) })}</p>
             </div>}
           </section>
