@@ -4,6 +4,9 @@ import { getBraveEVMProvider, getBraveSolanaProvider } from '@tcswap/wallets/bra
 // The injected-provider globals (window.vultisig, window.phantom, ...) are declared by this package.
 import type {} from '@tcswap/wallet-extensions'
 import { BridgeConfig } from '@/config'
+import { CIP30_IDS, cip30Entry, ETERNL, LACE, YOROI } from '@/lib/cardano-wallet'
+import { findSlush, SLUSH } from '@/lib/sui-wallet'
+import { TONCONNECT } from '@/lib/ton-wallet'
 import { supportedChains } from '@/lib/wallets'
 
 export enum WalletType {
@@ -24,6 +27,7 @@ export type WalletParams = {
 
 export const ALL_CHAINS = [
   Chain.Arbitrum,
+  Chain.Aurora,
   Chain.Avalanche,
   Chain.Base,
   Chain.Berachain,
@@ -135,6 +139,47 @@ export const WALLETS: WalletParams[] = [
     link: 'https://www.tronlink.org',
     supportedChains: supportedChains[WalletOption.TRONLINK]
   },
+  {
+    key: 'slush',
+    type: WalletType.browser,
+    label: 'Slush',
+    option: SLUSH,
+    link: 'https://slush.app',
+    supportedChains: supportedChains[SLUSH]
+  },
+  {
+    key: 'lace',
+    type: WalletType.browser,
+    label: 'Lace',
+    option: LACE,
+    link: 'https://www.lace.io',
+    supportedChains: supportedChains[LACE]
+  },
+  {
+    key: 'eternl',
+    type: WalletType.browser,
+    label: 'Eternl',
+    option: ETERNL,
+    link: 'https://eternl.io',
+    supportedChains: supportedChains[ETERNL]
+  },
+  {
+    key: 'yoroi',
+    type: WalletType.browser,
+    label: 'Yoroi',
+    option: YOROI,
+    link: 'https://yoroi-wallet.com',
+    supportedChains: supportedChains[YOROI]
+  },
+  // TON Connect's own modal lists Tonkeeper, MyTonWallet, Telegram Wallet and the rest, with a QR code for phones.
+  {
+    key: 'tonconnect',
+    type: WalletType.mobile,
+    label: 'TON Connect',
+    option: TONCONNECT,
+    link: 'https://docs.ton.org/applications/ton-connect',
+    supportedChains: supportedChains[TONCONNECT]
+  },
   // Listed only with a WalletConnect (Reown) project id; the same one the BCH wallets pair with.
   ...(BridgeConfig.walletConnectProjectId
     ? [
@@ -209,6 +254,14 @@ export const isWalletAvailable = (option: WalletOption) => {
       return window?.bitkeep?.ethereum
     case WalletOption.ONEKEY:
       return window?.$onekey?.ethereum
+    case SLUSH:
+      return findSlush()
+    case TONCONNECT:
+      return true
+    case LACE:
+    case ETERNL:
+    case YOROI:
+      return cip30Entry(CIP30_IDS[option]!)
 
     default:
       return false

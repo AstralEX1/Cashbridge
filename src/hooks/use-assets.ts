@@ -13,8 +13,10 @@ import { isNetworkAsset, useSwapStore } from '@/store/swap-store'
 // entry has a validator in the SDK and an icon under public/networks.
 export const PRIVATE_SWAP_CHAINS: Chain[] = [
   Chain.Arbitrum,
+  Chain.Aurora,
   Chain.Avalanche,
   Chain.Base,
+  Chain.Berachain,
   Chain.BinanceSmartChain,
   Chain.Bitcoin,
   Chain.BitcoinCash,
@@ -23,7 +25,9 @@ export const PRIVATE_SWAP_CHAINS: Chain[] = [
   Chain.Dash,
   Chain.Dogecoin,
   Chain.Ethereum,
+  Chain.Gnosis,
   Chain.Litecoin,
+  Chain.Monad,
   Chain.Near,
   Chain.Optimism,
   Chain.Polygon,
@@ -33,6 +37,7 @@ export const PRIVATE_SWAP_CHAINS: Chain[] = [
   Chain.THORChain,
   Chain.Ton,
   Chain.Tron,
+  Chain.XLayer,
   Chain.Zcash
 ]
 

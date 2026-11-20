@@ -189,7 +189,8 @@ export async function attachSource(req: NextRequest, id: string, service: Servic
     const cap = token(req),
       input = await body(req)
     const near = input.nearDepositAddress
-    if (near !== undefined && (typeof near !== 'string' || !/^[0-9A-Za-z:]{20,120}$/.test(near))) throw new OrderError(400, 'Invalid NEAR Intents deposit address')
+    // TON deposit addresses are base64url (UQ…, with - and _).
+    if (near !== undefined && (typeof near !== 'string' || !/^[0-9A-Za-z:_-]{20,120}$/.test(near))) throw new OrderError(400, 'Invalid NEAR Intents deposit address')
     // ShapeShift quoted that NEAR Intents address; its id only lets the customer find the swap there.
     const quoteId = input.shapeshiftQuoteId
     if (quoteId !== undefined && (near === undefined || typeof quoteId !== 'string' || !/^[0-9A-Za-z-]{1,100}$/.test(quoteId)))

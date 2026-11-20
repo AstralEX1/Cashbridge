@@ -1,5 +1,6 @@
 const mocked = new Set([
   '@/lib/wallets',
+  '@/lib/ton-wallet',
   '@/hooks/use-wallets',
   '@/hooks/use-swap',
   '@/hooks/use-balance',

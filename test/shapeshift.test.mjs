@@ -22,6 +22,16 @@ describe('shapeShiftAssetId', () => {
     )
   })
 
+  it('maps Gnosis, Monad, MAYA, MegaETH and buy-side natives from ShapeShift /v1/chains', () => {
+    assert.equal(shapeShiftAssetId('GNO.xDAI'), 'eip155:100/slip44:60')
+    assert.equal(shapeShiftAssetId('MONAD.MON'), 'eip155:143/slip44:60')
+    assert.equal(shapeShiftAssetId('MAYA.CACAO'), 'cosmos:mayachain-mainnet-v1/slip44:931')
+    assert.equal(shapeShiftAssetId('MEGAETH.ETH'), 'eip155:4326/slip44:60')
+    assert.equal(shapeShiftAssetId('NEAR.NEAR'), 'near:mainnet/slip44:397')
+    assert.equal(shapeShiftAssetId('SUI.SUI'), 'sui:35834a8a/slip44:784')
+    assert.equal(shapeShiftAssetId('TON.TON'), 'ton:mainnet/slip44:607')
+  })
+
   it('rejects unknown chains and non-native bare tickers', () => {
     assert.equal(shapeShiftAssetId('XRP.XRP'), undefined)
     assert.equal(shapeShiftAssetId('THOR.TCY'), undefined)

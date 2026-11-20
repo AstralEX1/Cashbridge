@@ -17,6 +17,13 @@ test('source identifiers retain Solana case, accept indexed Cosmos and canonical
   assert.equal(sourceTransactionId('not-a-payment'), undefined)
   assert.equal(sourceTransactionId('../' + 'ab'.repeat(32)), undefined)
 })
+
+test('Sui digests keep their base58 case', () => {
+  const digest = 'Ckj3Fbk3Yw4V3bBYRdVr1ZtLUfiQbyPjSU4XaDbswDtV'
+  assert.equal(sourceTransactionId(digest), digest)
+  assert.equal(sameSourceTransaction(digest, digest.toLowerCase()), false)
+  assert.equal(sourceTransactionId(digest.slice(0, 40)), undefined)
+})
 test('BCH outbound review binds case-sensitive and indexed source memos to the right payment', () => {
   const binding = bindingFromPubkey(pubkey, 0)
   for (const id of [solana, 'AB'.repeat(32) + '-1']) {

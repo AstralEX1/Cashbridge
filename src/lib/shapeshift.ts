@@ -18,6 +18,7 @@ export const SHAPESHIFT_PROVIDER = 'SHAPESHIFT' as ProviderName
 
 // THORChain-style chain prefix to its CAIP-2 chain, the coin's SLIP-44 number and its ticker. A contract-less
 // identifier counts only when it is that ticker (so `THOR.TCY` is not read as RUNE).
+// CAIP-2 values from ShapeShift `GET /v1/chains` (https://api.shapeshift.com/docs).
 const CHAINS: Record<string, { caip: string; coin: number; native: string }> = {
   ARB: { caip: 'eip155:42161', coin: 60, native: 'ETH' },
   AVAX: { caip: 'eip155:43114', coin: 60, native: 'AVAX' },
@@ -31,14 +32,21 @@ const CHAINS: Record<string, { caip: string; coin: number; native: string }> = {
   GNO: { caip: 'eip155:100', coin: 60, native: 'XDAI' },
   LTC: { caip: 'bip122:12a765e31ffd4059bada1e25190f6e98', coin: 2, native: 'LTC' },
   MAYA: { caip: 'cosmos:mayachain-mainnet-v1', coin: 931, native: 'CACAO' },
+  MEGAETH: { caip: 'eip155:4326', coin: 60, native: 'ETH' },
   MONAD: { caip: 'eip155:143', coin: 60, native: 'MON' },
+  NEAR: { caip: 'near:mainnet', coin: 397, native: 'NEAR' },
   OP: { caip: 'eip155:10', coin: 60, native: 'ETH' },
   POL: { caip: 'eip155:137', coin: 60, native: 'POL' },
   SOL: { caip: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp', coin: 501, native: 'SOL' },
+  SUI: { caip: 'sui:35834a8a', coin: 784, native: 'SUI' },
   THOR: { caip: 'cosmos:thorchain-1', coin: 931, native: 'RUNE' },
+  TON: { caip: 'ton:mainnet', coin: 607, native: 'TON' },
   TRON: { caip: 'tron:0x2b6653dc', coin: 195, native: 'TRX' },
   ZEC: { caip: 'bip122:00040fe8ec8471911baa1db1266ea15d', coin: 133, native: 'ZEC' }
 }
+
+// Prefixes with a `public/networks/{prefix.toLowerCase()}.svg` mark (MegaETH → megaeth.svg).
+export const shapeShiftMappedPrefixes = (): string[] => Object.keys(CHAINS)
 
 // THORChain upper-cases every contract, which base58 cannot survive. The stables the bridge lists are restored by
 // hand; any other Solana/TRON token is left unmapped rather than guessed. EVM contracts are lower-cased in CAIP-19.
@@ -46,7 +54,7 @@ const BASE58_TOKENS: Record<string, { namespace: string; contracts: string[] }> 
   SOL: { namespace: 'token', contracts: ['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB'] },
   TRON: { namespace: 'trc20', contracts: ['TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', 'TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8'] }
 }
-const EVM_PREFIXES = ['ARB', 'AVAX', 'BASE', 'BSC', 'ETH', 'GNO', 'MONAD', 'OP', 'POL']
+const EVM_PREFIXES = ['ARB', 'AVAX', 'BASE', 'BSC', 'ETH', 'GNO', 'MEGAETH', 'MONAD', 'OP', 'POL']
 
 // CAIP-19 id for a THORChain-style identifier (`ETH.ETH`, `BASE.USDC-0X8335…`, `SOL.USDC-EPjF…`); undefined when
 // ShapeShift does not carry the chain or the token cannot be named exactly.

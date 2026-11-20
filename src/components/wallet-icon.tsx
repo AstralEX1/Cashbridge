@@ -27,6 +27,9 @@ const MONO_GLYPHS: Record<string, ReactNode> = {
   )
 }
 
+// The extensions' own store icons, which their makers publish only as PNG.
+const RASTER = new Set(['eternl', 'lace', 'slush', 'yoroi'])
+
 export function WalletIcon({ walletKey, width, height, alt = '', className }: WalletIconProps) {
   const glyph = MONO_GLYPHS[walletKey]
   if (glyph) {
@@ -46,5 +49,5 @@ export function WalletIcon({ walletKey, width, height, alt = '', className }: Wa
     )
   }
 
-  return <Image src={`/wallets/${walletKey}.svg`} alt={alt} width={width} height={height} className={className} />
+  return <Image src={`/wallets/${walletKey}.${RASTER.has(walletKey) ? 'png' : 'svg'}`} alt={alt} width={width} height={height} className={className} />
 }

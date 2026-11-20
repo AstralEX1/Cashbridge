@@ -1,10 +1,12 @@
-// Source identifiers are not BCH hashes: Solana is case-sensitive, and Cosmos can add an index.
+// Source identifiers are not BCH hashes: Solana signatures and Sui digests are case-sensitive base58, and Cosmos can
+// add an index. TON (normalized message hash) and Cardano ids are hex.
 export const sourceTransactionId = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined
   const text = value.trim()
   if (/^(?:0x)?[a-f0-9]{64}$/i.test(text)) return text.replace(/^0x/i, '').toLowerCase()
   if (/^[a-f0-9]{64}-\d{1,12}$/i.test(text)) return text.toLowerCase()
   if (/^[1-9A-HJ-NP-Za-km-z]{87,88}$/.test(text)) return text
+  if (/^[1-9A-HJ-NP-Za-km-z]{43,44}$/.test(text)) return text
   return undefined
 }
 

@@ -41,7 +41,7 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
   const [connecting, setConnecting] = useState<string>()
   const { accounts, select, connect } = useWallets()
 
-  const hasWalletConnect = WALLETS.some(w => w.type === WalletType.mobile)
+  const hasWalletConnect = WALLETS.some(w => w.option === WalletOption.WALLETCONNECT)
   useEffect(() => {
     if (isOpen && hasWalletConnect) preloadWalletConnect()
   }, [isOpen, hasWalletConnect])
@@ -67,7 +67,7 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
       return
     }
     if (wallet.type === WalletType.mobile && chain) {
-      // WalletConnect opens its own QR window, which this dialog would sit over and block clicks on.
+      // WalletConnect and TON Connect open their own QR window, which this dialog would sit over and block clicks on.
       close()
       connect(wallet.option, [chain], undefined, { describeError: error => describeWalletconnectError(t, error) }).catch(() => {})
       return

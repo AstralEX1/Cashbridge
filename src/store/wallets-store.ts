@@ -3,6 +3,7 @@ import { toast } from '@/lib/toast'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { readWalletLink, type WalletLink, writeWalletLink } from '@/store/wallets-store-cookie'
+import { isTonConnectDismissed } from '@/lib/ton-wallet'
 import {
   getAccounts,
   getUSwap,
@@ -10,6 +11,7 @@ import {
   isWalletconnectDismissed,
   onWalletconnectDisconnect,
   RESTORE_CHECKED,
+  RESTORE_ONLY,
   supportedChains,
   syncBraveAccountWatch,
   watchEvmAccounts
@@ -113,8 +115,8 @@ export const useWalletStore = create<WalletState>()(
           })
         } catch (err: any) {
           if (connectionVersions.get(wallet) !== version) return
-          // Closing WalletConnect's QR window is a cancel, not a failure.
-          if (!options?.quiet && !isWalletconnectDismissed(err)) toast.error(options?.describeError?.(err) ?? err.message)
+          // Closing WalletConnect's or TON Connect's QR window is a cancel, not a failure.
+          if (!options?.quiet && !isWalletconnectDismissed(err) && !isTonConnectDismissed(err)) toast.error(options?.describeError?.(err) ?? err.message)
           throw err
         }
       },
@@ -171,8 +173,9 @@ export const useWalletStore = create<WalletState>()(
           const defaultChains = w.chains.filter(chain => !w.paths?.[chain])
 
           const accounts: WalletAccount[] = []
-          // WalletConnect reuses its stored session; with none left it stays disconnected rather than show a QR code.
-          const config = w.provider === WalletOption.WALLETCONNECT ? { restoreOnly: true } : undefined
+          // WalletConnect and TON Connect reuse a stored session, the Sui and Cardano extensions an earlier grant; with
+          // none left the wallet stays disconnected rather than show a QR code or a prompt.
+          const config = RESTORE_ONLY.has(w.provider) ? { restoreOnly: true } : undefined
           if (defaultChains.length > 0) accounts.push(...(await getAccounts(w.provider, defaultChains, config)))
           for (const chain of pathChains) {
             accounts.push(...(await getAccounts(w.provider, [chain], { derivationPath: w.paths?.[chain] })))

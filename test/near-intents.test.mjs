@@ -33,6 +33,28 @@ const TOKENS = [
   },
   { assetId: 'nep141:arb.omft.near', decimals: 18, blockchain: 'arb', symbol: 'ETH', price: 1800, contractAddress: null },
   { assetId: 'nep141:xrp.omft.near', decimals: 6, blockchain: 'xrp', symbol: 'XRP', price: 1 },
+  { assetId: 'nep141:gnosis.omft.near', decimals: 18, blockchain: 'gnosis', symbol: 'xDAI', price: 1, contractAddress: null },
+  { assetId: 'nep141:wrap.near', decimals: 24, blockchain: 'near', symbol: 'wNEAR', price: 3, contractAddress: 'wrap.near' },
+  { assetId: 'nep141:sui.omft.near', decimals: 9, blockchain: 'sui', symbol: 'SUI', price: 2, contractAddress: null },
+  { assetId: 'nep141:monad.omft.near', decimals: 18, blockchain: 'monad', symbol: 'MON', price: 1, contractAddress: null },
+  { assetId: 'nep245:v2_1.omni.hot.tg:1117_', decimals: 9, blockchain: 'ton', symbol: 'GRAM', price: 1, contractAddress: null },
+  {
+    assetId: 'nep245:v2_1.omni.hot.tg:1117_3tsdfyziyc7EJbP2aULWSKU4toBaAcN4FdTgfm5W1mC4ouR',
+    decimals: 6,
+    blockchain: 'ton',
+    symbol: 'USDT',
+    price: 1,
+    contractAddress: 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs'
+  },
+  {
+    assetId: 'nep141:sui-c1b81ecaf27933252d31a963bc5e9458f13c18ce.omft.near',
+    decimals: 6,
+    blockchain: 'sui',
+    symbol: 'USDC',
+    price: 1,
+    contractAddress: '0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC'
+  },
+  { assetId: 'nep141:cardano.omft.near', decimals: 6, blockchain: 'cardano', symbol: 'ADA', price: 0.15, contractAddress: null },
   { assetId: NEAR_BCH, decimals: 8, blockchain: 'bch', symbol: 'BCH', price: 207, contractAddress: null }
 ]
 const usdc = TOKENS[0]
@@ -63,6 +85,24 @@ test('1Click rows become picker assets with findNearToken-compatible identifiers
   assert.equal(nearAssetIdentifier(TOKENS[8]), 'SOL.kV-gtSOLb-5EBsGgVTubrd7ShJgE89k6nC2bnLzqGCjXb2ejrhtdBK')
   assert.equal(nearAssetIdentifier(TOKENS[10]), undefined, 'XRP is not a mapped wallet chain')
   assert.equal(nearAssetIdentifier({ ...TOKENS[4], symbol: 'BTC(OMNI)', assetId: '1cs_v1:btc:native:coin' }), undefined)
+  assert.equal(nearAssetIdentifier(TOKENS[11]), 'GNO.xDAI')
+  assert.equal(nearAssetIdentifier(TOKENS[12]), 'NEAR.wNEAR-wrap.near')
+  assert.equal(nearAssetIdentifier(TOKENS[13]), 'SUI.SUI')
+  assert.equal(nearAssetIdentifier(TOKENS[14]), 'MONAD.MON')
+  // 1Click calls Toncoin GRAM; the picker and wallets use the SDK's TON.
+  assert.equal(nearAssetIdentifier(TOKENS[15]), 'TON.TON')
+  assert.equal(findNearToken(TOKENS, 'TON.TON')?.assetId, TOKENS[15].assetId)
+  // Jetton masters and Sui coin types keep their catalog case, which the wallet sends with.
+  assert.equal(nearAssetIdentifier(TOKENS[16]), 'TON.USDT-EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs')
+  assert.equal(findNearToken(TOKENS, 'TON.USDT-EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs')?.decimals, 6)
+  assert.equal(nearAssetIdentifier(TOKENS[17]), 'SUI.USDC-0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC')
+  assert.equal(findNearToken(TOKENS, 'SUI.USDC-0xdba34672e30cb065b1f93e3ab55318768fd6fef66c15942c9f7cb846e2f900e7::usdc::USDC')?.decimals, 6)
+  assert.equal(nearAssetIdentifier(TOKENS[18]), 'ADA.ADA')
+  const ton = assetsFromNearTokens(TOKENS).filter(a => a.chain === Chain.Ton)
+  assert.deepEqual(ton.map(a => [a.ticker, a.address, a.logoURI]), [
+    ['TON', undefined, '/networks/ton.svg'],
+    ['USDT', 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs', '/tokens/usdt.svg']
+  ])
 
   const assets = assetsFromNearTokens(TOKENS)
   assert.ok(assets.every(a => a.providers.length === 1 && a.providers[0] === ProviderName.NEAR), 'NEAR-only stamp; never THORCHAIN')
@@ -77,6 +117,9 @@ test('1Click rows become picker assets with findNearToken-compatible identifiers
   assert.equal(arbEth?.address, undefined, 'native gas has no contract')
   assert.equal(findNearToken(TOKENS, arbEth.identifier)?.blockchain, 'arb')
   assert.equal(assets.some(a => a.identifier === 'XRP.XRP'), false)
+  assert.equal(assets.find(a => a.identifier === 'GNO.xDAI')?.chain, 'GNO')
+  assert.equal(assets.find(a => a.identifier === 'NEAR.wNEAR-wrap.near')?.address, 'wrap.near')
+  assert.equal(findNearToken(TOKENS, 'NEAR.wNEAR-wrap.near')?.assetId, 'nep141:wrap.near')
   assert.equal(isAssetInMode(solUsdc, false), BridgeConfig.nearIntents)
   assert.equal(isAssetInMode(solUsdc, true), false, 'NEAR-only tokens stay off the private tab')
   assert.equal(isNearOnlyAsset(solUsdc), true)

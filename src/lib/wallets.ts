@@ -14,6 +14,9 @@ import { okxWallet } from '@tcswap/wallets/okx'
 import { phantomWallet } from '@tcswap/wallets/phantom'
 import { trezorWallet } from '@tcswap/wallets/trezor'
 import { tronlinkWallet } from '@/lib/tronlink'
+import { ETERNL, eternlWallet, LACE, laceWallet, YOROI, yoroiWallet } from '@/lib/cardano-wallet'
+import { SLUSH, slushWallet } from '@/lib/sui-wallet'
+import { TONCONNECT, tonconnectWallet } from '@/lib/ton-wallet'
 import { vultisigWallet } from '@tcswap/wallets/vultisig'
 import { preloadWalletconnect, walletconnectWallet } from '@tcswap/wallets/walletconnect'
 export { isWalletconnectDismissed, onWalletconnectDisconnect } from '@tcswap/wallets/walletconnect'
@@ -32,18 +35,24 @@ const defaultPlugins = {
   ...ShapeShiftPlugin
 }
 
+// Sui, TON and Cardano have no browser-wallet connector in the SDK; ours send the NEAR Intents deposit.
 const defaultWallets = {
   ...braveWallet,
+  ...eternlWallet,
   ...evmWallet,
   ...exodusWallet,
   ...keplrWallet,
+  ...laceWallet,
   ...ledgerWallet,
   ...okxWallet,
   ...phantomWallet,
+  ...slushWallet,
+  ...tonconnectWallet,
   ...trezorWallet,
   ...tronlinkWallet,
   ...vultisigWallet,
-  ...walletconnectWallet
+  ...walletconnectWallet,
+  ...yoroiWallet
 }
 
 function createUSwap(config: Parameters<typeof USwap>[0] = {}) {
@@ -165,6 +174,17 @@ export async function connectWallet(option: WalletOption, chains: Chain[], confi
       return connectEach(c => uSwap.connectLedger(c, config?.derivationPath))
     case WalletOption.TREZOR:
       return connectEach(c => uSwap.connectTrezor(c, config?.derivationPath))
+    // `restoreOnly`: a restore on page load reconnects a granted session without a prompt or the TON Connect modal.
+    case SLUSH:
+      return uSwap.connectSlush(chains, { restoreOnly: config?.restoreOnly })
+    case TONCONNECT:
+      return uSwap.connectTonConnect(chains, { restoreOnly: config?.restoreOnly })
+    case LACE:
+      return uSwap.connectLace(chains, { restoreOnly: config?.restoreOnly })
+    case ETERNL:
+      return uSwap.connectEternl(chains, { restoreOnly: config?.restoreOnly })
+    case YOROI:
+      return uSwap.connectYoroi(chains, { restoreOnly: config?.restoreOnly })
     default: {
       throw new Error(`Unsupported wallet option: ${option}`)
     }
@@ -275,6 +295,9 @@ export function watchEvmAccounts(option: WalletOption, onChange: (addresses: str
   return () => provider.removeListener?.('accountsChanged', listener)
 }
 
+// Restored from a stored session or an earlier grant only: on page load these never show a QR code or a prompt.
+export const RESTORE_ONLY = new Set<WalletOption>([WalletOption.WALLETCONNECT, SLUSH, TONCONNECT, LACE, ETERNL, YOROI])
+
 export async function getAccounts(
   option: WalletOption,
   chains: Chain[],
@@ -364,5 +387,10 @@ export const supportedChains = {
   [WalletOption.TRUSTWALLET_WEB]: evmWallet.connectEVMWallet.supportedChains,
   [WalletOption.VULTISIG]: vultisigWallet.connectVultisig.supportedChains,
   [WalletOption.WALLETCONNECT]: walletconnectWallet.connectWalletconnect.supportedChains,
-  [WalletOption.WALLET_SELECTOR]: [Chain.Near]
+  [WalletOption.WALLET_SELECTOR]: [Chain.Near],
+  [SLUSH]: slushWallet.connectSlush.supportedChains,
+  [TONCONNECT]: tonconnectWallet.connectTonConnect.supportedChains,
+  [LACE]: laceWallet.connectLace.supportedChains,
+  [ETERNL]: eternlWallet.connectEternl.supportedChains,
+  [YOROI]: yoroiWallet.connectYoroi.supportedChains
 } satisfies Partial<Record<WalletOption, Chain[]>>

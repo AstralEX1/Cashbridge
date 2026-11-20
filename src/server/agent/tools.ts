@@ -312,9 +312,9 @@ const listSupportedAssets = async (args: Args) => {
       to_bch: 'Any other_side asset to BCH.BCH or to a bch_side token.',
       from_bch: 'BCH.BCH or a bch_side token to any other_side asset. Token sales prepare through the Cashbridge Router when it admits them.',
       near_intents:
-        'Between BCH.BCH and assets on ADA, ARB, AURORA, AVAX, BASE, BERA, BSC, BTC, DASH, DOGE, ETH, GNO, LTC, MONAD, NEAR, OP, POL, SOL, SUI, TON, TRON, XLAYER and ZEC, both ways, NEAR Intents is quoted too; name them the same way (CHAIN.SYMBOL-CONTRACT). Free pairs between two of these chains are quoted on NEAR Intents too. CashToken purchases and sales can use NEAR when the Router admits them.',
+        'Between BCH.BCH and assets on ADA, ARB, AVAX, BASE, BERA, BSC, BTC, DASH, DOGE, ETH, GNO, LTC, MONAD, NEAR, OP, POL, SOL, SUI, TON, TRON, XLAYER and ZEC, both ways, NEAR Intents is quoted too; name them the same way (CHAIN.SYMBOL-CONTRACT). Free pairs between two of these chains are quoted on NEAR Intents too. CashToken purchases and sales can use NEAR when the Router admits them.',
       shapeshift:
-        'Any-network free pairs (two other_side assets) quote ShapeShift beside THORChain when ShapeShift maps both (including GNO, MAYA, MEGAETH, MONAD, NEAR, SUI and TON). Plain BCH pairs, and the BCH leg of CashToken purchases and sales through the Router, are quoted the same way when the asset maps.',
+        'Any-network free pairs (two other_side assets) quote ShapeShift beside THORChain when ShapeShift maps both. Plain BCH pairs, and the BCH leg of CashToken purchases and sales through the Router, are quoted the same way when the asset maps.',
       free_pairs: 'Two THORChain assets with no BCH side (for example ETH.ETH to BTC.BTC) use Any-network Manual: THORChain, NEAR Intents and ShapeShift.'
     }
   }

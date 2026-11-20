@@ -209,7 +209,16 @@ test('a NEAR Intents deposit address is noted once, before the source hash, only
   const off = open(false)
   const contract = open(true, true)
   const on = open(true)
+  const ton = open(true)
+  const sui = open(true)
   try {
+    const tonDeposit = 'UQAF3sHqUwTUNyUlpfRdETvCSiOq8DKLZZ5w07JUAEx83XCi'
+    assert.equal((await attachSource(request(ton.cap, { nearDepositAddress: tonDeposit }), ton.id, ton.service)).status, 200)
+    assert.equal(ton.store.get(ton.id).nearDepositAddress, tonDeposit)
+    const suiDigest = 'Ckj3Fbk3Yw4V3bBYRdVr1ZtLUfiQbyPjSU4XaDbswDtV'
+    const suiDeposit = `0x${'1f'.repeat(32)}`
+    assert.equal((await attachSource(request(sui.cap, { nearDepositAddress: suiDeposit, sourceHash: suiDigest }), sui.id, sui.service)).status, 200)
+    assert.equal(sui.store.get(sui.id).sourceHash, suiDigest)
     assert.equal((await attachSource(request(off.cap, { nearDepositAddress: near }), off.id, off.service)).status, 400)
     const onContract = await attachSource(request(contract.cap, { nearDepositAddress: near }), contract.id, contract.service)
     assert.equal(onContract.status, 200)
@@ -237,5 +246,7 @@ test('a NEAR Intents deposit address is noted once, before the source hash, only
     off.store.close()
     contract.store.close()
     on.store.close()
+    ton.store.close()
+    sui.store.close()
   }
 })

@@ -1,4 +1,4 @@
-import { Chain, getChainConfig, ProviderName } from '@tcswap/helpers'
+import { AssetValue, Chain, getChainConfig, ProviderName } from '@tcswap/helpers'
 import type { QuoteResponseRoute } from '@tcswap/helpers/api'
 import type { Asset } from '@/components/swap/asset'
 import { nearIntentsApiUrl } from '@/config'
@@ -40,11 +40,13 @@ export const REVERSE_DEADLINE_MS = 4 * 60 * 60_000
 // The form's slippage is a percentage; 1Click takes basis points.
 export const nearSlippageBps = (slippage?: number) => Math.round((slippage ?? 1) * 100)
 
-// THORChain-style chain prefix to 1Click's `blockchain`. Only chains the SDK names, that have a network icon,
-// and whose deposit is a plain transfer (XRP and Stellar need a memo/tag the wallet send does not carry).
+// THORChain-style chain prefix to 1Click's `blockchain`. Only chains a connectable wallet can send from (both bridge
+// modes sign in the source wallet) and whose deposit is a plain transfer (XRP and Stellar need a memo/tag the wallet
+// send does not carry). Sui, TON and Cardano send through src/lib/sui-wallet.ts, ton-wallet.ts and cardano-wallet.ts.
 const CHAINS: Record<string, string> = {
   ADA: 'cardano',
   ARB: 'arb',
+  AURORA: 'aurora',
   AVAX: 'avax',
   BASE: 'base',
   BCH: 'bch',
@@ -72,6 +74,7 @@ export const isNearChain = (chain?: string) => !!chain && chain.toUpperCase() in
 // 1Click `blockchain` → the Chain enum wallets and the picker already use.
 const BLOCKCHAIN_TO_CHAIN: Record<string, Chain> = {
   arb: Chain.Arbitrum,
+  aurora: Chain.Aurora,
   avax: Chain.Avalanche,
   base: Chain.Base,
   bch: Chain.BitcoinCash,
@@ -96,6 +99,9 @@ const BLOCKCHAIN_TO_CHAIN: Record<string, Chain> = {
   zec: Chain.Zcash
 }
 
+// Picker / wallet UI: every mapped chain must have `public/networks/{chain.toLowerCase()}.svg`.
+export const nearMappedChains = (): Chain[] => [...new Set(Object.values(BLOCKCHAIN_TO_CHAIN))]
+
 const chainPrefix = (blockchain: string) => Object.entries(CHAINS).find(([, value]) => value === blockchain)?.[0]
 
 // Contract as 1Click ships it. `null`/`undefined` = chain native; a blank string is malformed (not a native).
@@ -107,11 +113,18 @@ const catalogContract = (token: OneClickToken): string | undefined | false => {
   return trimmed || false
 }
 
-// Account names, base58/base64 contracts and Sui type paths must keep catalog casing for wallet send.
-const isCaseSensitiveChain = (blockchain?: string) =>
-  blockchain === 'sol' || blockchain === 'tron' || blockchain === 'near' || blockchain === 'sui' || blockchain === 'ton' || blockchain === 'cardano'
-const isCaseSensitiveAssetChain = (chain: Chain) =>
-  chain === Chain.Solana || chain === Chain.Tron || chain === Chain.Near || chain === Chain.Sui || chain === Chain.Ton || chain === Chain.Cardano
+// Base58 mints, NEAR account names, Sui coin types (`0x…::usdc::USDC`) and TON jetton masters (base64url) must keep
+// catalog casing for wallet send.
+const CASE_SENSITIVE: Record<string, Chain> = { near: Chain.Near, sol: Chain.Solana, sui: Chain.Sui, ton: Chain.Ton, tron: Chain.Tron }
+const isCaseSensitiveChain = (blockchain?: string) => !!blockchain && blockchain in CASE_SENSITIVE
+const isCaseSensitiveAssetChain = (chain: Chain) => Object.values(CASE_SENSITIVE).includes(chain)
+
+// 1Click lists Toncoin as GRAM; the picker, wallets and balances call it TON like the SDK does.
+const NATIVE_ALIASES: Record<string, Record<string, string>> = { ton: { GRAM: 'TON' } }
+const nativeTicker = (token: OneClickToken) => {
+  const symbol = token.symbol.trim()
+  return NATIVE_ALIASES[token.blockchain]?.[symbol.toUpperCase()] ?? symbol
+}
 
 // Skip retired rows, unmapped chains, and rows the wallet send cannot fund or identify.
 const isSelectableNearToken = (token: OneClickToken) =>
@@ -133,7 +146,7 @@ export const nearAssetIdentifier = (token: OneClickToken): string | undefined =>
   const prefix = chainPrefix(token.blockchain)!
   const contract = catalogContract(token)
   if (contract === false) return undefined
-  if (!contract) return `${prefix}.${token.symbol.trim()}`
+  if (!contract) return `${prefix}.${nativeTicker(token)}`
   const encoded = isCaseSensitiveChain(token.blockchain) ? contract : contract.toUpperCase()
   return `${prefix}.${token.symbol.trim()}-${encoded}`
 }
@@ -145,6 +158,8 @@ const nearAssetKey = (chain: Chain, identifier: string) =>
 // Picker rows for 1Click tokens on chains Cashbridge already maps. Tagged NEAR only — never THORCHAIN —
 // so a Midgard-missing asset cannot be deposited into an unsupported THORChain vault by provider stamp.
 // Malformed / duplicate catalog rows are dropped (first valid wins; Solana/TRON duplicates are exact-contract).
+const STABLE_MARKS: Record<string, string> = { USDC: '/tokens/usdc.svg', USDT: '/tokens/usdt.svg' }
+
 export const assetsFromNearTokens = (tokens: OneClickToken[]): Asset[] => {
   const assets = new Map<string, Asset>()
   if (!Array.isArray(tokens)) return []
@@ -156,15 +171,15 @@ export const assetsFromNearTokens = (tokens: OneClickToken[]): Asset[] => {
     if (assets.has(key)) continue
     const contract = catalogContract(token)
     if (contract === false) continue
-    const ticker = token.symbol.trim()
+    const ticker = contract ? token.symbol.trim() : nativeTicker(token)
     assets.set(key, {
       address: contract || undefined,
       chain,
       chainId: getChainConfig(chain).chainId,
       decimals: token.decimals,
       identifier,
-      // Natives reuse the network mark; contract tokens get no logoURI (1Click ships none).
-      logoURI: contract ? undefined : `/networks/${chain.toLowerCase()}.svg`,
+      // 1Click ships no logos: natives reuse the network mark, dollar stables the plain coin marks.
+      logoURI: contract ? STABLE_MARKS[ticker.toUpperCase()] : `/networks/${chain.toLowerCase()}.svg`,
       name: ticker,
       providers: [ProviderName.NEAR],
       ticker
@@ -172,6 +187,20 @@ export const assetsFromNearTokens = (tokens: OneClickToken[]): Asset[] => {
   }
   return Array.from(assets.values())
 }
+
+// The picker rows on one chain: what a NEAR-only wallet (Sui, TON, Cardano) reads balances for.
+export const nearCatalogAssets = async (chain: Chain) => assetsFromNearTokens(await getNearTokens()).filter(asset => asset.chain === chain)
+
+// The row a wallet sends for an SDK asset. The SDK case-folds some contracts (TON jettons), so the catalog's exact
+// contract and decimals are looked up here.
+export const nearCatalogAsset = async (chain: Chain, asset: { isGasAsset: boolean; address?: string }) => {
+  const matches = (await nearCatalogAssets(chain)).filter(row => (asset.isGasAsset ? !row.address : !!asset.address && row.address?.toLowerCase() === asset.address.toLowerCase()))
+  if (matches.length !== 1) throw new Error(`${asset.address ?? `${chain} native coin`} is not in the NEAR Intents catalog`)
+  return matches[0]
+}
+
+export const catalogBalance = (asset: Asset, baseUnits: bigint | string) =>
+  new AssetValue({ identifier: asset.identifier, decimal: asset.decimals, value: formatBaseUnits(baseUnits, asset.decimals) })
 
 // Same-chain map entry that overlaps this NEAR row: exact Solana/TRON mint first, else one unambiguous
 // all-uppercase aggregator mint (THOR). Mixed-case catalog rows that differ only by case stay distinct.
@@ -225,13 +254,14 @@ const PLACEHOLDERS: Record<string, string> = {
   bch: 'bitcoincash:qq9nq4t6nlzwjr3ntp7693lvzym9hq99egut9wk68z',
   btc: '122ALQhLw63cHbrSnTG9uuUao8SNd3S7K2',
   cardano: 'addr1v8wfpcg4qfhmnzprzysj6j9c53u5j56j8rvhyjp08s53s6g07rfjm',
-  dash: 'XqHqWkZHbjDZ5Vu6Dsi4iQLsHWiS9W6wua',
+  dash: 'XjszN1jZJthEoaQDhGthRkaHL9AqaG3Vzw',
   doge: 'D6AFsfdzEVwtpc33X3FiTfeBgGAfvE3dfi',
   ltc: 'LLF7bd1B1kHfYQYbxbFTBvYM1LoegXHn7P',
-  near: 'wrap.near',
+  // An implicit account; 1Click refuses a contract account such as wrap.near as the refund address.
+  near: '8f6d7d8ca2f2b1f6c4bb1c5c2f0e8a1f0e9c3f6a5d4b3c2a1f0e9d8c7b6a5f40',
   sol: '13QkxhNMrTPxoCkRdYdJ65tFuwXPhL5gLS2Z5Nr6gjRK',
   sui: '0x0000000000000000000000000000000000000000000000000000000000000002',
-  ton: 'EQAWzEKcdnykvXfUNouqdS62tvrp32bCxuKS6eQrS6ISgcLo',
+  ton: 'UQAWzEKcdnykvXfUNouqdS62tvrp32bCxuKS6eQrS6ISgZ8t',
   tron: 'TAzNLU555pAZSmv5NiusS4AihvBgpMwbKY',
   zec: 't1JtmLk7UuQqCtEuLit5H3iaW3ndTNGTjVH',
   evm: '0x2527D02599Ba641c19FEa793cD0F167589a0f10D'
@@ -371,7 +401,7 @@ export const findNearToken = (list: OneClickToken[], identifier: string) => {
     return withContract.find(t => upper.endsWith(`-${t.contractAddress!.toUpperCase()}`))
   }
   const ticker = rest.toUpperCase()
-  return sameChain.find(t => !t.contractAddress && t.symbol.toUpperCase() === ticker)
+  return sameChain.find(t => !t.contractAddress && nativeTicker(t).toUpperCase() === ticker)
 }
 
 export interface NearQuoteRequest {

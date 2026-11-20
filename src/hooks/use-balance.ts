@@ -142,6 +142,11 @@ export const useBalance = (): UseBalance => {
             return estimateTransactionFee({ assetValue: value })
           } else if (assetFrom.chain === Chain.Tron) {
             return new USwapNumber(1)
+          } else if (assetFrom.chain === Chain.Sui || assetFrom.chain === Chain.Ton) {
+            return new USwapNumber(0.01)
+          } else if (assetFrom.chain === Chain.Cardano) {
+            // The fee (~0.2 ADA) plus a change output, which must hold at least the ledger's minimum UTXO (~1 ADA).
+            return new USwapNumber(1.5)
           }
         } catch (e) {
           console.log({ e })

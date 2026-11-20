@@ -7,6 +7,7 @@ import { useQuote } from '@/hooks/use-quote'
 import { useAssetFrom, useAssetTo } from '@/hooks/use-swap'
 import { getDexScreenerTokens, getMayaMidgardCacaoPrice, getMayaMidgardPools, getMidgardPools, getMidgardRunePrice } from '@/lib/api'
 import { isDollarStable } from '@/lib/dollar-stable'
+import { findNearToken, getNearTokens } from '@/lib/near-intents'
 import { isHoudiniProvider } from '@/lib/swap-helpers'
 import { getThorNetwork, getThorPools, torPoolPrices } from '@/lib/thorchain-api'
 
@@ -152,6 +153,17 @@ export const useRates = (identifiers: string[], provider?: ProviderName): { rate
     retry: false
   })
 
+  // 1Click prices every token it lists: the only price here for chains with no pool or DexScreener lookup
+  // (TON, Sui, Cardano, Gnosis, …).
+  const { data: nearTokens } = useQuery({
+    queryKey: ['near-intents-tokens'],
+    queryFn: getNearTokens,
+    staleTime: 3 * 60_000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    retry: false
+  })
+
   const rates: AssetRateMap = {}
   const logos: AssetLogoMap = {}
   const pooled = new Set<string>()
@@ -198,6 +210,13 @@ export const useRates = (identifiers: string[], provider?: ProviderName): { rate
       if (info?.price && !rates[id]) rates[id] = new USwapNumber(info.price)
       if (info?.logo) logos[id] = info.logo
     })
+  }
+
+  if (nearTokens) {
+    for (const id of identifiers) {
+      const price = rates[id] ? undefined : findNearToken(nearTokens, id)?.price
+      if (price && price > 0) rates[id] = new USwapNumber(price)
+    }
   }
 
   // Dollar stables with a THORChain or Maya pool (USDC, USDT, …) are always $1, even when the pool price drifts. A wallet

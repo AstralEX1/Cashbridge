@@ -39,6 +39,8 @@ export const preloadWalletConnect = () => {}
 export const isWalletconnectDismissed = error => String(error?.message).startsWith('wallet_walletconnect_modal_closed')
 export const onWalletconnectDisconnect = listener => { controls.walletconnectDisconnect = listener }
 export const RESTORE_CHECKED = new Set([WalletOption.METAMASK, WalletOption.RABBY])
+export const RESTORE_ONLY = new Set([WalletOption.WALLETCONNECT])
+export const isTonConnectDismissed = () => false
 export const watchEvmAccounts = (provider, listener) => {
   controls.evmListeners.set(provider, listener)
   return () => controls.evmListeners.delete(provider)
