@@ -48,6 +48,7 @@ const aggregator = request => {
 
 const realFetch = globalThis.fetch
 const routerSeen = []
+const ordersById = new Map()
 let routerOrder = order => order
 const router = createServer((req, res) => {
   let body = ''
@@ -60,11 +61,20 @@ const router = createServer((req, res) => {
       const contract = { routerKey, refundAfter: 1_900_000_000 }
       const terms = { ...contract, recipientScript: recipient.lockingBytecode, refundScript: recipient.lockingBytecode, category: input.category ?? BridgeConfig.pusd.category, minPusd: '123' }
       const order = { apiVersion: 2, ...input, contract, depositAddress: orderBinding(terms, 0).cashAddress, minPusd: '123', maxWaitSeconds: 1800, state: 'awaiting_deposit', receivedSats: '0', attempts: [] }
+      const published = routerOrder(order)
+      ordersById.set(published.id, published)
       res.statusCode = 201
-      return res.end(JSON.stringify(routerOrder(order)))
+      return res.end(JSON.stringify(published))
     }
     const id = req.url.split('/')[2]
-    res.end(JSON.stringify({ apiVersion: 2, id, recipientAddress: recipient.tokenAddress, refundAddress: recipient.tokenAddress, expectedBchSats: '5000000', depositAddress: recipient.cashAddress, minPusd: '123', state: 'ready', receivedSats: '5000000', attempts: [], ...(body && JSON.parse(body)) }))
+    const existing = ordersById.get(id)
+    const patch = body ? JSON.parse(body) : {}
+    if (existing) {
+      const updated = { ...existing, ...patch, ...(req.method === 'POST' && patch.sourceHash && { state: 'ready', receivedSats: existing.expectedBchSats }) }
+      ordersById.set(id, updated)
+      return res.end(JSON.stringify(updated))
+    }
+    res.end(JSON.stringify({ apiVersion: 2, id, recipientAddress: recipient.tokenAddress, refundAddress: recipient.tokenAddress, expectedBchSats: '5000000', depositAddress: recipient.cashAddress, minPusd: '123', state: 'ready', receivedSats: '5000000', attempts: [], ...patch }))
   })
 })
 
@@ -99,6 +109,24 @@ before(async () => {
     if (url.startsWith('https://gateway.liquify.com/chain/thorchain_api/thorchain/pool/')) return Response.json({ asset: decodeURIComponent(url.split('/').pop()), decimals: 6 })
     if (url.endsWith('/thorchain/inbound_addresses'))
       return Response.json([{ chain: 'BASE', address: VAULT, router: ROUTER, halted: false }, { chain: 'BCH', address: recipient.cashAddress, halted: false }])
+    if (url.startsWith('https://api.shapeshift.com/v1/swap/rates'))
+      return Response.json({
+        rates: [{ swapperName: 'TestSwapper', buyAmountCryptoBaseUnit: '7000000', sellAmountCryptoBaseUnit: '25000000', estimatedExecutionTimeMs: 120000, supportsExternalPayment: true }]
+      })
+    if (url === 'https://api.shapeshift.com/v1/swap/quote') {
+      const body = JSON.parse(init.body)
+      return Response.json({
+        quoteId: 'ss-quote-1',
+        swapperName: 'TestSwapper',
+        sellAmountCryptoBaseUnit: body.sellAmountCryptoBaseUnit,
+        buyAmountAfterFeesCryptoBaseUnit: '7000000',
+        depositAddress: '0x5555555555555555555555555555555555555555',
+        expiresAt: Date.parse('2030-01-01T01:00:00.000Z'),
+        steps: [{ estimatedExecutionTimeMs: 120000 }]
+      })
+    }
+    if (url.startsWith('https://api.shapeshift.com/v1/swap/status'))
+      return Response.json({ quoteId: 'ss-quote-1', status: 'pending' })
     throw new Error(`Unexpected fetch ${url}`)
   }
   ;({ mcpPost, mcpGet } = await import('../src/server/agent/mcp.ts'))
@@ -151,7 +179,7 @@ test('each client gets 60 requests per window, then 429 with Retry-After', async
 test('bad arguments come back as tool errors the agent can read', async () => {
   let result = await call('get_bridge_quote', { from_asset: 'BCH.BCH', to_asset: 'PUSD', amount: '1' })
   assert.equal(result.isError, true)
-  assert.match(result.content[0].text, /One side must be BCH.BCH/)
+  assert.match(result.content[0].text, /one side must be BCH\.BCH/i)
   result = await call('get_bridge_quote', { from_asset: USDC, to_asset: 'BCH.BCH', amount: '-3' })
   assert.match(result.content[0].text, /positive decimal/)
   result = await call('prepare_bridge', { from_asset: USDC, to_asset: 'PUSD', amount: '25', source_address: SOURCE, destination_address: recipient.cashAddress })
@@ -231,8 +259,15 @@ test('a CashToken goes through a Router order whose deposit is its contract', as
 test('plain BCH compares THORChain with NEAR Intents, and a NEAR deposit is a plain transfer', async () => {
   const quote = await call('get_bridge_quote', { from_asset: USDC, to_asset: 'BCH.BCH', amount: '25' })
   assert.equal(quote.isError, undefined, quote.content[0].text)
-  assert.deepEqual(quote.structuredContent.routes.map(r => [r.route, r.expected_output]), [['thorchain', '0.05'], ['near_intents', '0.06']])
-  assert.equal(quote.structuredContent.best, 'near_intents')
+  assert.deepEqual(
+    quote.structuredContent.routes.map(r => [r.route, r.expected_output]),
+    [
+      ['thorchain', '0.05'],
+      ['near_intents', '0.06'],
+      ['shapeshift', '0.07']
+    ]
+  )
+  assert.equal(quote.structuredContent.best, 'shapeshift')
 
   nearQuotes.length = 0
   const result = await call('prepare_bridge', { from_asset: USDC, to_asset: 'BCH.BCH', amount: '25', source_address: SOURCE, destination_address: recipient.tokenAddress, route: 'near_intents' })
@@ -249,14 +284,27 @@ test('plain BCH compares THORChain with NEAR Intents, and a NEAR deposit is a pl
   assert.equal(args.amount, 25_000_000n)
   assert.equal(data.near_quote.signature, 'ed25519:sig')
 
+  nearQuotes.length = 0
+  routerSeen.length = 0
   const token = await call('prepare_bridge', { from_asset: USDC, to_asset: 'PUSD', amount: '25', source_address: SOURCE, destination_address: recipient.tokenAddress, route: 'near_intents' })
-  assert.match(token.content[0].text, /plain BCH only/)
+  assert.equal(token.isError, undefined, token.content[0].text)
+  assert.match(token.structuredContent.route, /NEAR Intents/)
+  assert.equal(token.structuredContent.order.near_deposit_address, NEAR_DEPOSIT)
+  assert.equal(nearQuotes.at(-1).recipient, token.structuredContent.order.deposit_address)
+  assert.ok(routerSeen.some(r => r.body?.nearDepositAddress === NEAR_DEPOSIT))
 })
 
 test('selling plain BCH compares both routes too, and a NEAR deposit out of BCH is checked before it is handed out', async () => {
   const quote = await call('get_bridge_quote', { from_asset: 'BCH.BCH', to_asset: USDC, amount: '0.1' })
   assert.equal(quote.isError, undefined, quote.content[0].text)
-  assert.deepEqual(quote.structuredContent.routes.map(r => [r.route, r.expected_output]), [['thorchain', '20'], ['near_intents', '6']])
+  assert.deepEqual(
+    quote.structuredContent.routes.map(r => [r.route, r.expected_output]),
+    [
+      ['thorchain', '20'],
+      ['near_intents', '6'],
+      ['shapeshift', '7']
+    ]
+  )
   assert.equal(quote.structuredContent.best, 'thorchain')
 
   nearQuotes.length = 0
@@ -278,4 +326,31 @@ test('selling plain BCH compares both routes too, and a NEAR deposit out of BCH 
   } finally {
     nearBchDeposit = NEAR_BCH_DEPOSIT
   }
+})
+
+test('ShapeShift prepares a plain deposit-address transfer', async () => {
+  const result = await call('prepare_bridge', {
+    from_asset: USDC,
+    to_asset: 'BCH.BCH',
+    amount: '25',
+    source_address: SOURCE,
+    destination_address: recipient.cashAddress,
+    route: 'shapeshift'
+  })
+  assert.equal(result.isError, undefined, result.content[0].text)
+  const data = result.structuredContent
+  assert.equal(data.route, 'ShapeShift')
+  assert.equal(data.deposit.deposit_address, '0x5555555555555555555555555555555555555555')
+  assert.equal(data.shapeshift.quote_id, 'ss-quote-1')
+  assert.equal(data.transactions[0].step, 'transfer')
+  const status = await call('get_bridge_status', { shapeshift_quote_id: 'ss-quote-1' })
+  assert.equal(status.structuredContent.status, 'pending')
+})
+
+test('an Any-network free pair quotes THORChain and ShapeShift', async () => {
+  const quote = await call('get_bridge_quote', { from_asset: 'ETH.ETH', to_asset: 'BTC.BTC', amount: '1' })
+  assert.equal(quote.isError, undefined, quote.content[0].text)
+  assert.equal(quote.structuredContent.mode, 'any_network')
+  assert.ok(quote.structuredContent.routes.some(r => r.route === 'thorchain'))
+  assert.ok(quote.structuredContent.routes.some(r => r.route === 'shapeshift'))
 })

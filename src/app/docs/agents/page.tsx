@@ -65,11 +65,11 @@ export default function Page() {
       <h2 id="flow">A transfer, step by step</h2>
       <Steps>
         <Step title="Quote">
-          <code>get_bridge_quote</code> returns what the user would receive. To or from plain BCH it compares THORChain with NEAR Intents. Into a CashToken it prices THORChain then Cauldron through the Cashbridge Router.
+          <code>get_bridge_quote</code> returns what the user would receive. To or from plain BCH it compares THORChain, NEAR Intents and ShapeShift when available. Into a CashToken it prices Router settlement (THORChain and NEAR when admitted). Any-network free pairs compare THORChain with ShapeShift. CashToken sales are priced too.
         </Step>
         <Step title="Ask the user">Show amounts, route and destination; continue only when the user agrees.</Step>
         <Step title="Prepare">
-          <code>prepare_bridge</code> returns unsigned EVM transactions (approval + deposit) or deposit instructions (THORChain vault + memo, or a NEAR Intents deposit address). For a CashToken it opens a Cashbridge Router order and returns id + order token. It never signs or broadcasts.
+          <code>prepare_bridge</code> returns unsigned EVM transactions (approval + deposit) or deposit instructions (THORChain vault + memo, NEAR Intents or ShapeShift deposit address). For a CashToken purchase or sale it opens a Cashbridge Router order and returns id + order token. It never signs or broadcasts.
         </Step>
         <Step title="Sign and send">The user signs in their own wallet.</Step>
         <Step title="Track">
@@ -96,13 +96,16 @@ export default function Page() {
         </li>
         <li>One JSON-RPC message per request; batches are not accepted.</li>
         <li>
-          <strong>Sale prepare</strong> (CashToken back from BCH) is unsupported on MCP; use the site. The quote tool can still price it.
+          <strong>CashToken sales</strong> prepare through the Cashbridge Router when it admits sale orders (<code>route: thorchain</code>). The response may include an unsigned BCH token-send when UTXOs are visible, otherwise deposit instructions.
         </li>
         <li>
-          <strong>NEAR → CashToken:</strong> NEAR Intents pays plain BCH only. Preparing a CashToken receive uses the Router on THORChain, not <code>route: near_intents</code>.
+          <strong>NEAR → CashToken:</strong> use <code>route: near_intents</code> when the Router admits NEAR orders; 1Click still pays the order address in plain BCH, then the Router buys the token. Otherwise use <code>route: thorchain</code>.
         </li>
         <li>
-          Cash Bridge charges no fee of its own. Networks, THORChain, NEAR Intents and Cauldron still charge — <Link href="/docs/fees">Fees and limits</Link>.
+          <strong>ShapeShift</strong> is available on plain BCH pairs when both assets map, and on Any-network free pairs beside THORChain. Track with <code>shapeshift_quote_id</code>.
+        </li>
+        <li>
+          Cash Bridge charges no fee of its own. Networks, THORChain, NEAR Intents, ShapeShift and Cauldron still charge — <Link href="/docs/fees">Fees and limits</Link>.
         </li>
       </ul>
 

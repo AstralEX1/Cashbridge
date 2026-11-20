@@ -14,7 +14,7 @@ const MAX_BODY_BYTES = 16 * 1024
 
 export const SERVER_INFO = { name: 'cash-bridge', title: 'Cash Bridge', version: '1.0.0', websiteUrl: AppConfig.baseUrl }
 
-const INSTRUCTIONS = `Cash Bridge moves assets from other chains to Bitcoin Cash and its CashTokens (PUSD and other Cauldron tokens), and from BCH back. THORChain does the cross-chain swap; for a CashToken the Cashbridge Router buys it on Cauldron. Flow: list_supported_assets, get_bridge_quote, show the quote to the user, prepare_bridge, let the user sign in their own wallet, then report_source_transaction (Router orders) and get_bridge_status. This server holds no keys and never signs or sends; it returns unsigned transactions or deposit instructions. Quotes expire within minutes. Confirm every address with the user. Cash Bridge charges no fee of its own. Docs: ${AppConfig.baseUrl}/docs/agents`
+const INSTRUCTIONS = `Cash Bridge moves assets from other chains to Bitcoin Cash and its CashTokens (PUSD and other Cauldron tokens), and from BCH back. Routes: THORChain, NEAR Intents and ShapeShift where available; CashTokens settle through the Cashbridge Router (purchase either way, sale when admitted). Any-network free pairs (two non-BCH assets) quote THORChain and ShapeShift. Flow: list_supported_assets, get_bridge_quote, show the quote to the user, prepare_bridge with the chosen route, let the user sign in their own wallet, then report_source_transaction and get_bridge_status. This server holds no keys and never signs or sends; it returns unsigned transactions or deposit instructions. Quotes expire within minutes. Confirm every address with the user. Cash Bridge charges no fee of its own. Docs: ${AppConfig.baseUrl}/docs/agents`
 
 export const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -26,7 +26,7 @@ export const CORS_HEADERS = {
 export const serverCard = () => ({
   protocolVersion: PROTOCOL_VERSIONS[0],
   serverInfo: SERVER_INFO,
-  description: 'Quotes and prepares non-custodial transfers to and from Bitcoin Cash and CashTokens (THORChain, Cauldron, Cashbridge Router). Never signs.',
+  description: 'Quotes and prepares non-custodial transfers to and from Bitcoin Cash and CashTokens (THORChain, NEAR Intents, ShapeShift, Cauldron, Cashbridge Router). Never signs.',
   documentationUrl: `${AppConfig.baseUrl}/docs/agents`,
   transport: { type: 'streamable-http', endpoint: `${AppConfig.baseUrl}/mcp` },
   authentication: { required: false },
