@@ -12,6 +12,21 @@ AI agents use the MCP server at `https://www.cashbridge.space/mcp`: list assets,
 
 Forked from the [swap.thorchain.org](https://github.com/thorchain/swap.thorchain) interface.
 
+## Strengths
+
+- With the Cashbridge Router you sign once, in the source wallet, whichever of THORChain, NEAR Intents and ShapeShift carries the BCH. The Router buys the token on Cauldron and pays it out. An ERC-20 token sent through THORChain may need an approval first.
+- Bridging back takes one signature as well: your BCH wallet sends the token to a sale contract, and the Router sells it and deposits the BCH to the bridge.
+- THORChain, NEAR Intents and ShapeShift are quoted side by side, each with what it would deliver and how long it takes. The form picks the one that delivers the most, and you can pick another.
+- The Router finishes the transfer after you close the tab. Until then the BCH waits in a contract made for that order, which can only pay out the token or give the BCH back.
+- You can receive without connecting a wallet: paste a token-aware `bitcoincash:z…` address for PUSD, or the payout address on the other chain when you bridge back.
+- PUSD, MUSD, plain BCH and any other token with a Cauldron pool.
+- USDC and USDT on the EVM chains, Solana, TRON, TON, Sui and NEAR, among more than 20 source chains.
+- WizardConnect and WalletConnect on Bitcoin Cash. On the other chains, WalletConnect and browser, mobile and hardware wallets, Ledger and Trezor included.
+- Cash Bridge charges no fee of its own. Network, bridge and pool fees are shown before you sign.
+- The scanner finds a wallet's transfers from any device and links every transaction.
+- The interface comes in 24 languages, and AI agents can quote and prepare transfers over MCP.
+- Real transfers on mainnet, each step linked to a public explorer. See [Proof on mainnet](#proof-on-mainnet).
+
 ## How Cash Bridge meets the bounty
 
 Cash Bridge is an entry for the BCH BLAZE 2026 [Stablecoin Bridge bounty](https://bchblaze.cash/bounties/stablecoin-bridge/). The same list, with links into the app, is at [/docs/bounty](https://www.cashbridge.space/docs/bounty).
