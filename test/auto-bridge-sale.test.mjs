@@ -81,6 +81,7 @@ const network = () => {
     nearStatus: async address => state.near?.(address),
     observe: async id => ({ seen: txs.has(id), confirmations: confirmations.get(id) ?? 0 }),
     inbound: async () => state.inbounds,
+    mimir: async () => state.mimir ?? {},
     broadcast: async attempt => {
       if (txs.has(attempt.txid)) return
       const transaction = decodeTx(attempt.hex)
@@ -191,13 +192,15 @@ test('a THORChain refund paid straight to the customer ends the order', async ()
   }
 })
 
-test('tokens split over two coins, a moved vault, a lapsed quote or a missed deadline send the tokens back as they came', async () => {
-  for (const scenario of ['two coins', 'vault moved', 'quote lapsed', 'late']) {
+test('tokens split over two coins, a moved vault, a THORChain payout halt, a lapsed quote or a missed deadline send the tokens back as they came', async () => {
+  for (const scenario of ['two coins', 'vault moved', 'payouts halted', 'quote lapsed', 'late']) {
     const { store, net, run, tokens, get } = setup()
     try {
       if (scenario === 'two coins') (tokens(60n), tokens(40n))
       else tokens()
       if (scenario === 'vault moved') net.state.inbounds[0].address = customer.cashAddress
+      // inbound_addresses still says trading is open; only mimir shows the destination chain's signing halt.
+      if (scenario === 'payouts halted') net.state.mimir = { HALTSIGNINGETH: 1 }
       if (scenario === 'late') {
         // No sale meets the floor before the deadline, which starts when the tokens are seen.
         await run(2_000_000, async () => { throw new Error('no pool fills it') })

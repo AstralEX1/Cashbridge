@@ -258,6 +258,13 @@ export class BchGateway implements Gateway {
     if (!Array.isArray(inbounds)) throw new Error('THORChain inbound addresses unavailable')
     return inbounds
   }
+  async mimir(): Promise<Record<string, number>> {
+    const base = this.thornode.toString().replace(/\/?$/, '/')
+    const response = await fetch(new URL('thorchain/mimir', base), { signal: AbortSignal.timeout(15000), cache: 'no-store' })
+    const mimir = response.ok ? await response.json() : undefined
+    if (!mimir || typeof mimir !== 'object' || Array.isArray(mimir)) throw new Error('THORChain mimir unavailable')
+    return mimir
+  }
   async nearStatus(depositAddress: string): Promise<NearStatusResponse | undefined> {
     const response = await fetch(`${ONE_CLICK_URL}/status?depositAddress=${encodeURIComponent(depositAddress)}`, {
       headers: nearAuthHeaders(),

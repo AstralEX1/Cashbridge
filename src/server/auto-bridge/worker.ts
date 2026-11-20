@@ -3,7 +3,7 @@ import type { TxStatusResponse } from '@/lib/api'
 import { addressToLockingBytecode, checkOutbound, checkPayment, decodeTx, isTxid, normalizeTxid, opReturnText, txidOf, type VerifiedOutput } from '@/lib/bch'
 import { inboundMatchesBinding, interpretTxStatus } from '@/lib/bridge'
 import { BroadcastRejected, buildTokenTrade, type BuildIntent, type BuildResult } from '@/lib/cauldron'
-import { checkInbound, type InboundAddress } from '@/lib/thorchain-deposit'
+import { checkInbound, thorchainPayoutsHalted, type InboundAddress } from '@/lib/thorchain-deposit'
 import { interpretNearStatus, NEAR_BCH, type NearStatusResponse } from '@/lib/near-intents'
 import { SALE_ROUTE_DEPOSIT_MS, saleRouteProblem } from '@/server/auto-bridge/sale-route'
 import { OrderStore } from '@/server/auto-bridge/store'
@@ -22,6 +22,8 @@ export interface Gateway {
   broadcast(attempt: Attempt): Promise<void>
   // THORNode's inbound addresses; sale orders deposit only while their vault is current and trading is open.
   inbound?(): Promise<InboundAddress[]>
+  // THORNode's mimir; a sale deposit waits out a signing or outbound halt on either end.
+  mimir?(): Promise<Record<string, number>>
   // 1Click's status of a NEAR Intents deposit address; undefined when 1Click does not know it.
   nearStatus?(depositAddress: string): Promise<NearStatusResponse | undefined>
 }
@@ -625,19 +627,21 @@ async function contractCoins(gateway: Gateway, order: Order): Promise<SaleCoin[]
   return coins
 }
 
-// The fee rate for the deposit while THORChain takes BCH at the order's vault and pays the asked chain, or while a
-// routed sale's NEAR Intents address still waits for it with time to count it; else undefined.
 // How long a sale's THORChain memo, quoted when the order opened, may still be deposited.
 export const THORCHAIN_QUOTE_MS = 10 * 60_000
 
+// The fee rate for the deposit while THORChain takes BCH at the order's vault and pays the asked chain, or while a
+// routed sale's NEAR Intents address still waits for it with time to count it; else undefined.
 async function depositFeeRate(gateway: Gateway, order: Order, now: number) {
   if (order.sale!.route) {
     const status = await gateway.nearStatus?.(order.sale!.vaultAddress).catch(() => undefined)
     return saleRouteProblem(status, order.sale!, { refundScript: order.refundScript, minSats: BigInt(order.minPusd) }, now + SALE_ROUTE_DEPOSIT_MS) ? undefined : 1n
   }
   try {
-    const inbounds = await gateway.inbound?.()
-    return inbounds ? checkInbound(inbounds, order.sale!.vaultAddress, order.sale!.buyAsset.split('.')[0].toUpperCase()).feeRate : undefined
+    // inbound_addresses carries trading halts only; THORChain's docs also say not to send during a signing or outbound halt.
+    const [inbounds, mimir] = await Promise.all([gateway.inbound?.(), gateway.mimir?.()])
+    if (!inbounds || !mimir || thorchainPayoutsHalted(mimir, ['BCH.BCH', order.sale!.buyAsset])) return undefined
+    return checkInbound(inbounds, order.sale!.vaultAddress, order.sale!.buyAsset.split('.')[0].toUpperCase()).feeRate
   } catch {
     return undefined
   }

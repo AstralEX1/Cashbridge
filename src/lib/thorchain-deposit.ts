@@ -13,6 +13,16 @@ export const DEPOSIT_FEE_RESERVE = 1_000n
 // THORChain ignores a BCH deposit "equal to or below the dust threshold" (docs, vault behaviours); Bifrost skips only
 // below it, so a deposit must be above it to satisfy both.
 export const BCH_DUST_THRESHOLD = 10_000n
+
+// A signing or outbound halt leaves quotes and swaps running while THORChain holds every payout and refund on the chain;
+// its docs say interfaces must not let users send then. `assets` are the route's two ends (`BASE.USDC-0X..` -> BASE).
+export const thorchainPayoutsHalted = (mimir: Record<string, number>, assets: (string | undefined)[]) =>
+  mimir['HALTSIGNING'] > 0 ||
+  mimir['HALTOUTBOUND'] > 0 ||
+  assets.some(asset => {
+    const chain = asset?.split(/[.~/-]/)[0].toUpperCase()
+    return !!chain && (mimir[`HALTSIGNING${chain}`] > 0 || mimir[`HALTOUTBOUND${chain}`] > 0)
+  })
 // BCH relays OP_RETURN data up to 223 bytes, but THORChain reads at most 80 bytes of memo.
 export const MAX_MEMO_BYTES = 80
 // Change below this is not worth an output; it goes to the miner.

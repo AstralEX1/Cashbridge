@@ -226,15 +226,7 @@ export const assetSourceChain = (asset: Asset): string => {
 
 type Mimir = Record<string, number>
 
-// A signing or outbound halt leaves quotes and swaps running while THORChain holds every payout and refund on the chain;
-// its docs say interfaces must not let users send then. `assets` are the route's two ends (`BASE.USDC-0X..` -> BASE).
-export const thorchainPayoutsHalted = (mimir: Mimir, assets: (string | undefined)[]) =>
-  mimir['HALTSIGNING'] > 0 ||
-  mimir['HALTOUTBOUND'] > 0 ||
-  assets.some(asset => {
-    const chain = asset?.split(/[.~/-]/)[0].toUpperCase()
-    return !!chain && (mimir[`HALTSIGNING${chain}`] > 0 || mimir[`HALTOUTBOUND${chain}`] > 0)
-  })
+export { thorchainPayoutsHalted } from '@/lib/thorchain-deposit'
 
 const isChainHalted = (mimir: Mimir, chain: string) => mimir['HALTTRADING'] > 0 || mimir[`HALT${chain}TRADING`] > 0 || mimir[`HALT${chain}CHAIN`] > 0
 
