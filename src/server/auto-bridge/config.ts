@@ -50,6 +50,8 @@ export function loadConfig() {
     saleOrders: process.env.AUTO_BRIDGE_SALE_ORDERS !== 'false',
     nearOrders: process.env.AUTO_BRIDGE_NEAR_ORDERS !== 'false',
     // Sales through a NEAR Intents or ShapeShift deposit address (router-sale-exact.cash for ShapeShift's exact amount).
-    saleRoutes: process.env.AUTO_BRIDGE_SALE_ROUTES !== 'false'
+    saleRoutes: process.env.AUTO_BRIDGE_SALE_ROUTES !== 'false',
+    // New forward contract orders use contracts/router-order-v2.cash; =false keeps version 1.
+    orderV2: process.env.AUTO_BRIDGE_ORDER_V2 !== 'false'
   }
 }

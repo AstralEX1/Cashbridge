@@ -35,14 +35,15 @@ import {
 import { BCH_DUST_THRESHOLD } from '@/lib/thorchain-deposit'
 import { orderCategory, type Attempt, type Order, type SaleCoin } from '@/server/auto-bridge/types'
 
-type ContractOrder = Pick<Order, 'contract' | 'recipientScript' | 'refundScript' | 'minPusd' | 'category'>
-const termsOf = (order: ContractOrder, routerKey: string): OrderTerms => ({
+type ContractOrder = Pick<Order, 'contract' | 'recipientScript' | 'refundScript' | 'minPusd' | 'category' | 'expectedBchSats'>
+export const termsOf = (order: ContractOrder, routerKey: string): OrderTerms => ({
   routerKey,
   recipientScript: order.recipientScript,
   refundScript: order.refundScript,
   category: orderCategory(order),
   minPusd: order.minPusd,
-  refundAfter: order.contract!.refundAfter
+  refundAfter: order.contract!.refundAfter,
+  ...(order.contract!.version === 2 && { version: 2 as const, pageKey: order.contract!.pageKey ?? routerKey, quotedSats: order.expectedBchSats })
 })
 
 type SaleOrder = Pick<Order, 'contract' | 'refundScript' | 'minPusd' | 'sale'>
@@ -61,6 +62,7 @@ export const orderUnlockBytes = (order: Order) =>
   order.sale
     ? saleUnlock(saleTermsOf(order, order.binding.pubkey), 'sell', new Uint8Array(65)).length + 2
     : order.contract ? orderUnlock(termsOf(order, order.binding.pubkey), 'convert', new Uint8Array(65)).length + 2 : undefined
+
 
 // What a token output needs to relay, with room for its larger size.
 const TOKEN_DUST = 800n

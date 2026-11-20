@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, existsSync, readFileSync, openSync, writeSync, fs
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { addressToLockingBytecode, decodeTx } from '@/lib/bch'
-import { binToHex, utf8ToBin } from '@bitauth/libauth'
+import { binToHex, hexToBin, secp256k1, utf8ToBin } from '@bitauth/libauth'
 import { MAX_MEMO_BYTES } from '@/lib/thorchain-deposit'
 import { REFUND_AFTER_SECONDS, SALE_EXACT_RESERVE } from '@/lib/router-contract'
 import { sourceTransactionId } from '@/lib/source-transaction'
@@ -46,7 +46,9 @@ export class OrderStore {
     // Orders may take their first leg through NEAR Intents (api.ts attachSource).
     readonly nearOrders = false,
     // Sales may pay a NEAR Intents or ShapeShift deposit address instead of THORChain's vault.
-    readonly saleRoutes = false
+    readonly saleRoutes = false,
+    // Forward contract orders use contracts/router-order-v2.cash (the page's key, a coin's share of the minimum).
+    private readonly orderV2 = false
   ) {
     this.wallet = new PublicWallet(xpub)
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
@@ -182,6 +184,8 @@ export class OrderStore {
     positiveAmount(intent.expectedBchSats)
     positiveAmount(minPusd)
     if (intent.category !== undefined && !/^[0-9a-f]{64}$/.test(intent.category)) throw new OrderError(400, 'Invalid token category')
+    if (intent.pageKey !== undefined && (intent.sale || !/^0[23][0-9a-f]{64}$/.test(intent.pageKey) || !secp256k1.validatePublicKey(hexToBin(intent.pageKey))))
+      throw new OrderError(400, 'Invalid page key')
     const recipientScript = addressToLockingBytecode(intent.recipientAddress)
     const refundScript = addressToLockingBytecode(intent.refundAddress)
     if (!recipientScript || !refundScript) throw new OrderError(400, 'Valid mainnet BCH recipient and fallback addresses are required')
@@ -234,7 +238,12 @@ export class OrderStore {
         throw new OrderError(503, 'Bridge capacity reached')
       const { next } = this.db.prepare('SELECT COALESCE(MAX(address_index), -1) + 1 AS next FROM orders').get() as { next: number }
       // A contract order's deposit commits to its payout terms; anyone may send it back after REFUND_AFTER_SECONDS.
-      const contract = this.contractOrders || intent.sale ? { refundAfter: Math.floor(now / 1000) + REFUND_AFTER_SECONDS } : undefined
+      const refundAfter = Math.floor(now / 1000) + REFUND_AFTER_SECONDS
+      const contract = intent.sale
+        ? { refundAfter }
+        : this.contractOrders
+          ? this.orderV2 ? { refundAfter, version: 2 as const, ...(intent.pageKey && { pageKey: intent.pageKey }) } : { refundAfter }
+          : undefined
       const binding = this.wallet.deposit({ ...intent, addressIndex: next, contract, recipientScript, refundScript, minPusd })
       if ([recipientScript, refundScript].some(script => script === binding.lockingBytecode || this.isDepositScript(script)))
         throw new OrderError(400, 'Recipient must be outside the deposit wallet')
@@ -426,7 +435,11 @@ export class OrderStore {
       ...(order.sale && { sale: order.sale }),
       source: order.source,
       depositAddress: order.binding.cashAddress,
-      contract: order.contract && { routerKey: order.binding.pubkey, refundAfter: order.contract.refundAfter },
+      contract: order.contract && {
+        routerKey: order.binding.pubkey,
+        refundAfter: order.contract.refundAfter,
+        ...(order.contract.version === 2 && { version: 2 as const, pageKey: order.contract.pageKey ?? order.binding.pubkey })
+      },
       minPusd: order.minPusd,
       maxWaitSeconds: Math.floor(order.maxWaitMs / 1000),
       state: order.state,

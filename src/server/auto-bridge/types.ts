@@ -39,8 +39,9 @@ export interface Order extends OrderIntent {
   lastCheckedAt?: number
   sourceRefunds?: SourceRefund[]
   observation?: { txid: string; seen: boolean; confirmations: number }
-  // Set when the deposit is the order's contract (src/lib/router-contract.ts) rather than a plain address.
-  contract?: { refundAfter: number }
+  // Set when the deposit is the order's contract (src/lib/router-contract.ts) rather than a plain address. Version 2
+  // forward orders also hold the page's key (the Router's own when absent).
+  contract?: { refundAfter: number; version?: 2; pageKey?: string }
 }
 export interface Attempt {
   txid: string

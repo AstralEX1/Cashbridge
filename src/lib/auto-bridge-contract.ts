@@ -42,6 +42,8 @@ export interface OrderIntent {
   category?: string
   source?: AutomaticSource
   sale?: SaleIntent
+  // The page's one-use public key (compressed, hex) for a forward order: its contract lets the page settle it too.
+  pageKey?: string
 }
 export interface Settlement {
   // A sale settles with its THORChain deposit, or a refund of the coins.
@@ -61,12 +63,22 @@ export interface SourceRefund {
   pending: boolean
   evidence: 'thorchain' | 'near_intents'
 }
+// A forward order's contract: version 2 (contracts/router-order-v2.cash) also names the page's key, and its minimum is
+// for `expectedBchSats`, so a coin under that buys its share.
+export interface OrderContract {
+  routerKey: string
+  refundAfter: number
+  version?: 2
+  pageKey?: string
+}
+// How a forward order's BCH reached it, for the scanner and the progress page.
+export type FirstLeg = 'thorchain' | 'near' | 'shapeshift'
 export interface PublicOrder extends OrderIntent {
   apiVersion?: 2
   id: string
   depositAddress: string
   // Present when the deposit is the order's contract: with the addresses and amounts above, it gives the address.
-  contract?: { routerKey: string; refundAfter: number }
+  contract?: OrderContract
   minPusd: string
   maxWaitSeconds: number
   state: OrderState

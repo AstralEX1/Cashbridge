@@ -86,6 +86,10 @@ export async function createOrder(req: NextRequest, service: Service) {
       refundAddress: input.refundAddress.trim(),
       expectedBchSats: positiveAmount(input.expectedBchSats)
     }
+    if (input.pageKey !== undefined) {
+      if (typeof input.pageKey !== 'string' || !/^0[23][0-9a-f]{64}$/.test(input.pageKey)) throw new OrderError(400, 'Invalid page key')
+      intent.pageKey = input.pageKey
+    }
     if (input.category !== undefined) {
       if (typeof input.category !== 'string' || !/^[0-9a-f]{64}$/.test(input.category)) throw new OrderError(400, 'Invalid token category')
       intent.category = input.category
