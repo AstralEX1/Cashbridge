@@ -71,9 +71,16 @@ export const prepareAutomatic = async ({
   const intent: OrderIntent = { recipientAddress: recipient, refundAddress: recipient, source, expectedBchSats: toBaseUnits(expectedBuyAmount, 8).toString() }
   // PUSD orders leave the category out, so a Router that only knows PUSD still accepts them.
   if (token.category !== BridgeConfig.pusd.category) intent.category = token.category
+  // An unpaid draft of the same transfer is reused while any bridge's swap still fits before its refund time.
   const reusable = autoBridgeStore
     .getState()
-    .orders.find(ref => !ref.sourceAttempted && sameIntent(ref.intent, intent) && (!ref.order || (ref.order.state === 'awaiting_deposit' && !ref.order.sourceHash && !ref.order.nearDepositAddress)))
+    .orders.find(
+      ref =>
+        !ref.sourceAttempted &&
+        sameIntent(ref.intent, intent) &&
+        (!ref.order ||
+          (ref.order.state === 'awaiting_deposit' && !ref.order.sourceHash && !ref.order.nearDepositAddress && nearPaysBeforeRefund(ref.order, Date.now() + FORWARD_DEADLINE_MS)))
+    )
 
   const openOrder = async (reuse?: SavedAutoOrder) => {
     const page = reuse ? undefined : newPageKey()
@@ -93,7 +100,7 @@ export const prepareAutomatic = async ({
     return { reference, order: created }
   }
 
-  let { reference: ref, order } = await openOrder(reusable)
+  const { reference: ref, order } = await openOrder(reusable)
   const validFor = (depositAddress: string, candidate?: QuoteResponseRoute): candidate is QuoteResponseRoute =>
     !!candidate &&
     isBridgeRoute(candidate, { sellAsset: source.asset, destinationAddress: depositAddress }) &&
@@ -130,11 +137,6 @@ export const prepareAutomatic = async ({
       const route = await quoteFor(current.depositAddress, now)
       const leg = route && (isNearRoute(route) ? nearLegOf(route) : isShapeShiftRoute(route) ? route.shapeshift.near : undefined)
       if (!route || !leg || !validFor(current.depositAddress, route)) return { status: 'unavailable' as const }
-      // NEAR's swap refunds at the deadline we asked for (1Click's `quote.deadline` is when the address goes inactive,
-      // days later). ShapeShift fixes a longer one; its swap is expected to fill in the same window, and a payout after
-      // the refund time can only go back to the recipient as BCH.
-      // A reused draft may be too close to refund for that window; caller opens a fresh order.
-      if (!nearPaysBeforeRefund(current, now + FORWARD_DEADLINE_MS)) return { status: 'deadline' as const }
       const depositAddress = leg.depositAddress
       // The Router learns the deposit address before Confirm, so it finds the payout even if this tab closes.
       const noted = await orderRequest(reference, 'POST', { nearDepositAddress: depositAddress, ...(leg.shapeshiftQuoteId && { shapeshiftQuoteId: leg.shapeshiftQuoteId }) })
@@ -143,12 +145,7 @@ export const prepareAutomatic = async ({
       return { status: 'ok' as const, order: noted, route }
     }
 
-    let result = await attachNear(ref, order)
-    // Stale unpaid draft: open a new Router order so the swap still fits before refundAfter.
-    if (result.status === 'deadline') {
-      ;({ reference: ref, order } = await openOrder())
-      result = await attachNear(ref, order)
-    }
+    const result = await attachNear(ref, order)
     if (result.status !== 'ok') throw new Error(messages.noRoute)
     return { reference: { ...ref, order: result.order }, route: result.route }
   }
