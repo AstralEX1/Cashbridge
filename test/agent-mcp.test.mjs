@@ -168,8 +168,8 @@ after(() => {
 })
 
 let client = 0
-const post = async (message, ip = `198.51.100.${++client}`) => {
-  const response = await mcpPost(new NextRequest('https://cashbridge.space/mcp', { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': ip }, body: typeof message === 'string' ? message : JSON.stringify(message) }))
+const post = async (message, ip = `198.51.100.${++client}`, headers = {}) => {
+  const response = await mcpPost(new NextRequest('https://cashbridge.space/mcp', { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': ip, ...headers }, body: typeof message === 'string' ? message : JSON.stringify(message) }))
   return { status: response.status, body: response.status === 202 ? undefined : await response.json(), headers: response.headers }
 }
 const call = async (name, args) => {
@@ -191,6 +191,18 @@ test('initialize negotiates a supported version and the tool list carries no han
   assert.equal((await post('{not json')).body.error.code, -32700)
   assert.equal((await post({ jsonrpc: '2.0', id: 4, method: 'resources/list' })).body.error.code, -32601)
   assert.equal((await post({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'sign_everything' } })).body.error.code, -32602)
+})
+
+test('Streamable HTTP rules: foreign Origin, unknown protocol version and a null id are refused', async () => {
+  const ping = { jsonrpc: '2.0', id: 1, method: 'ping' }
+  assert.equal((await post(ping, undefined, { origin: 'https://evil.example' })).status, 403)
+  assert.equal((await post(ping, undefined, { origin: 'https://cashbridge.space' })).status, 200)
+  assert.equal((await post(ping, undefined, { 'mcp-protocol-version': '2025-06-18' })).status, 200)
+  assert.equal((await post(ping, undefined, { 'mcp-protocol-version': '1999-01-01' })).status, 400)
+  const init = await post({ jsonrpc: '2.0', id: 2, method: 'initialize', params: { protocolVersion: '2025-03-26' } }, undefined, { 'mcp-protocol-version': '2025-03-26' })
+  assert.equal(init.body.result.protocolVersion, '2025-11-25', 'initialize still negotiates')
+  assert.equal((await post({ jsonrpc: '2.0', id: null, method: 'ping' })).status, 400)
+  assert.equal((await mcpGet(new NextRequest('https://cashbridge.space/mcp', { headers: { origin: 'https://evil.example' } }))).status, 403)
 })
 
 test('GET serves the server card, and an SSE request is refused', async () => {
