@@ -90,5 +90,5 @@ test('a forward route whose BCH cannot fund the token sale is not offered', () =
   assert.equal(fundsTokenSale({ expectedBuyAmount: '0.0000076' }), false)
   assert.equal(fundsTokenSale({ expectedBuyAmount: '0.02442631' }), true)
   assert.equal(fundsTokenSale(undefined), true)
-  assert.match(quoteSource, /shapeshift: shapeRoute\.status === 'fulfilled' && \(openNetworks \|\| reverse \|\| fundsTokenSale\(shapeRoute\.value\)\)/)
+  assert.match(quoteSource, /shapeshift:\s+shapeRoute\.status === 'fulfilled' && \(openNetworks \|\| reverse \|\| fundsTokenSale\(shapeRoute\.value\)\)/)
 })

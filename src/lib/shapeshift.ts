@@ -258,8 +258,8 @@ export const getShapeShiftQuote = async (req: ShapeShiftRateRequest & Partial<Pi
 // ShapeShift moves native BCH only through NEAR Intents, so a BCH quote's deposit address is a 1Click one. Its 1Click
 // status carries the signed quote, and the leg is checked there rather than trusted from ShapeShift: the payout goes
 // to `recipient`, a refund to `refundTo`, for exactly the quoted amount between the route's two assets. The result is
-// tracked like any NEAR Intents leg.
-export const shapeShiftNearLeg = async (route: ShapeShiftRoute, expect: { recipient: string; refundTo: string }): Promise<NearLeg> => {
+// tracked like any NEAR Intents leg, and timed by 1Click's estimate (ShapeShift reports a flat one for these swaps).
+export const shapeShiftNearLeg = async (route: ShapeShiftRoute, expect: { recipient: string; refundTo: string }): Promise<{ leg: NearLeg; seconds?: number }> => {
   const depositAddress = route.shapeshift.depositAddress
   if (!depositAddress) throw new Error('ShapeShift returned no deposit address')
   const [status, tokens] = await Promise.all([
@@ -293,7 +293,7 @@ export const shapeShiftNearLeg = async (route: ShapeShiftRoute, expect: { recipi
     same(request.refundTo, expect.refundTo) &&
     quote.amountIn === toBaseUnits(route.sellAmount, origin.decimals).toString()
   if (!ok) throw new Error('ShapeShift’s quote does not match this transfer')
-  return {
+  const leg: NearLeg = {
     depositAddress,
     correlationId: status.correlationId!,
     signature: status.quoteResponse!.signature!,
@@ -305,6 +305,7 @@ export const shapeShiftNearLeg = async (route: ShapeShiftRoute, expect: { recipi
     minAmountOut: quote!.minAmountOut!,
     shapeshiftQuoteId: route.shapeshift.quoteId
   }
+  return { leg, seconds: quote!.timeEstimate && quote!.timeEstimate > 0 ? quote!.timeEstimate : undefined }
 }
 
 // An executable ShapeShift quote for a BCH leg, with its 1Click swap checked: paying `destinationAddress` and refunding
@@ -315,8 +316,8 @@ export const getShapeShiftBridgeRoute = async (
 ): Promise<ShapeShiftRoute | undefined> => {
   const route = await getShapeShiftQuote(req, signal)
   if (!route) return undefined
-  const near = await shapeShiftNearLeg(route, { recipient: req.destinationAddress, refundTo: req.sourceAddress })
-  return { ...route, shapeshift: { ...route.shapeshift, near } }
+  const { leg, seconds } = await shapeShiftNearLeg(route, { recipient: req.destinationAddress, refundTo: req.sourceAddress })
+  return { ...route, ...(seconds && { estimatedTime: { total: seconds } }), shapeshift: { ...route.shapeshift, near: leg } }
 }
 
 export type ShapeShiftSwapStatus = 'pending' | 'submitted' | 'confirmed' | 'failed'

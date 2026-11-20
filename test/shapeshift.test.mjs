@@ -86,7 +86,7 @@ describe('getShapeShiftBridgeRoute', async () => {
             timestamp: '2030-01-01T00:00:00.000Z',
             signature: 'ed25519:s',
             quoteRequest: { swapType: 'EXACT_INPUT', originAsset: NEAR_USDC, destinationAsset: 'nep141:bch.omft.near', amount: asked.sellAmountCryptoBaseUnit, recipient: asked.receiveAddress, refundTo: asked.sendAddress, deadline: '2030-01-01T04:00:00.000Z' },
-            quote: { depositAddress: DEPOSIT, amountIn: asked.sellAmountCryptoBaseUnit, amountOut: '6000000', minAmountOut: '5900000', deadline: '2030-01-04T00:00:00.000Z' }
+            quote: { depositAddress: DEPOSIT, amountIn: asked.sellAmountCryptoBaseUnit, amountOut: '6000000', minAmountOut: '5900000', deadline: '2030-01-04T00:00:00.000Z', timeEstimate: 152 }
           }
         })
       )
@@ -110,6 +110,7 @@ describe('getShapeShiftBridgeRoute', async () => {
     assert.equal(route.shapeshift.near.amountIn, '25000000')
     assert.equal(route.shapeshift.near.deadline, '2030-01-01T04:00:00.000Z', 'the refund deadline, not when the address goes inactive')
     assert.equal(route.shapeshift.near.shapeshiftQuoteId, 'q-1')
+    assert.equal(route.estimatedTime.total, 152, '1Click times the swap, not ShapeShift’s flat estimate')
   })
 
   it('accepts the same token through another 1Click row', async () => {
@@ -139,5 +140,19 @@ describe('getShapeShiftBridgeRoute', async () => {
         /does not match/
       )
     }
+  })
+})
+
+describe('ShapeShift route times', async () => {
+  const { timedLikeNear } = await import('../src/hooks/use-quote.ts')
+
+  it('times a ShapeShift NEAR Intents rate like the NEAR route, and leaves other swappers alone', () => {
+    const near = { estimatedTime: { total: 152 } }
+    const viaNear = { estimatedTime: { total: 37 }, shapeshift: { swapper: 'NEAR Intents' } }
+    const viaOther = { estimatedTime: { total: 37 }, shapeshift: { swapper: 'Chainflip' } }
+    assert.equal(timedLikeNear(viaNear, near).estimatedTime.total, 152)
+    assert.equal(timedLikeNear(viaOther, near).estimatedTime.total, 37)
+    assert.equal(timedLikeNear(viaNear, undefined).estimatedTime.total, 37)
+    assert.equal(timedLikeNear(undefined, near), undefined)
   })
 })

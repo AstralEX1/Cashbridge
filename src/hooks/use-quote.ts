@@ -192,7 +192,10 @@ export const useQuote = (): UseQuote => {
         thorchain: thor.status === 'fulfilled' ? thor.value : undefined,
         near: nearRoute.status === 'fulfilled' ? nearRoute.value : undefined,
         // ShapeShift's rates carry no minimum: forward, BCH too little to fund the token sale is no route.
-        shapeshift: shapeRoute.status === 'fulfilled' && (openNetworks || reverse || fundsTokenSale(shapeRoute.value)) ? shapeRoute.value : undefined,
+        shapeshift:
+          shapeRoute.status === 'fulfilled' && (openNetworks || reverse || fundsTokenSale(shapeRoute.value))
+            ? timedLikeNear(shapeRoute.value, nearRoute.status === 'fulfilled' ? nearRoute.value : undefined)
+            : undefined,
         ...(thor.status === 'rejected' && isTradingHaltedError(resolveQuoteError(thor.reason).message ?? '') && { thorchainHalted: true })
       }
       if (!result.thorchain && !result.near && !result.shapeshift) throw thor.status === 'rejected' ? thor.reason : new Error('No route for this amount')
@@ -237,6 +240,10 @@ export const useQuote = (): UseQuote => {
     minimum: error instanceof BelowMinimumError ? error.minimum : undefined
   }
 }
+
+// ShapeShift's NEAR Intents rates carry a flat time; the same 1Click swap's own estimate is the NEAR route's.
+export const timedLikeNear = <T extends ShapeShiftRoute>(shape: T | undefined, near?: { estimatedTime?: QuoteResponseRoute['estimatedTime'] }) =>
+  shape && near?.estimatedTime && shape.shapeshift.swapper === 'NEAR Intents' ? { ...shape, estimatedTime: near.estimatedTime } : shape
 
 // Whether a forward first leg's BCH leaves anything to sell for the token after the second leg's reserve.
 export const fundsTokenSale = (route?: { expectedBuyAmount: string }) => !route || secondLegSellAmount(toBaseUnits(route.expectedBuyAmount, 8)) > 0n

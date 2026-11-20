@@ -321,7 +321,7 @@ export interface NearStatusResponse {
       amount?: string
       deadline?: string
     }
-    quote?: { depositAddress?: string; amountIn?: string; minAmountIn?: string; amountOut?: string; minAmountOut?: string; deadline?: string }
+    quote?: { depositAddress?: string; amountIn?: string; minAmountIn?: string; amountOut?: string; minAmountOut?: string; deadline?: string; timeEstimate?: number }
   }
   swapDetails?: {
     amountOut?: string
