@@ -16,7 +16,7 @@ export default function Page() {
       lead="The Cashbridge Router turns a two-signature transfer into one source signature. For contract orders, BCH lands in a per-order P2SH covenant that can only pay your token minimum or refund your BCH — the Router service chooses when to act, not where funds may go."
     >
       <Callout kind="warning" title="Contract orders vs Manual">
-        When the Cashbridge Router returns a contract order (<code>apiVersion=2</code>), the cross-chain bridge pays BCH to a purchase covenant built from your terms. The Router key for that order can spend it only to pay you at least the quoted minimum, or to send BCH to your fallback (≤ 2,000 sats miner fee). After <code>refundAfter</code> (about three hours from order creation; Bitcoin Cash median time runs about an hour behind wall clock) anyone may send it back on the same terms. Manual mode keeps every step in your wallets. Start with a small amount.
+        When the Cashbridge Router returns a contract order (<code>apiVersion=2</code>), the cross-chain bridge pays BCH to a purchase covenant built from your terms. The Router key for that order can spend it only to pay you at least the quoted minimum (a coin smaller than quoted, its share of that minimum), or to send BCH to your fallback (≤ 2,000 sats miner fee). After <code>refundAfter</code> (about three hours from order creation; Bitcoin Cash median time runs about an hour behind wall clock) anyone may send it back on the same terms. Manual mode keeps every step in your wallets. Start with a small amount.
       </Callout>
 
       <h2 id="what-it-does">What it does</h2>
