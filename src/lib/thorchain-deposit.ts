@@ -10,7 +10,8 @@ import { sameAddress } from '@/lib/payout-chains'
 
 // BCH kept back from a token sale's proceeds for the deposit's own miner fee.
 export const DEPOSIT_FEE_RESERVE = 1_000n
-// THORChain ignores BCH deposits below its dust threshold (inbound_addresses dust_threshold).
+// THORChain ignores a BCH deposit "equal to or below the dust threshold" (docs, vault behaviours); Bifrost skips only
+// below it, so a deposit must be above it to satisfy both.
 export const BCH_DUST_THRESHOLD = 10_000n
 // BCH relays OP_RETURN data up to 223 bytes, but THORChain reads at most 80 bytes of memo.
 export const MAX_MEMO_BYTES = 80
@@ -149,7 +150,7 @@ export const buildDeposit = (intent: DepositIntent): BuiltDeposit => {
       change = 0n
     }
   }
-  if (amount < BCH_DUST_THRESHOLD) throw new DepositError('The deposit is below THORChain’s BCH minimum')
+  if (amount <= BCH_DUST_THRESHOLD) throw new DepositError('The deposit is below THORChain’s BCH minimum')
   if (fee < 0n || amount + fee + change !== total) throw new DepositError('The BCH does not cover the deposit and its fee')
 
   const tx = assemble(amount, change)
@@ -177,7 +178,7 @@ export const maxBchDeposit = (funding: DepositIntent['funding'], lockingBytecode
 }
 
 export const pickBchFunding = (funding: DepositIntent['funding'], amountSats: bigint, lockingBytecode: string, vaultScript: string, feeRate: bigint) => {
-  if (amountSats < BCH_DUST_THRESHOLD) throw new DepositError('The deposit is below THORChain’s BCH minimum')
+  if (amountSats <= BCH_DUST_THRESHOLD) throw new DepositError('The deposit is below THORChain’s BCH minimum')
   const chosen: DepositIntent['funding'] = []
   let total = 0n
   for (const coin of [...funding].sort((a, b) => BigInt(a.value) > BigInt(b.value) ? -1 : BigInt(a.value) < BigInt(b.value) ? 1 : 0)) {

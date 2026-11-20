@@ -29,6 +29,7 @@ test('MAX and coin selection cover the actual deposit fee, including many small 
   assert.ok(picked.length > 101, 'fixed 2000-satoshi padding selected too few inputs')
   assert.equal(maxBchDeposit([], binding.lockingBytecode, vault, 1n), 0n)
   assert.throws(() => pickBchFunding(coins(1), 20000n, binding.lockingBytecode, vault, 1n))
+  assert.throws(() => pickBchFunding(coins(5), 10000n, binding.lockingBytecode, vault, 1n), /minimum/, 'THORChain ignores a deposit equal to its dust threshold')
 })
 
 test('MAX uses the vault output size and keeps the approved partial amount unchanged', () => {
