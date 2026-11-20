@@ -53,16 +53,16 @@ const INTEGRATIONS: { name: string; logo?: string; href: string; show?: boolean 
   { name: 'NEAR Intents', logo: '/providers/near.svg', href: 'https://near-intents.org', show: NEAR_INTENTS },
   { name: 'Cauldron', logo: '/providers/cauldron.png', href: 'https://cauldron.quest' },
   { name: 'WalletConnect', logo: '/wallets/walletconnect.svg', href: 'https://walletconnect.network' },
-  { name: 'WizardConnect', logo: '/integrations/wizardconnect.svg', href: 'https://docs.riftenlabs.com/wizardconnect/dapp' },
+  { name: 'WizardConnect', logo: '/integrations/wizardconnect.png', href: 'https://docs.riftenlabs.com/wizardconnect/dapp' },
   { name: 'Fulcrum', logo: '/integrations/fulcrum.svg', href: 'https://github.com/cculianu/Fulcrum' },
-  { name: 'Rostrum', logo: '/integrations/rostrum.svg', href: 'https://gitlab.com/bitcoinunlimited/rostrum' },
-  { name: 'BCMR', logo: '/integrations/bcmr.svg', href: 'https://cashtokens.org/docs/bcmr/chip' }
+  { name: 'Rostrum', logo: '/integrations/rostrum.png', href: 'https://gitlab.com/bitcoinunlimited/rostrum' },
+  { name: 'BCMR', logo: '/integrations/bcmr.png', href: 'https://cashtokens.org/docs/bcmr/chip' }
 ]
 
 const WALLETS: [string, string?][] = [
-  ['Selene', '/wallets/selene.svg'],
-  ['Paytaca', '/wallets/paytaca.svg'],
-  ['Cashonize', '/wallets/cashonize.svg'],
+  ['Selene', '/wallets/selene.png'],
+  ['Paytaca', '/wallets/paytaca.png'],
+  ['Cashonize', '/wallets/cashonize.png'],
   ['MetaMask', '/wallets/metamask.svg'],
   ['Rabby', '/wallets/rabby.svg'],
   ['Phantom', '/wallets/phantom.svg'],
@@ -257,8 +257,8 @@ export default function Page() {
             {INTEGRATIONS.filter(item => item.show !== false).map(item => (
               <li key={item.name}>
                 <a href={item.href} target="_blank" rel="noopener noreferrer">
-                  <span className="landing-mark" data-initial={item.name.slice(0, 1)}>
-                    {item.logo && <Logo src={item.logo} size={32} />}
+                  <span className="landing-mark" data-initial={item.logo ? undefined : item.name.slice(0, 1)}>
+                    {item.logo && <Logo src={item.logo} size={32} alt="" />}
                   </span>
                   {item.name}
                 </a>
@@ -268,8 +268,8 @@ export default function Page() {
           <Marquee label="Wallets" reverse>
             {WALLETS.map(([name, icon]) => (
               <li key={name} className="landing-wallet">
-                <span className="landing-mark" data-initial={name.slice(0, 1)}>
-                  {icon && <Logo src={icon} size={22} />}
+                <span className="landing-mark" data-initial={icon ? undefined : name.slice(0, 1)}>
+                  {icon && <Logo src={icon} size={22} alt="" />}
                 </span>
                 {name}
               </li>
