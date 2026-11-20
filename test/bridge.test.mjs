@@ -338,6 +338,7 @@ test('a hand-entered source hash must be a swap to BCH paying the bound address'
   assert.ok(!inboundMatchesBinding({ tx: { memo: `=:BCH.BCH:${otherBinding.cashAddress}:0` } }, binding.lockingBytecode))
   assert.ok(!inboundMatchesBinding({ tx: { memo: `=:ETH.ETH:0xabc:0` } }, binding.lockingBytecode))
   assert.ok(!inboundMatchesBinding({ tx: { memo: `+:BCH.BCH:${binding.cashAddress}` } }, binding.lockingBytecode))
+  for (const asset of ['BCH', 'C']) assert.ok(!inboundMatchesBinding({ tx: { memo: `=:${asset}:${binding.cashAddress}:0` } }, binding.lockingBytecode), `${asset} parses as a THOR-chain asset`)
 })
 
 // --- On-chain BCH receipt ----------------------------------------------------------------------

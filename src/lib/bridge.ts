@@ -118,7 +118,8 @@ export const inboundMatchesBinding = (status: TxStatusResponse, lockingBytecode:
 export const swapMemoPays = (memo: string, lockingBytecode: string) => {
   const [action, asset, ...rest] = memo.split(':')
   if (!['=', 's', 'swap'].includes((action ?? '').toLowerCase())) return false
-  if (!['BCH.BCH', 'BCH', 'C'].includes((asset ?? '').toUpperCase())) return false
+  // THORNode expands only the lowercase short code `c`; a bare `BCH` or `C` parses as a THOR-chain asset.
+  if ((asset ?? '').toUpperCase() !== 'BCH.BCH' && asset !== 'c') return false
   // The memo's field separator is also the cashaddr prefix separator, so rejoin a prefixed address.
   const destination = rest[0]?.toLowerCase() === 'bitcoincash' ? `${rest[0]}:${rest[1] ?? ''}` : rest[0]
   return addressPaysScript(destination ?? '', lockingBytecode)
