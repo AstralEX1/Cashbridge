@@ -6,7 +6,7 @@ import { isSameOrigin } from '@/lib/same-origin'
 // Same-origin proxy for BCMR / Cauldron token icons that live on IPFS. Browsers block
 // public gateways with Cross-Origin-Resource-Policy; serving the bytes from this host keeps
 // <img> loads working without relaxing CORP on a third-party gateway.
-const UPSTREAMS = ['https://ipfs.io/ipfs', 'https://cloudflare-ipfs.com/ipfs', 'https://ipfs.tapswap.cash/ipfs', 'https://gateway.pinata.cloud/ipfs']
+const UPSTREAMS = ['https://ipfs.tapswap.cash/ipfs', 'https://ipfs.io/ipfs', 'https://gateway.pinata.cloud/ipfs']
 const UPSTREAM_TIMEOUT_MS = 12_000
 const MAX_BYTES = 512 * 1024
 const ALLOWED_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml', 'image/avif'])
