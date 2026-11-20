@@ -41,7 +41,7 @@ export const RouterSelector = () => {
   return <Tooltip content={t(routerAvailable ? 'routerHint' : 'routerUnavailable')}>{selector}</Tooltip>
 }
 
-// Free pairs execute through THORChain; NEAR Intents retains the established BCH bridge flow.
+// Free pairs between two THORChain-listed assets, quoted on every route and signed in the source wallet.
 export const OpenNetworksToggle = () => {
   const t = useTranslations('automatic')
   const openNetworks = useSwapStore(state => state.openNetworks)
