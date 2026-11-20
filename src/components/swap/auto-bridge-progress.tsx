@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { AssetIcon } from '@/components/asset-icon'
 import { useDialog } from '@/components/global-dialog'
 import { BchMark, TokenMark } from '@/components/swap/bridge-marks'
+import { BridgeHero } from '@/components/bridge-hero/bridge-hero'
 import { SwapError } from '@/components/swap/swap-error'
 import { FlowToasts, type FlowToast } from '@/components/swap/flow-toasts'
 import {
@@ -363,6 +364,7 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
         secondBar={secondBar}
         details={details}
         actions={actions}
+        waitGame={<BridgeHero key={id} eligible={handsOff && !receipt && !order?.error} />}
         completion={receipt && order ? {
           received: { amount: receipt.amount, ticker: receipt.ticker, icon: receipt.refund ? <BchMark size={48} /> : <TokenMark token={token} size={48} /> },
           transactions: automaticTransactions(order),
