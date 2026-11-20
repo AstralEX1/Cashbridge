@@ -20,7 +20,7 @@ import { isBridgeRoute } from '@/lib/api'
 import { isNearRoute, nearLegOf, submitNearDeposit } from '@/lib/near-intents'
 import { isShapeShiftRoute } from '@/lib/shapeshift'
 import { addressPaysScript, type BchBinding } from '@/lib/bch'
-import { toBaseUnits } from '@/lib/bridge'
+import { quoteLapsed, toBaseUnits } from '@/lib/bridge'
 import { firstLegSeconds } from '@/lib/bridge-summary'
 import { useBchWallet } from '@/components/bch-wallet'
 import { BridgeBlocked, FirstLegRejected, startBridgeFirstLeg } from '@/components/swap/pusd-swap'
@@ -96,6 +96,12 @@ export const SwapDialog = ({ provider, quote: prepared, binding: destination, wa
     ) {
       setSubmitting(false)
       toast.error(t('toast.bridgeRouteMismatch'))
+      return
+    }
+    if (quoteLapsed(quote)) {
+      setSubmitting(false)
+      toast.error(tBridge('second.expired'))
+      onOpenChange(false)
       return
     }
 

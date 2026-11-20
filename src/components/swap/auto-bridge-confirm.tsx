@@ -21,7 +21,7 @@ import { useAssetFrom, useSwap } from '@/hooks/use-swap'
 import { useSwapRates } from '@/hooks/use-rates'
 import { AppConfig, BridgeConfig } from '@/config'
 import { bchAddressProblem } from '@/lib/bch'
-import { secondLegSellAmount, toBaseUnits } from '@/lib/bridge'
+import { quoteLapsed, secondLegSellAmount, toBaseUnits } from '@/lib/bridge'
 import { quoteToken } from '@/lib/cauldron'
 import { checkNewOrder } from '@/lib/auto-bridge-order'
 import { firstLegSeconds } from '@/lib/bridge-summary'
@@ -211,6 +211,7 @@ export const AutoBridgeDialog = ({ prepared, isOpen, onOpenChange }: Props) => {
     setBusy(true)
     setError(undefined)
     try {
+      if (quoteLapsed(route)) throw new Error(t('changed'))
       const latest = await orderRequest(reference, 'GET')
       if (latest.apiVersion !== 2 || latest.recoveryRequired) throw new Error(t('serviceUpdate'))
       if (latest.minPusd !== order.minPusd || latest.depositAddress !== order.depositAddress) throw new Error(t('changed'))

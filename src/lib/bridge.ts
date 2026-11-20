@@ -35,6 +35,10 @@ export const secondLegSellAmount = (totalSats: bigint, attempt = 0) => {
 
 export const minOutputFor = (quoted: bigint, slippageBps = BridgeConfig.pusdSlippageBps) => (quoted * BigInt(10_000 - slippageBps)) / 10_000n
 
+// A quote past its `expiration` (Unix seconds on THORChain, NEAR Intents and ShapeShift routes) may name a retired vault,
+// an outdated price limit or a closed deposit window, so Confirm prepares it again instead of signing it.
+export const quoteLapsed = (route: { expiration?: string }, now = Date.now()) => !!route.expiration && Number(route.expiration) * 1000 <= now
+
 // --- THORChain first leg -----------------------------------------------------------------------
 
 export type FirstLegView =

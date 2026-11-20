@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import { binToHex, decodeTransaction, encodeCashAddress, encodeTransaction, hash160, hexToBin } from '@bitauth/libauth'
 import { addressPaysScript, bchAddressProblem, bindingFromAddress, bindingFromPubkey, checkOutbound, decodeTx, isValidBinding, opReturnText, txidOf } from '../src/lib/bch.ts'
 import { bestTrade, CauldronError, checkPoolCovenants, checkSigned, fitSale, poolLockingBytecode, reviewBuild, sourcesOf, tradeTransaction } from '../src/lib/cauldron.ts'
-import { formatBaseUnits, inboundMatchesBinding, interpretMidgard, interpretTxStatus, minOutputFor, secondLegSellAmount, toBaseUnits } from '../src/lib/bridge.ts'
+import { formatBaseUnits, inboundMatchesBinding, interpretMidgard, interpretTxStatus, minOutputFor, quoteLapsed, secondLegSellAmount, toBaseUnits } from '../src/lib/bridge.ts'
 import { assertBridgeQuoteRequest, getQuotes, isBridgeRoute } from '../src/lib/api.ts'
 import { BelowMinimumError, minimumFromProviderErrors, resolveQuoteError } from '../src/lib/errors.ts'
 import { BridgeConfig } from '../src/config.ts'
@@ -211,6 +211,14 @@ test('second-leg reserve leaves room for fees and grows on retry', () => {
   assert.ok(secondLegSellAmount(total, 1) < secondLegSellAmount(total, 0))
   assert.equal(secondLegSellAmount(3_000n), 0n, 'too small to swap')
   assert.equal(minOutputFor(10_000n, 100), 9_900n)
+})
+
+test('a quote past its expiration is never signed', () => {
+  const now = 1_900_000_000_000
+  assert.equal(quoteLapsed({ expiration: '1900000001' }, now), false)
+  assert.equal(quoteLapsed({ expiration: '1900000000' }, now), true)
+  assert.equal(quoteLapsed({ expiration: '1899999000' }, now), true)
+  assert.equal(quoteLapsed({}, now), false, 'a route without an expiry is judged by its own checks')
 })
 
 // --- First-leg restrictions (crafted URLs / state / quotes) -------------------------------------
