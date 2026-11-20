@@ -290,7 +290,8 @@ export class WorkerWallet extends PublicWallet {
     const fee = size * (feeRate < 1n ? 1n : feeRate) > REFUND_FEE_CAP ? REFUND_FEE_CAP : size * (feeRate < 1n ? 1n : feeRate)
     if (fee < size) throw new Error('The deposit cannot pay its fee')
     tx.outputs[exact === undefined ? 0 : 2].valueSatoshis -= fee
-    if (tx.outputs[0].valueSatoshis < BCH_DUST_THRESHOLD) throw new Error('The deposit is below the bridge’s BCH minimum')
+    // THORChain ignores a deposit equal to or below its dust threshold.
+    if (tx.outputs[0].valueSatoshis <= BCH_DUST_THRESHOLD) throw new Error('The deposit is below the bridge’s BCH minimum')
     if (exact !== undefined && tx.outputs[2].valueSatoshis < 546n) throw new Error('The change back to the customer would be dust')
     const coin = { txid: sale.txid, vout, value: value.toString(), confirmations: 0, unspent: true }
     const sources = [{ lockingBytecode: hexToBin(order.binding.lockingBytecode), valueSatoshis: value }]
