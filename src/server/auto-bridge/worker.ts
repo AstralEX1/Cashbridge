@@ -10,6 +10,7 @@ import { OrderStore } from '@/server/auto-bridge/store'
 import { isTerminal, orderCategory, type Attempt, type Order, type SaleCoin } from '@/server/auto-bridge/types'
 import { orderMinimum, orderUnlockBytes, WorkerWallet } from '@/server/auto-bridge/wallet'
 import { sourceIdFromMemo, sourceTransactionId, sameSourceTransaction } from '@/lib/source-transaction'
+import { MIN_ORDER_COIN_SATS, settlingCoin } from '@/lib/router-contract'
 
 export interface Gateway {
   history(script: string): Promise<string[]>
@@ -164,6 +165,7 @@ export async function processOrder(
     }
     await observeDeposit(store, gateway, order, undefined, clock())
     order = store.get(order.id)!
+    if (order.contract && order.state !== 'manual_review') await returnLeftovers(gateway, signer, order)
     if (order.inboundHash) {
       const status = await gateway.thorStatus(order.inboundHash)
       if (status && sameSourceTransaction(status.tx?.id, order.inboundHash) && inboundMatchesBinding(status, order.binding.lockingBytecode)) {
@@ -331,15 +333,36 @@ async function contractFunding(gateway: Gateway, order: Order): Promise<Funding 
     const live = await gateway.coin(coin.txid, coin.vout)
     if (live && !live.output.token) received.push(coin)
   }
-  if (!received.length) return
+  // A stranger's coin or a second payout never blocks the swap or sends the order back; it goes back once it is done.
+  const coin = settlingCoin(received, order.expectedBchSats)
+  if (!coin) return
   // THORChain's outbound names its inbound in an OUT memo: the scanner's link and the later refund lookup.
   let inboundHash = order.inboundHash
-  const hex = !inboundHash && !order.nearDepositAddress ? await gateway.raw(received[0].txid) : undefined
+  const hex = !inboundHash && !order.nearDepositAddress ? await gateway.raw(coin.txid) : undefined
   for (const output of hex ? decodeTx(hex).outputs : []) {
     const memo = opReturnText(output.lockingBytecode)
     inboundHash ??= memo ? sourceIdFromMemo(memo) : undefined
   }
-  return { received, evidence: inboundHash ? { inboundHash } : {} }
+  return { received: [coin], evidence: inboundHash ? { inboundHash } : {} }
+}
+
+// A coin that reached a settled order's contract besides the one it settled (a bridge paying twice) goes back as BCH.
+// Anyone may send it back after the refund time; the Router does it now, and the contract pays it only to the customer.
+// shortcut: the give-back is not saved as an attempt, so the order page and the scanner do not list it; save it once
+// such coins show up in practice.
+async function returnLeftovers(gateway: Gateway, signer: WorkerWallet, order: Order) {
+  const left: VerifiedOutput[] = []
+  for (const coin of order.observedFunding ?? []) {
+    if (BigInt(coin.value) < MIN_ORDER_COIN_SATS || order.funding.some(f => f.txid === coin.txid && f.vout === coin.vout)) continue
+    const live = await gateway.coin(coin.txid, coin.vout)
+    if (live && !live.output.token) left.push(coin)
+  }
+  if (!left.length) return
+  try {
+    await gateway.broadcast(signer.signRefund({ ...order, funding: left }))
+  } catch (error) {
+    console.warn(`Order ${order.id.slice(0, 8)} leftover give-back failed: ${reasonOf(error)}`)
+  }
 }
 
 // A contract coin spent by a transaction the Router did not sign: the page's own settlement, or a refund anyone may

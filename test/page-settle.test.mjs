@@ -57,13 +57,24 @@ test('the page buys the token with the one coin at its contract, signed by its o
   assert.ok(transaction.outputs[own].token.amount >= 200n)
 })
 
-test('the page leaves the order alone without its key, without a coin, with two coins or once it is settled', async () => {
+test('the page settles the largest coin and ignores dust, so neither sends the order back', async () => {
+  let funded
+  const txid = await settleFromPage(order, page.secret, {
+    coinsOf: async () => ({ tip: 100, utxos: [coin(0, 600n), coin(1, 400000n), coin(2)] }),
+    trade: async intent => ((funded = intent.funding), trade(intent)),
+    send: async (_hex, id) => id
+  })
+  assert.ok(txid)
+  assert.deepEqual(funded.map(f => [f.vout, f.value]), [[2, '1000000']])
+  assert.equal(await settleFromPage(order, page.secret, { coinsOf: async () => ({ tip: 1, utxos: [coin(0, 999n)] }), trade: async () => assert.fail('dust is not traded') }), undefined)
+})
+
+test('the page leaves the order alone without its key, without a coin or once it is settled', async () => {
   const never = async () => assert.fail('no trade is built')
   assert.equal(pageCanSettle(order, newPageKey().secret), false)
   assert.equal(pageCanSettle({ ...order, contract: { routerKey: router.pubkey, refundAfter: contract.refundAfter } }, page.secret), false)
   assert.equal(pageCanSettle({ ...order, payoutTxid: 'ab'.repeat(32) }, page.secret), false)
   assert.equal(pageCanSettle({ ...order, state: 'completed' }, page.secret), false)
   assert.equal(await settleFromPage(order, page.secret, { coinsOf: async () => ({ tip: 1, utxos: [] }), trade: never }), undefined)
-  assert.equal(await settleFromPage(order, page.secret, { coinsOf: async () => ({ tip: 1, utxos: [coin(0), coin(1)] }), trade: never }), undefined)
   await assert.rejects(settleFromPage({ ...order, depositAddress: refund.cashAddress }, page.secret, { trade: never }), /not its contract/)
 })

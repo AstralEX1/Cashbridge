@@ -90,6 +90,16 @@ export const orderUnlock = (terms: OrderTerms, fn: ContractFunction, signature?:
     ...encodeDataPush(orderRedeemScript(terms))
   ])
 
+// A coin under this at an order's contract is dust; it is never settled or sent back.
+export const MIN_ORDER_COIN_SATS = 1000n
+// The coin a contract order settles: its largest coin of at least half the quoted BCH (the page and the Router pick the
+// same one). A bridge pays within its slippage, so a smaller coin is someone else's: it can neither settle the order nor
+// send it back, and goes back to the customer as BCH once the order is done.
+export const settlingCoin = <T extends { txid: string; vout: number; value: bigint | string }>(coins: T[], quotedSats: bigint | string) =>
+  coins
+    .filter(coin => BigInt(coin.value) >= MIN_ORDER_COIN_SATS && 2n * BigInt(coin.value) >= BigInt(quotedSats))
+    .sort((a, b) => (BigInt(a.value) === BigInt(b.value) ? `${a.txid}:${a.vout}`.localeCompare(`${b.txid}:${b.vout}`) : BigInt(a.value) > BigInt(b.value) ? -1 : 1))[0]
+
 // The least of the token a coin of `value` sats must buy: version 2 takes the coin's share of the minimum, capped at it.
 export const coinFloor = (terms: Pick<OrderTerms, 'version' | 'minPusd' | 'quotedSats'>, value: bigint) => {
   const min = BigInt(terms.minPusd)

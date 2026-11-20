@@ -63,7 +63,8 @@ const setup = ({ page = false, near = false, minPusd = '200', v1 = false } = {})
     spent = new Set(),
     observed = new Map(),
     asked = { thor: 0, near: 0 },
-    builds = []
+    builds = [],
+    sent = []
   const gateway = {
     history: async () => [...raw.keys()],
     raw: async id => raw.get(id),
@@ -84,7 +85,7 @@ const setup = ({ page = false, near = false, minPusd = '200', v1 = false } = {})
       return { status: 'PROCESSING', swapDetails: {}, quoteResponse: { quoteRequest: { recipient: order.binding.cashAddress, destinationAsset: 'nep141:bch.omft.near' }, quote: { depositAddress: `0x${'12'.repeat(20)}`, minAmountOut: '990000' } } }
     },
     observe: async id => observed.get(id) ?? { seen: false, confirmations: 0 },
-    broadcast: async attempt => observed.set(attempt.txid, { seen: true, confirmations: 0 })
+    broadcast: async attempt => (sent.push(attempt), observed.set(attempt.txid, { seen: true, confirmations: 0 }))
   }
   // The bridge's payout lands in the mempool.
   const land = (amount = 1000000n) => {
@@ -126,6 +127,7 @@ const setup = ({ page = false, near = false, minPusd = '200', v1 = false } = {})
       processOrder(store, gateway, signer, store.get(order.id), policy, async current => (builds.push(current.funding), tradeOf({ ...current, minPusd: current.minPusd })), () => at),
     get: () => store.get(order.id),
     coin: gateway.coin,
+    sent,
     attempts: () => store.attempts(order.id)
   }
 }
@@ -269,6 +271,36 @@ test('a version 2 order names the page key it was created with, and a malformed 
     } finally {
       plain.store.close()
     }
+  } finally {
+    env.store.close()
+  }
+})
+
+test("dust or a stranger's coin at the contract never blocks the swap or sends the order back; it goes back after", async () => {
+  const env = setup()
+  try {
+    env.land(700n)
+    const second = env.land(400000n)
+    await env.run(1000)
+    assert.equal(env.attempts().length, 0, "dust or a stranger's coin under half the quote settles nothing")
+    const main = env.land(1000000n)
+    await env.run(2000)
+    const [swap] = env.attempts()
+    assert.equal(swap.kind, 'swap')
+    assert.deepEqual(env.builds[0].map(coin => coin.txid), [main])
+    env.observed.set(swap.txid, { seen: true, confirmations: 6 })
+    await env.run(3000)
+    assert.equal(env.get().state, 'completed')
+    // The order is done; its other real coin goes back to the customer as BCH, the dust stays.
+    await env.run(4000)
+    const back = env.sent.at(-1)
+    assert.equal(back.kind, 'refund')
+    const transaction = decodeTx(back.hex)
+    assert.deepEqual(transaction.inputs.map(input => binToHex(input.outpointTransactionHash)), [second])
+    assert.equal(binToHex(transaction.outputs[0].lockingBytecode), refund.lockingBytecode)
+    const sourceOutputs = await Promise.all(transaction.inputs.map(async input => (await env.coin(binToHex(input.outpointTransactionHash), input.outpointIndex)).output))
+    assert.equal(createVirtualMachineBch2026(true).verify({ transaction, sourceOutputs }), true)
+    assert.deepEqual(env.attempts().map(a => a.kind), ['swap'], 'the give-back is no new attempt of the order')
   } finally {
     env.store.close()
   }
