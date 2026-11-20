@@ -122,17 +122,23 @@ export const broadcastRouterSend = async (uid: string, signedHex: string, txid: 
 }
 
 export const broadcastDeposit = async (uid: string, signedHex: string, txid: string, update: Update) => {
+  const dropped = (reason: string) =>
+    update(uid, op => op.reverse?.deposit?.txid !== txid ? {} : op.reverse.sale ? {
+      stage: 'bch_ready',
+      error: `${reason}. Prepare it again.`,
+      reverse: { ...op.reverse, deposit: undefined, priorDepositTxids: [...(op.reverse.priorDepositTxids ?? []), txid] }
+    } : { stage: 'failed', error: `${reason}. Nothing was sent.` })
+  const tx = transactionStore.getState().transactions.find(item => item.uid === uid)
+  const deposit = tx?.kind !== 'send' ? tx?.bridge?.reverse?.deposit : undefined
+  // A deposit the chain has not seen is not sent after its quote lapsed (a retired vault, an old price limit or a refund).
+  if (deposit?.txid === txid && deposit.expiresAt !== undefined && deposit.expiresAt <= Date.now() && (await rejectedFundingIntact(uid, signedHex, txid).catch(() => false)))
+    return dropped('The quote expired before the deposit went out')
   try {
     await broadcastBchTransaction(signedHex, txid)
     update(uid, op => op.reverse?.deposit?.txid === txid ? { stage: 'second_leg_pending', error: undefined } : {})
   } catch (error) {
-    if (error instanceof BroadcastRejected && await rejectedFundingIntact(uid, signedHex, txid).catch(() => false)) {
-      return update(uid, op => op.reverse?.deposit?.txid !== txid ? {} : op.reverse.sale ? {
-        stage: 'bch_ready',
-        error: `The deposit was rejected: ${error.message}. Prepare it again.`,
-        reverse: { ...op.reverse, deposit: undefined, priorDepositTxids: [...(op.reverse.priorDepositTxids ?? []), txid] }
-      } : { stage: 'failed', error: `The deposit was rejected: ${error.message}. Nothing was sent.` })
-    }
+    if (error instanceof BroadcastRejected && await rejectedFundingIntact(uid, signedHex, txid).catch(() => false))
+      return dropped(`The deposit was rejected: ${error.message}`)
     update(uid, op => op.reverse?.deposit?.txid !== txid ? {} : {
       stage: 'second_leg_unknown',
       reverse: { ...op.reverse!, deposit: { ...op.reverse!.deposit!, error: error instanceof Error ? error.message : 'Broadcast outcome unknown' } }

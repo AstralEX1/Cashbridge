@@ -146,6 +146,7 @@ const sendDeposit = async (uid: string, prepared: PreparedDeposit, update: Updat
           inboundAddress: route.inboundAddress!,
           router,
           startBlock,
+          expiresAt: route.expiration ? Number(route.expiration) * 1000 : undefined,
           expectedOut: route.expectedBuyAmount
         }
       }

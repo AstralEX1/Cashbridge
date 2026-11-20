@@ -148,6 +148,8 @@ export interface ReverseDeposit {
   // How far the payout search has looked, so a poll resumes there.
   scannedBlock?: number
   signedAt?: number
+  // When the quote behind it lapses (ms): THORChain says not to send after it, and NEAR refunds a late deposit.
+  expiresAt?: number
   // When THORNode's countdown expects the payout (display only).
   readyAt?: number
   expectedOut?: string

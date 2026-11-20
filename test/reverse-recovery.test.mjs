@@ -49,17 +49,17 @@ const signedHex = signBuild(decodeTx(reviewed.unsignedHex), sourcesOf(reviewed),
 const txid = txidOf(signedHex)
 const uid = 'reverse-recovery-fixture'
 
-const save = () => transactionStore.setState({ transactions: [{
+const save = (deposit = {}) => transactionStore.setState({ transactions: [{
   uid, bridge: { id: uid, direction: 'reverse', binding, stage: 'second_leg_unknown', firstLeg: { result: 'pending' }, reverse: {
     buyAsset: 'BASE.ETH', destination: `0x${'12'.repeat(20)}`,
-    sale: { txid, signedHex }, deposit: { txid, signedHex }
+    sale: { txid, signedHex }, deposit: { txid, signedHex, ...deposit }
   } }
 }] })
 const current = () => transactionStore.getState().transactions[0].bridge
 
 function node(t, { lookup = 'absent', unspent = true } = {}) {
   t.mock.method(WsRpc.prototype, 'open', async function () { return this })
-  t.mock.method(WsRpc.prototype, 'request', async function (method, params) {
+  return t.mock.method(WsRpc.prototype, 'request', async function (method, params) {
     if (method === 'server.version') return ['fixture', '1.4']
     if (method === 'blockchain.transaction.broadcast') throw new RpcError('1', 'missing-inputs')
     if (method === 'blockchain.transaction.get') {
@@ -112,6 +112,15 @@ test('a definitely absent reverse deposit can be rebuilt only while every wallet
   assert.equal(current().stage, 'failed')
   assert.equal(current().reverse.sale, undefined, 'a sale that never reached the network must not show as sent')
   assert.ok(decodeTx(signedHex).inputs.length > funding.length, 'pool inputs need not remain available after a pool rejection')
+})
+
+test('a deposit whose quote lapsed is not sent again while the chain has not seen it', async t => {
+  const rpc = node(t)
+  save({ expiresAt: Date.now() - 1 })
+  await broadcastDeposit(uid, signedHex, txid, transactionStore.getState().updateBridge)
+  assert.equal(current().stage, 'bch_ready')
+  assert.match(current().error, /quote expired/)
+  assert.ok(!rpc.mock.calls.some(call => call.arguments[0] === 'blockchain.transaction.broadcast'))
 })
 
 test('a first transaction whose signature never came back is called unsent only once its inputs outlive the request', async t => {
