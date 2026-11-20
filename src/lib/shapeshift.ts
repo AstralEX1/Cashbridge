@@ -2,7 +2,7 @@ import { ProviderName } from '@tcswap/helpers'
 import type { QuoteResponseRoute } from '@tcswap/helpers/api'
 import { addressToLockingBytecode } from '@/lib/bch'
 import { formatBaseUnits, toBaseUnits } from '@/lib/bridge'
-import { findNearToken, getNearStatus, getNearTokens, NEAR_BCH } from '@/lib/near-intents'
+import { getNearStatus, getNearTokens, NEAR_BCH, nearTokenFor } from '@/lib/near-intents'
 import { sameAddress } from '@/lib/payout-chains'
 import type { NearLeg } from '@/store/transaction-store'
 
@@ -270,8 +270,9 @@ export const shapeShiftNearLeg = async (route: ShapeShiftRoute, expect: { recipi
   ])
   const request = status.quoteResponse?.quoteRequest
   const quote = status.quoteResponse?.quote
-  const origin = findNearToken(tokens, route.sellAsset)
-  const destination = findNearToken(tokens, route.buyAsset)
+  // ShapeShift may pick another 1Click row for the same token than this site would; the contract must match.
+  const origin = nearTokenFor(tokens, request?.originAsset, route.sellAsset)
+  const destination = nearTokenFor(tokens, request?.destinationAsset, route.buyAsset)
   const same = (address: string | undefined, wanted: string) =>
     !!address && (addressToLockingBytecode(wanted) ? addressToLockingBytecode(address) === addressToLockingBytecode(wanted) : sameAddress(address, wanted))
   const ok =
@@ -287,8 +288,6 @@ export const shapeShiftNearLeg = async (route: ShapeShiftRoute, expect: { recipi
     request.swapType === 'EXACT_INPUT' &&
     !!origin &&
     !!destination &&
-    request.originAsset === origin.assetId &&
-    request.destinationAsset === destination.assetId &&
     (request.originAsset === NEAR_BCH || request.destinationAsset === NEAR_BCH) &&
     same(request.recipient, expect.recipient) &&
     same(request.refundTo, expect.refundTo) &&

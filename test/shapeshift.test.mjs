@@ -51,6 +51,10 @@ describe('getShapeShiftBridgeRoute', async () => {
   const { getShapeShiftBridgeRoute } = await import('../src/lib/shapeshift.ts')
   const USDC = 'BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913'
   const NEAR_USDC = 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near'
+  // The same Base USDC behind another 1Click row (as ShapeShift quotes BSC USDT through HOT's retired one), and a
+  // different token on the same chain.
+  const HOT_USDC = 'nep245:v2_1.omni.hot.tg:8453_test'
+  const OTHER_TOKEN = 'nep141:base-0xfde4c96c8593536e31f229ea8f37b2ada2699bb2.omft.near'
   const SOURCE = '0x3333333333333333333333333333333333333333'
   const DEPOSIT = '0x5555555555555555555555555555555555555555'
   const to = bindingFromPubkey(pubkey, 0)
@@ -69,6 +73,8 @@ describe('getShapeShiftBridgeRoute', async () => {
     if (url.endsWith('/v0/tokens'))
       return Response.json([
         { assetId: NEAR_USDC, decimals: 6, blockchain: 'base', symbol: 'USDC', price: 1, contractAddress: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' },
+        { assetId: HOT_USDC, decimals: 6, blockchain: 'base', symbol: 'USDC(DEPRECATED)', price: 1, contractAddress: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' },
+        { assetId: OTHER_TOKEN, decimals: 6, blockchain: 'base', symbol: 'USDT', price: 1, contractAddress: '0xfde4c96c8593536e31f229ea8f37b2ada2699bb2' },
         { assetId: 'nep141:bch.omft.near', decimals: 8, blockchain: 'bch', symbol: 'BCH', price: 400, contractAddress: null }
       ])
     if (url.includes('/v0/status?depositAddress='))
@@ -106,8 +112,18 @@ describe('getShapeShiftBridgeRoute', async () => {
     assert.equal(route.shapeshift.near.shapeshiftQuoteId, 'q-1')
   })
 
-  it('refuses a swap that pays or refunds someone else, takes another amount, or is not an exact one', async () => {
+  it('accepts the same token through another 1Click row', async () => {
+    const route = await withFetch(() => {
+      edit = s => ({ ...s, quoteResponse: { ...s.quoteResponse, quoteRequest: { ...s.quoteResponse.quoteRequest, originAsset: HOT_USDC } } })
+      return getShapeShiftBridgeRoute(request)
+    })
+    assert.equal(route.shapeshift.near.depositAddress, DEPOSIT)
+  })
+
+  it('refuses a swap that pays or refunds someone else, takes another amount or token, or is not an exact one', async () => {
     const cases = [
+      s => ({ ...s, quoteResponse: { ...s.quoteResponse, quoteRequest: { ...s.quoteResponse.quoteRequest, originAsset: OTHER_TOKEN } } }),
+      s => ({ ...s, quoteResponse: { ...s.quoteResponse, quoteRequest: { ...s.quoteResponse.quoteRequest, destinationAsset: NEAR_USDC } } }),
       s => ({ ...s, quoteResponse: { ...s.quoteResponse, quoteRequest: { ...s.quoteResponse.quoteRequest, recipient: other.cashAddress } } }),
       s => ({ ...s, quoteResponse: { ...s.quoteResponse, quoteRequest: { ...s.quoteResponse.quoteRequest, refundTo: DEPOSIT } } }),
       s => ({ ...s, quoteResponse: { ...s.quoteResponse, quoteRequest: { ...s.quoteResponse.quoteRequest, swapType: 'FLEX_INPUT' } } }),

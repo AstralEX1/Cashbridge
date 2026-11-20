@@ -404,6 +404,15 @@ export const findNearToken = (list: OneClickToken[], identifier: string) => {
   return sameChain.find(t => !t.contractAddress && nativeTicker(t).toUpperCase() === ticker)
 }
 
+// The 1Click row `assetId` names when it is `identifier`'s token: the same chain and contract (or native coin), a
+// retired or bridged duplicate row included. ShapeShift still quotes BSC USDT through HOT's retired row.
+export const nearTokenFor = (list: OneClickToken[], assetId: string | undefined, identifier: string) => {
+  const token = Array.isArray(list) && assetId ? list.find(t => t?.assetId === assetId) : undefined
+  if (!token || typeof token.symbol !== 'string') return undefined
+  const symbol = token.symbol.replace(/\(?(DEPRECATED|OMNI)\)?/gi, '').trim()
+  return findNearToken([{ ...token, symbol }], identifier) ? token : undefined
+}
+
 export interface NearQuoteRequest {
   sellAsset: string
   buyAsset: string
