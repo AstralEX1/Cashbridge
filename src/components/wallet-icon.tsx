@@ -28,7 +28,7 @@ const MONO_GLYPHS: Record<string, ReactNode> = {
 }
 
 // The extensions' own store icons, which their makers publish only as PNG.
-const RASTER = new Set(['eternl', 'lace', 'slush', 'yoroi'])
+const RASTER = new Set(['eternl', 'lace', 'slush', 'tonkeeper', 'yoroi'])
 
 export function WalletIcon({ walletKey, width, height, alt = '', className }: WalletIconProps) {
   const glyph = MONO_GLYPHS[walletKey]

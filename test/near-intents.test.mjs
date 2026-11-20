@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import { hexToBin } from '@bitauth/libauth'
 import { checkPayment, bindingFromPubkey, decodeTx, txidOf } from '../src/lib/bch.ts'
 import { Chain, ProviderName } from '@tcswap/helpers'
-import { assetsFromNearTokens, findNearToken, getNearQuote, interpretNearStatus, isNearRoute, mergeNearAssets, nearAssetIdentifier, nearLegOf, nearQuoteBody, nearRoute, nearSlippageBps, NEAR_BCH } from '../src/lib/near-intents.ts'
+import { catalogBalance, assetsFromNearTokens, findNearToken, getNearQuote, interpretNearStatus, isNearRoute, mergeNearAssets, nearAssetIdentifier, nearLegOf, nearQuoteBody, nearRoute, nearSlippageBps, NEAR_BCH } from '../src/lib/near-intents.ts'
 import { isAssetInMode, isNearOnlyAsset } from '../src/hooks/use-assets.ts'
 import { bestRoute } from '../src/hooks/use-quote.ts'
 import { isBridgeRoute } from '../src/lib/api.ts'
@@ -388,4 +388,19 @@ test('a payout without a memo is counted only from its plain outputs to the boun
   assert.equal(checkPayment(raw, other.lockingBytecode, { tip: 10, utxos: [] }).kind, 'invalid')
   const tokenHex = outboundTx({ to: ownScript, amount: 1000n, token: { category: hexToBin(PUSD), amount: 1n } })
   assert.equal(checkPayment({ hex: tokenHex, tx: decodeTx(tokenHex) }, binding.lockingBytecode, { tip: 10, utxos: [] }).kind, 'invalid')
+})
+
+test('TON native catalogue entries match SDK gas balances and both TON and legacy GRAM identifiers', () => {
+  const native = { assetId: 'nep141:ton.omft.near', blockchain: 'ton', symbol: 'GRAM', decimals: 9 }
+  const master = 'EQCxE6mUtQJKFnwDF4';
+  const usdt = { assetId: 'nep141:ton-usdt.omft.near', blockchain: 'ton', symbol: 'USDT', decimals: 6, contractAddress: master }
+  const assets = assetsFromNearTokens([native, usdt])
+  assert.equal(assets[0].identifier, 'TON.TON')
+  assert.equal(assets[0].ticker, 'TON')
+  assert.equal(findNearToken([native], 'TON.TON'), native)
+  assert.equal(findNearToken([native], 'TON.GRAM'), native)
+  assert.equal(assets[1].address, master)
+  const balance = catalogBalance(assets[0], '1500000000')
+  assert.equal(balance.isGasAsset, true)
+  assert.equal(balance.getValue('string'), '1.5')
 })

@@ -192,9 +192,9 @@ export const useWalletStore = create<WalletState>()(
               if (connectionVersions.get(w.provider) !== versions.get(w.provider)) return []
               // A chain the phone ended while it was set up is no longer in core.
               const restored = result.status === 'fulfilled' ? result.value.filter(isInCore) : []
-              // Fully restored entries are written from the accounts; partial or failed ones stay kept, except
-              // WalletConnect's: a chain its stored session lacks never comes back on a retry.
-              if (w.provider === WalletOption.WALLETCONNECT || w.chains.every(chain => restored.some(a => a.network === chain))) {
+              // Fully restored entries are written from the accounts; partial or failed ones stay kept, except a
+              // restore-only wallet's: a chain its stored session or grant lacks never comes back on a retry.
+              if (RESTORE_ONLY.has(w.provider) || w.chains.every(chain => restored.some(a => a.network === chain))) {
                 keptLinks.delete(w.provider)
               }
               return restored

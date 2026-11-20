@@ -32,11 +32,12 @@ class TonConnectDismissed extends Error {}
 export const isTonConnectDismissed = (error: unknown) => error instanceof TonConnectDismissed
 
 // Resolves once a wallet is connected; rejects when the user closes the modal.
-const openModal = (ui: TonConnectUI) =>
+const openModal = (ui: TonConnectUI, tonWallet?: 'tonkeeper') =>
   new Promise<void>((resolve, reject) => {
     const stop = () => {
       stopStatus()
       stopModal()
+      stopSingleModal()
     }
     const stopStatus = ui.onStatusChange(
       wallet => {
@@ -49,12 +50,15 @@ const openModal = (ui: TonConnectUI) =>
         reject(error)
       }
     )
-    const stopModal = ui.onModalStateChange(state => {
+    const onModalChange = (state: { status: string; closeReason: string | null }) => {
       if (state.status !== 'closed' || state.closeReason !== 'action-cancelled') return
       stop()
       reject(new TonConnectDismissed('TON Connect was closed before a wallet connected'))
-    })
-    ui.openModal().catch(error => {
+    }
+    const stopModal = ui.onModalStateChange(onModalChange)
+    const stopSingleModal = ui.onSingleWalletModalStateChange(onModalChange)
+    const opened = tonWallet ? ui.openSingleWalletModal(tonWallet) : ui.openModal()
+    opened.catch(error => {
       stop()
       reject(error)
     })
@@ -93,14 +97,14 @@ export const tonconnectWallet = createWallet({
   walletType: TONCONNECT,
   connect:
     ({ addChain, walletType }) =>
-    async (chains: Chain[], config?: { restoreOnly?: boolean }) => {
+    async (chains: Chain[], config?: { restoreOnly?: boolean; tonWallet?: 'tonkeeper' }) => {
       if (!chains.includes(Chain.Ton)) throw new Error('TON Connect only supports TON')
       const ui = await tonConnect()
       await ui.connectionRestored
       if (!ui.account) {
         // A restore on page load never opens the modal; with no stored session the wallet stays disconnected.
         if (config?.restoreOnly) throw new Error('No TON Connect session to restore')
-        await openModal(ui)
+        await openModal(ui, config?.tonWallet)
       }
       const account = ui.account
       if (!account) throw new Error('TON Connect returned no account')

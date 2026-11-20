@@ -178,7 +178,7 @@ export async function connectWallet(option: WalletOption, chains: Chain[], confi
     case SLUSH:
       return uSwap.connectSlush(chains, { restoreOnly: config?.restoreOnly })
     case TONCONNECT:
-      return uSwap.connectTonConnect(chains, { restoreOnly: config?.restoreOnly })
+      return uSwap.connectTonConnect(chains, { restoreOnly: config?.restoreOnly, tonWallet: config?.tonWallet })
     case LACE:
       return uSwap.connectLace(chains, { restoreOnly: config?.restoreOnly })
     case ETERNL:

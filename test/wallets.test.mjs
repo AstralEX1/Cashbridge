@@ -285,6 +285,19 @@ test('a saved WalletConnect wallet restores from its stored session only, and is
   assert.deepEqual(savedLink(), [])
 })
 
+test('a missing TON session restores silently and drops its saved wallet link', async () => {
+  useWalletStore.setState({ hasHydrated: false })
+  cookies.set('tc-wallet-link', encodeURIComponent(JSON.stringify([{ provider: 'TONCONNECT', chains: [Chain.Ton] }])))
+  const configs = []
+  controls.getAccounts = async (_provider, _chains, config) => { configs.push(config); throw new Error('No TON Connect session to restore') }
+  await useWalletStore.persist.rehydrate()
+  await flush()
+  assert.deepEqual(configs, [{ restoreOnly: true }])
+  assert.deepEqual(useWalletStore.getState().accounts, [])
+  assert.deepEqual(savedLink(), [])
+  assert.deepEqual(controls.errors, [])
+})
+
 test('the phone ending a WalletConnect session drops its accounts and leaves the other wallets connected', () => {
   const metamask = account()
   const phone = account('0x4444444444444444444444444444444444444444', Chain.Base, WalletOption.WALLETCONNECT)

@@ -25,7 +25,7 @@ export const BrowserWallet = ({ wallet, chains, chain, onConnect }: { wallet: Wa
     connect(
       wallet.option,
       selectedChains.map(c => c as Chain),
-      undefined,
+      wallet.tonWallet ? { tonWallet: wallet.tonWallet } : undefined,
       closeFirst ? { describeError: error => describeWalletconnectError(t, error) } : undefined
     )
       .then(() => {

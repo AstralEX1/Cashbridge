@@ -69,7 +69,9 @@ export const ConnectWallet = ({ isOpen, onOpenChange, chain }: ConnectWalletProp
     if (wallet.type === WalletType.mobile && chain) {
       // WalletConnect and TON Connect open their own QR window, which this dialog would sit over and block clicks on.
       close()
-      connect(wallet.option, [chain], undefined, { describeError: error => describeWalletconnectError(t, error) }).catch(() => {})
+      connect(wallet.option, [chain], wallet.tonWallet ? { tonWallet: wallet.tonWallet } : undefined, {
+        describeError: error => describeWalletconnectError(t, error)
+      }).catch(() => {})
       return
     }
     if (wallet.type === WalletType.browser && chain) {

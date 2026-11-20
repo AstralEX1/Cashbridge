@@ -401,7 +401,7 @@ export const findNearToken = (list: OneClickToken[], identifier: string) => {
     return withContract.find(t => upper.endsWith(`-${t.contractAddress!.toUpperCase()}`))
   }
   const ticker = rest.toUpperCase()
-  return sameChain.find(t => !t.contractAddress && nativeTicker(t).toUpperCase() === ticker)
+  return sameChain.find(t => !t.contractAddress && (nativeTicker(t).toUpperCase() === ticker || t.symbol.toUpperCase() === ticker))
 }
 
 // The 1Click row `assetId` names when it is `identifier`'s token: the same chain and contract (or native coin), a

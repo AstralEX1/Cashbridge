@@ -23,6 +23,7 @@ export type WalletParams = {
   option: WalletOption
   link: string
   supportedChains: Chain[]
+  tonWallet?: 'tonkeeper'
 }
 
 export const ALL_CHAINS = [
@@ -171,7 +172,16 @@ export const WALLETS: WalletParams[] = [
     link: 'https://yoroi-wallet.com',
     supportedChains: supportedChains[YOROI]
   },
-  // TON Connect's own modal lists Tonkeeper, MyTonWallet, Telegram Wallet and the rest, with a QR code for phones.
+  {
+    key: 'tonkeeper',
+    type: WalletType.mobile,
+    label: 'Tonkeeper',
+    option: TONCONNECT,
+    link: 'https://tonkeeper.com',
+    supportedChains: supportedChains[TONCONNECT],
+    tonWallet: 'tonkeeper'
+  },
+  // TON Connect's own modal lists the other TON wallets, including Telegram Wallet.
   {
     key: 'tonconnect',
     type: WalletType.mobile,
