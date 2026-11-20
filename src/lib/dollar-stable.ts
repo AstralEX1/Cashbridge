@@ -11,8 +11,9 @@ export const dollarTicker = (identifier: string) => {
   return body.split('-')[0] || ''
 }
 
-// USDC, USDT, PUSD, MUSD, DAI, and any ticker that carries "USD".
+// USDC, USDT0, USD1, PUSD, FDUSD, DAI: "USD" with a short suffix or a short prefix. A vault share that wraps one
+// (gtUSDCp, mwUSDC, sUSDC, steakUSDC) carries both, trades at its own price, and is no dollar.
 export const isDollarStable = (tickerOrId: string) => {
   const ticker = dollarTicker(tickerOrId)
-  return ticker === 'DAI' || ticker.includes('USD')
+  return ticker === 'DAI' || /^(?:[A-Z]{1,2}USD|USD[A-Z0-9]{0,2})$/.test(ticker)
 }

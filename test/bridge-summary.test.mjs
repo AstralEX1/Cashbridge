@@ -97,6 +97,10 @@ test('dollar stables are always valued at $1', async () => {
   assert.ok(isDollarStable('DAI'))
   assert.ok(!isDollarStable('BCH.BCH'))
   assert.ok(!isDollarStable('RES'))
+  for (const stable of ['ARB.USDT0-0XFD086BC7CD5C481DCC9C85EBE478A1C0B69FCBB9', 'SOL.USD1-USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB', 'FDUSD', 'PYUSD', 'ETH.USDf-0XFA2B'])
+    assert.ok(isDollarStable(stable), stable)
+  for (const share of ['BASE.gtUSDCp-0X0BB69B79BC829E1CFCC34A740110886D98D2BD14', 'BASE.mwUSDC-0X3388', 'SOL.sUSDC-3tMdx4g4', 'ETH.steakUSDC-0XAF08', 'NEAR.nrUsdt-lsd-usdt.rhealab.near'])
+    assert.ok(!isDollarStable(share), `${share} is a vault share, not $1`)
   assert.equal(pusdUsdPrice(400, { sell: 1, spotOutput: 50 }, 'PUSD').price, 1)
   assert.equal(pusdUsdPrice(400, { sell: 1, spotOutput: 50 }, 'RES').price, 8)
   // Pool marks PUSD at $1.02; the summary still values output at $1.
