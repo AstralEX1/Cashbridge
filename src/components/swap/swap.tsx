@@ -18,7 +18,7 @@ import { SwapInputFrom } from '@/components/swap/swap-input-from'
 import { SwapInputTo } from '@/components/swap/swap-input-to'
 import { SwapSettings } from '@/components/swap/swap-settings'
 import { RefreshButton } from '@/components/swap/refresh-button'
-import { RouterHint, RouterSelector } from '@/components/swap/automatic-bridge-controls'
+import { OpenNetworksToggle, RouterHint, RouterSelector } from '@/components/swap/automatic-bridge-controls'
 import { RouteCompare } from '@/components/swap/route-compare'
 import { AutomaticOrders } from '@/components/swap/auto-bridge-progress'
 import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
@@ -59,6 +59,7 @@ export const Swap = () => {
   const isPrivateSend = useIsPrivateSend()
   const pairKey = useSwapStore(state => `${state.assetFrom?.identifier}|${state.assetTo?.identifier}`)
   const reverse = useSwapStore(state => state.reverse)
+  const openNetworks = useSwapStore(state => state.openNetworks)
   const toggleDirection = useSwapStore(state => state.swapAssets)
   const assetFrom = useSwapStore(state => state.assetFrom)
   const { assets } = useAssets()
@@ -77,7 +78,7 @@ export const Swap = () => {
   // selection both list and replaces one only the other does, so the form never quotes an asset
   // the current provider does not know. Leaving a private send restores the URL's buy asset.
   useEffect(() => {
-    if (!assets?.length) return
+    if (!assets?.length || openNetworks) return
 
     // Read the pair from the store, not the render closure: on a first visit useUrlParams sets
     // the pair from the URL in this same commit, and the closure still holds the empty pair.
@@ -102,24 +103,45 @@ export const Swap = () => {
     if (nextTo && nextTo !== assetTo) setAssetTo(nextTo)
     // Also reruns on pair changes: a saved same-asset pair rehydrates after the first run.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPrivateTab, isPrivateSend, assets, pairKey])
+  }, [openNetworks, isPrivateTab, isPrivateSend, assets, pairKey])
 
   // The reverse direction pays out only where the payout can be checked: any other source gives way.
   useEffect(() => {
-    if (!reverse || !assets?.length || isReverseTargetAsset(assetFrom)) return
+    if (openNetworks || !reverse || !assets?.length || isReverseTargetAsset(assetFrom)) return
     const target = DEFAULT_REVERSE_TARGETS.map(id => assets.find(a => a.identifier.toUpperCase() === id && isReverseTargetAsset(a))).find(Boolean)
     if (target) setAssetFrom(target)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reverse, assets, assetFrom])
+  }, [openNetworks, reverse, assets, assetFrom])
+
+  // Open-networks pairs need two distinct listed assets; seed a common destination when empty.
+  useEffect(() => {
+    if (!openNetworks || !assets?.length) return
+    const { assetFrom: from, assetTo: to } = useSwapStore.getState()
+    if (!from) {
+      const seed = assets.find(a => a.identifier === DEFAULT_SELL) ?? assets[0]
+      if (seed) setAssetFrom(seed)
+      return
+    }
+    if (!to || to.identifier === from.identifier) {
+      const seed =
+        assets.find(a => a.identifier === 'ETH.ETH' && a.identifier !== from.identifier) ??
+        assets.find(a => a.identifier !== from.identifier)
+      if (seed) setAssetTo(seed)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openNetworks, assets, pairKey])
 
   return (
     <div className="bridge-widget mx-auto w-full max-w-[514px]">
       <div className="bridge-heading">
-        <h1>{tBridge(reverse ? 'headingReverse' : 'heading')}</h1>
+        <h1>{tBridge(openNetworks ? 'headingOpen' : reverse ? 'headingReverse' : 'heading')}</h1>
       </div>
       {/* Wraps on narrow phones, where the selector and three round buttons don't fit one row. */}
       <div className="bridge-tools mb-3 flex flex-wrap items-center justify-between gap-3">
-        <RouterSelector />
+        <div className="flex flex-wrap items-center gap-2">
+          <RouterSelector />
+          <OpenNetworksToggle />
+        </div>
         <div className="ml-auto flex items-center gap-2">
           <TransactionHistoryButton />
           <RefreshButton />
@@ -130,12 +152,12 @@ export const Swap = () => {
 
       {/* Forward: THORChain or NEAR Intents swap to native BCH, then a separately signed Cauldron swap to the token.
             Reverse: a Cauldron sale of the token for BCH, then a BCH deposit to THORChain or NEAR Intents. No limit,
-            private or memoless entry points. */}
+            private or memoless entry points. Open networks: any listed pair, Manual only. */}
       <div className="bridge-card">
-        {reverse ? (
-          <BchInputFrom selecting={picker === 'from'} onSelectOpenChange={open => setPicker(open ? 'from' : undefined)} />
-        ) : (
+        {openNetworks || !reverse ? (
           <SwapInputFrom selecting={picker === 'from'} onSelectOpenChange={open => setPicker(open ? 'from' : undefined)} />
+        ) : (
+          <BchInputFrom selecting={picker === 'from'} onSelectOpenChange={open => setPicker(open ? 'from' : undefined)} />
         )}
         <div className="bridge-divider">
           <span aria-hidden="true" />
@@ -151,19 +173,19 @@ export const Swap = () => {
           </button>
           <span aria-hidden="true" />
         </div>
-        {reverse ? (
-          <ReverseInputTo selecting={picker === 'to'} onSelectOpenChange={open => setPicker(open ? 'to' : undefined)} />
-        ) : (
+        {openNetworks || !reverse ? (
           <SwapInputTo selecting={picker === 'to'} onSelectOpenChange={open => setPicker(open ? 'to' : undefined)} />
+        ) : (
+          <ReverseInputTo selecting={picker === 'to'} onSelectOpenChange={open => setPicker(open ? 'to' : undefined)} />
         )}
       </div>
       <RouteCompare />
-      {reverse ? (
+      {!openNetworks && reverse ? (
         <ReverseSwapButton onShowBridge={() => setProgressId(activeBridge?.uid)} />
       ) : (
-        <SwapButton instantSwapSupported={false} instantSwapAvailable={false} onShowBridge={() => setProgressId(activeBridge?.uid)} />
+        <SwapButton instantSwapSupported={openNetworks} instantSwapAvailable={openNetworks} onShowBridge={() => setProgressId(activeBridge?.uid)} />
       )}
-      {(!automatic || reverse) && <BchWalletStatus />}
+      {!openNetworks && (!automatic || reverse) && <BchWalletStatus />}
 
       <BridgeOperationPanel uid={progressId} onClose={() => setProgressId(undefined)} />
       <BackgroundBridges onOpen={setProgressId} openUid={progressId} />

@@ -90,8 +90,14 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
 
   // Send prepares the executable route in place ("Preparing swap"), then opens straight on Confirm.
   const onSwap = async (quote: QuoteResponseRoute) => {
-    if (!assetFrom || !selectedAccount || preparing) return
+    if (!assetFrom || preparing) return
     const provider = quote.providers[0]
+    // Open networks: InstantSwap / SwapRecipient names the destination on the buy chain.
+    if (useSwapStore.getState().openNetworks) {
+      openDialog(InstantSwapDialog, { provider })
+      return
+    }
+    if (!selectedAccount) return
     setPreparing(true)
     setRouterDown(false)
     try {
@@ -205,17 +211,22 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
     }
   }
 
+  const openNetworks = useSwapStore(state => state.openNetworks)
+
   const getState = (): ButtonState => {
     if (preparing) return { text: t('recipient.preparingSwap'), spinner: true, accent: true }
-    // The BCH side first, then the source wallet. A pasted address stands in for the BCH wallet.
-    if (pastedProblem || destination.invalid) return { text: tAuto(automatic ? 'invalidTokenRecipient' : 'invalidRecipient'), spinner: false, accent: false }
-    if (automatic ? !addressToLockingBytecode(recipient) : !destination.binding) {
-      const connecting = bchWallet.state === 'connecting' || bchWallet.state === 'reconnecting'
-      return {
-        text: bchWallet.mismatch ? t('button.connectBoundBch') : t('button.connectBch'),
-        spinner: connecting && !bchWallet.reconnectStalled,
-        accent: true,
-        onClick: bchWallet.reconnectStalled || bchWallet.mismatch || bchWallet.state === 'connected' ? bchWallet.pairAgain : connecting ? undefined : bchWallet.connect
+    // Open-networks swaps settle to the destination chain wallet via InstantSwap / SwapRecipient — no BCH bind.
+    if (!openNetworks) {
+      // The BCH side first, then the source wallet. A pasted address stands in for the BCH wallet.
+      if (pastedProblem || destination.invalid) return { text: tAuto(automatic ? 'invalidTokenRecipient' : 'invalidRecipient'), spinner: false, accent: false }
+      if (automatic ? !addressToLockingBytecode(recipient) : !destination.binding) {
+        const connecting = bchWallet.state === 'connecting' || bchWallet.state === 'reconnecting'
+        return {
+          text: bchWallet.mismatch ? t('button.connectBoundBch') : t('button.connectBch'),
+          spinner: connecting && !bchWallet.reconnectStalled,
+          accent: true,
+          onClick: bchWallet.reconnectStalled || bchWallet.mismatch || bchWallet.state === 'connected' ? bchWallet.pairAgain : connecting ? undefined : bchWallet.connect
+        }
       }
     }
     if (assetFrom && !selectedAccount && !instantSwapSupported) {
@@ -241,7 +252,7 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
     }
 
     // Native BCH needs only the THORChain route; a token also needs an indicative Cauldron route.
-    if (bchToken) {
+    if (!openNetworks && bchToken) {
       if (tokenEstimate.isLoading) return { text: t('button.quoting'), spinner: true, accent: false }
       if (tokenEstimate.error || tokenEstimate.output === undefined || tokenEstimate.output <= 0n)
         return { text: t('button.noPusdRoute', { ticker: bchToken.ticker }), spinner: false, accent: false }

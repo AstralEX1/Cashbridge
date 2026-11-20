@@ -4,6 +4,7 @@ import { Asset } from '@/components/swap/asset'
 import { BridgeConfig } from '@/config'
 import { type CauldronToken, isCauldronToken, PUSD_TOKEN } from '@/lib/cauldron-tokens'
 import { isPayoutChain } from '@/lib/payout-chains'
+import { automaticPreference } from '@/store/auto-bridge-store'
 import { useLimitSwapStore } from '@/store/limit-swap-store'
 
 // A first visit opens on BTC with this sample amount, so there is a quote to look at; no other visit gets one.
@@ -36,11 +37,15 @@ export type RouteChoice = 'auto' | 'thorchain' | 'near'
 interface SwapState {
   routeChoice: RouteChoice
   setRouteChoice: (choice: RouteChoice) => void
+  // When true, both sides pick any listed asset (not only BCH / CashTokens). Router is unavailable.
+  openNetworks: boolean
+  setOpenNetworks: (open: boolean) => void
   // The BCH side of the bridge: native BCH (null) or a Cauldron token, bought or sold through Cauldron.
   bchToken: CauldronToken | null
   setBchToken: (token: CauldronToken | null) => void
   // false: other chain -> THORChain -> BCH (-> token). true: (token ->) BCH -> THORChain -> EVM chain.
   // `assetFrom` is the other chain's asset in both directions; `amountFrom` is always what is sent.
+  // Ignored while openNetworks is on (the pair itself is the direction).
   reverse: boolean
   setReverse: (reverse: boolean) => void
   assetFrom?: Asset
@@ -67,6 +72,24 @@ export const useSwapStore = create<SwapState>()(
     (set, get) => ({
       routeChoice: 'auto',
       setRouteChoice: routeChoice => set({ routeChoice }),
+      openNetworks: false,
+      setOpenNetworks: openNetworks => {
+        if (openNetworks) {
+          // Free pairs use Manual execution; the Router only settles the BCH / CashToken path.
+          automaticPreference.getState().setMode('manual')
+          set({ openNetworks: true, reverse: false, bchToken: null, amountFrom: '' })
+          return
+        }
+        const { assetFrom, assetTo } = get()
+        set({
+          openNetworks: false,
+          reverse: false,
+          bchToken: PUSD_TOKEN,
+          assetFrom: isBridgeSellAsset(assetFrom) ? assetFrom : undefined,
+          assetTo: isBridgeBuyAsset(assetTo) ? assetTo : undefined,
+          amountFrom: ''
+        })
+      },
       bchToken: PUSD_TOKEN,
       setBchToken: token => {
         if (token === null || isCauldronToken(token)) set({ bchToken: token })
@@ -86,31 +109,51 @@ export const useSwapStore = create<SwapState>()(
       setAmountFrom: fromAmount => set({ amountFrom: fromAmount }),
 
       setAssetFrom: asset => {
+        const { openNetworks, assetTo } = get()
+        if (openNetworks) {
+          if (asset.identifier === assetTo?.identifier) return
+          set({ assetFrom: asset })
+          return
+        }
         if (!isBridgeSellAsset(asset)) return
-        const { assetTo } = get()
-
         set({ assetFrom: asset, assetTo: isBridgeBuyAsset(assetTo) ? assetTo : undefined })
       },
 
       setAssetTo: asset => {
+        const { openNetworks, assetFrom } = get()
+        if (openNetworks) {
+          if (asset.identifier === assetFrom?.identifier) return
+          set({ assetTo: asset })
+          return
+        }
         if (!isBridgeBuyAsset(asset)) return
         set({ assetTo: asset })
       },
 
-      // Swapping the sides is the bridge's direction toggle, not a swap of the asset pair.
-      swapAssets: () => set(state => ({ reverse: !state.reverse, amountFrom: '' })),
+      // Bridge mode flips reverse; open-networks mode swaps the asset pair.
+      swapAssets: () =>
+        set(state =>
+          state.openNetworks
+            ? { assetFrom: state.assetTo, assetTo: state.assetFrom, amountFrom: '' }
+            : { reverse: !state.reverse, amountFrom: '' }
+        ),
 
       setHasHydrated: (state: boolean) => set({ hasHydrated: state })
     }),
     {
       name: 'tc-swap-store',
-      version: 5,
+      version: 6,
       // Versions before 4 could hold any pair; a restored pair is rechecked against the bridge rules.
-      migrate: (persisted, version) => (version === 4 ? persisted : {}) as never,
+      migrate: (persisted, version) => (version === 5 || version === 4 ? persisted : {}) as never,
       merge: (persisted, current) => {
         const state = { ...current, ...(persisted as Partial<SwapState>) }
-        if (!isBridgeSellAsset(state.assetFrom)) state.assetFrom = undefined
-        if (!isBridgeBuyAsset(state.assetTo)) state.assetTo = undefined
+        if (typeof state.openNetworks !== 'boolean') state.openNetworks = false
+        if (state.openNetworks) {
+          if (state.assetFrom?.identifier === state.assetTo?.identifier) state.assetTo = undefined
+        } else {
+          if (!isBridgeSellAsset(state.assetFrom)) state.assetFrom = undefined
+          if (!isBridgeBuyAsset(state.assetTo)) state.assetTo = undefined
+        }
         // Before version 5 the BCH side was a 'BCH' | 'PUSD' choice.
         const legacy = (persisted as { destinationAsset?: unknown } | undefined)?.destinationAsset
         if (legacy === 'BCH') state.bchToken = null
@@ -122,6 +165,7 @@ export const useSwapStore = create<SwapState>()(
         state?.setHasHydrated(true)
       },
       partialize: state => ({
+        openNetworks: state.openNetworks,
         bchToken: state.bchToken,
         reverse: state.reverse,
         slippage: state.slippage,

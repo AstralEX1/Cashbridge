@@ -22,10 +22,11 @@ export const RouteCompare = () => {
   const { routes, quote, best, nearAllowed, isLoading } = useQuote()
   const { valueFrom } = useSwap()
   const reverse = useSwapStore(state => state.reverse)
+  const openNetworks = useSwapStore(state => state.openNetworks)
   const payout = useAssetFrom()
-  // Back from BCH the store's token is the one sold, not one bought.
+  // Back from BCH the store's token is the one sold, not one bought. Open networks has no Cauldron leg.
   const bchToken = useSwapStore(state => state.bchToken)
-  const token = reverse ? null : bchToken
+  const token = openNetworks || reverse ? null : bchToken
   const setChoice = useSwapStore(state => state.setRouteChoice)
   const estimates = {
     thorchain: useTokenQuoteFor(token ? routes?.thorchain?.expectedBuyAmount : undefined, token),

@@ -51,23 +51,38 @@ export const useQuote = (): UseQuote => {
   // The reverse bridge sells BCH into `assetFrom` (the other chain's asset). From a token, the BCH
   // quoted is what the Cauldron sale of the typed amount is expected to leave for THORChain.
   const reverse = useSwapStore(state => state.reverse)
+  const openNetworks = useSwapStore(state => state.openNetworks)
   const bchToken = useSwapStore(state => state.bchToken)
-  const sale = useTokenSale(reverse ? bchToken : null, valueFrom.toSignificant())
-  const sellAsset = reverse ? BridgeConfig.buyAsset : assetFrom?.identifier
-  // Forward Cashbridge leg settles native BCH (CashToken bought afterwards on Cauldron). Private product keeps
-  // the form destination. NEAR Intents only settles BCH.BCH and is off on the private tab.
-  const buyAsset = reverse ? assetFrom?.identifier : isPrivateSwap ? assetTo?.identifier : BridgeConfig.buyAsset
-  const sellAmount = reverse && bchToken ? sale.bridgeAmount : valueFrom.eqValue(0) ? undefined : valueFrom.toSignificant()
+  const sale = useTokenSale(!openNetworks && reverse ? bchToken : null, valueFrom.toSignificant())
+  const sellAsset = openNetworks ? assetFrom?.identifier : reverse ? BridgeConfig.buyAsset : assetFrom?.identifier
+  // Bridge forward settles native BCH (CashToken afterwards on Cauldron). Open networks quotes the selected
+  // pair. Private product keeps the form destination. NEAR Intents only settles BCH.BCH on one side.
+  const buyAsset = openNetworks
+    ? assetTo?.identifier
+    : reverse
+      ? assetFrom?.identifier
+      : isPrivateSwap
+        ? assetTo?.identifier
+        : BridgeConfig.buyAsset
+  const sellAmount =
+    !openNetworks && reverse && bchToken ? sale.bridgeAmount : valueFrom.eqValue(0) ? undefined : valueFrom.toSignificant()
   // NEAR Intents carries manual transfers both ways, and the Cashbridge Router's forward ones when switched on.
   const { automatic } = useAutomaticBridge()
-  const nearAllowed = BridgeConfig.nearIntents && (!automatic || (BridgeConfig.routerNear && !reverse)) && !isPrivateSwap
-  // `assetFrom` is always the non-BCH side; NEAR-only rows must never ask THORChain for a deposit address.
-  const nearOnly = isNearOnlyAsset(assetFrom)
+  const nearPair =
+    !!openNetworks &&
+    (sellAsset?.toUpperCase() === BridgeConfig.buyAsset || buyAsset?.toUpperCase() === BridgeConfig.buyAsset)
+  const nearAllowed =
+    BridgeConfig.nearIntents &&
+    !isPrivateSwap &&
+    (openNetworks ? nearPair : !automatic || (BridgeConfig.routerNear && !reverse))
+  // On the bridge form `assetFrom` is the non-BCH side; NEAR-only rows must never ask THORChain for a deposit.
+  const nearOnly = !openNetworks && isNearOnlyAsset(assetFrom)
   const choice = useSwapStore(state => state.routeChoice)
 
   const queryKey = [
     'quote',
     reverse,
+    openNetworks,
     sellAmount,
     assetFrom?.identifier,
     buyAsset,
@@ -102,14 +117,17 @@ export const useQuote = (): UseQuote => {
         ? getNearQuote(
             {
               sellAsset,
-              buyAsset: reverse ? buyAsset : BridgeConfig.buyAsset,
+              // Open networks and reverse quote the selected buy asset; bridge forward always buys native BCH first.
+              buyAsset: openNetworks || reverse ? buyAsset : BridgeConfig.buyAsset,
               sellAmount,
               dry: true,
               slippageBps: nearSlippageBps(slippage)
             },
             signal
           ).catch(error => {
-            console.warn('NEAR Intents quote failed', error)
+            // Pair switches and under-min amounts regularly 4xx; only unexpected failures are logged.
+            const status = error && typeof error === 'object' && 'status' in error ? Number((error as { status: unknown }).status) : 0
+            if (!(status >= 400 && status < 500) && !signal?.aborted) console.warn('NEAR Intents quote failed', error)
             return undefined
           })
         : undefined

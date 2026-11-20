@@ -11,6 +11,7 @@ import { useBchWallet } from '@/components/bch-wallet'
 import { shortBridgeAddress } from '@/components/swap/bridge-wallet-badge'
 import { useAutomaticBridge, useAutomaticHydrated } from '@/hooks/use-automatic-bridge'
 import { automaticPreference } from '@/store/auto-bridge-store'
+import { useSwapStore } from '@/store/swap-store'
 import { bchAddressProblem } from '@/lib/bch'
 
 const ROUTER_HINT_ID = 'bridge-router-hint'
@@ -41,6 +42,27 @@ export const RouterSelector = () => {
     </div>
   )
   return routerAvailable ? selector : <Tooltip content={t('routerUnavailable')}>{selector}</Tooltip>
+}
+
+// Small switch beside the Router selector: unlock any THORChain / NEAR pair (not only to/from BCH).
+export const OpenNetworksToggle = () => {
+  const t = useTranslations('automatic')
+  const openNetworks = useSwapStore(state => state.openNetworks)
+  const setOpenNetworks = useSwapStore(state => state.setOpenNetworks)
+  const hydrated = useAutomaticHydrated()
+  return (
+    <Tooltip content={t('openNetworksHint')}>
+      <button
+        type="button"
+        className="bridge-open-networks"
+        aria-pressed={openNetworks}
+        data-hydrated={hydrated || undefined}
+        onClick={() => setOpenNetworks(!openNetworks)}
+      >
+        {t('openNetworks')}
+      </button>
+    </Tooltip>
+  )
 }
 
 // What the Router does for the user, shown under the selector while it converts to a token

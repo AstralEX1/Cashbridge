@@ -22,7 +22,9 @@ export const PUSD_TOKEN: CauldronToken = {
   icon: '/tokens/pusd.svg'
 }
 
-const IPFS_GATEWAY = 'https://ipfs.io/ipfs/'
+// Same-origin proxy (src/app/api/ipfs) so <img> is not blocked by ipfs.io CORP.
+const IPFS_PROXY = '/api/ipfs/'
+const IPFS_GATEWAYS = ['https://ipfs.io/ipfs/', 'https://cloudflare-ipfs.com/ipfs/', 'https://gateway.pinata.cloud/ipfs/']
 
 // Pinned at the top of the picker, so they show even when the indexer is down: the two dollar
 // stablecoins, then the three most liquid other tokens on Cauldron (indexer tvl_sats when picked:
@@ -50,10 +52,14 @@ export const isCauldronToken = (value: unknown): value is CauldronToken => {
 
 export const sameToken = (a?: Pick<CauldronToken, 'category'> | null, b?: Pick<CauldronToken, 'category'> | null) => !!a && !!b && a.category === b.category
 
-const iconUrl = (uri: unknown) => {
+export const iconUrl = (uri: unknown) => {
   if (typeof uri !== 'string' || !uri) return undefined
-  if (uri.startsWith('ipfs://')) return `${IPFS_GATEWAY}${uri.slice('ipfs://'.length)}`
-  if (uri.startsWith('https://') || uri.startsWith('data:image/')) return uri
+  if (uri.startsWith('data:image/')) return uri
+  if (uri.startsWith('ipfs://')) return `${IPFS_PROXY}${uri.slice('ipfs://'.length)}`
+  for (const gateway of IPFS_GATEWAYS) {
+    if (uri.startsWith(gateway)) return `${IPFS_PROXY}${uri.slice(gateway.length)}`
+  }
+  if (uri.startsWith('https://')) return uri
   return undefined
 }
 

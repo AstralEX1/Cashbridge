@@ -15,12 +15,13 @@ export const useAutomaticHydrated = () => useSyncExternalStore(noSubscribe, () =
 export const useAutomaticBridge = () => {
   const reverse = useSwapStore(state => state.reverse)
   const token = useSwapStore(state => state.bchToken)
+  const openNetworks = useSwapStore(state => state.openNetworks)
   const mode = automaticPreference(state => state.mode)
   const address = automaticPreference(state => state.recipient)
   const wallet = useBchWallet()
   const hydrated = useAutomaticHydrated()
-  const eligible = automaticEligible(reverse, token?.category, BridgeConfig.routerSales)
-  const plainBch = !reverse && token === null
+  const eligible = !openNetworks && automaticEligible(reverse, token?.category, BridgeConfig.routerSales)
+  const plainBch = !openNetworks && !reverse && token === null
   const routerAvailable = eligible || plainBch
   const automatic = hydrated && eligible && mode === 'automatic'
   // Both forward routes can pay a pasted address instead of the connected wallet.

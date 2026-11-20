@@ -21,7 +21,8 @@ import { useAddressCode } from '@/hooks/use-address-code'
 import { useResolvedName } from '@/hooks/use-resolved-name'
 import { AddressCheck, useValidAddress } from '@/hooks/use-valid-address'
 import { useAssetFrom, useAssetTo, useCustomInterval, useCustomQuantity, useSlippage, useSwap } from '@/hooks/use-swap'
-import { useAccounts, useSelectedAccount } from '@/hooks/use-wallets'
+import { useAccounts, useConnectedAccount, useSelectedAccount } from '@/hooks/use-wallets'
+import { useSwapStore } from '@/store/swap-store'
 import { getQuotes } from '@/lib/api'
 import { resolveQuoteError } from '@/lib/errors'
 import { prepareQuoteForLimitSwap } from '@/lib/memo-helpers'
@@ -82,10 +83,15 @@ const RecipientForm = ({
 
   // A replacement for a cancelled limit order keeps the destination the original order paid out to.
   const replacementOrder = useReplacementOrder()
-  // The first leg always pays the user's connected BCH wallet; the address cannot be typed or pasted.
+  const openNetworks = useSwapStore(state => state.openNetworks)
+  // Bridge mode always pays the connected BCH wallet. Open networks pays the buy-chain wallet (editable).
   const { binding } = useBchWallet()
-  const destinationAddress = binding?.cashAddress ?? ''
-  const setDestinationAddress = (_: string) => {}
+  const buyAccount = useConnectedAccount(assetTo.chain)
+  const [typedDestination, setTypedDestination] = useState('')
+  const destinationAddress = openNetworks
+    ? typedDestination || buyAccount?.address || ''
+    : (binding?.cashAddress ?? '')
+  const setDestinationAddress = openNetworks ? setTypedDestination : (_: string) => {}
   void replacementOrder
   const [refundAddress, setRefundAddress] = useState<string>('')
   const [destinationMemo, setDestinationMemo] = useState('')
@@ -319,9 +325,13 @@ const RecipientForm = ({
               <div className="flex flex-col gap-3">
                 {refundRequired && <div className="text-txt-label-small text-sm font-semibold">{t('recipient.enterReceivingAddress')}</div>}
                 <div className="text-txt-label-small text-sm font-semibold">{t('recipient.bridgeDestination')}</div>
-                <div className="bg-input-modal-bg-active border-border-sub-container-modal-low rounded-xl border p-4 text-sm break-all">
-                  {destinationAddress || t('recipient.bridgeNoWallet')}
-                </div>
+                {openNetworks ? (
+                  addressInput('destination', assetTo, destinationAddress, setDestinationAddress, destinationCheck, destinationName.isResolving)
+                ) : (
+                  <div className="bg-input-modal-bg-active border-border-sub-container-modal-low rounded-xl border p-4 text-sm break-all">
+                    {destinationAddress || t('recipient.bridgeNoWallet')}
+                  </div>
+                )}
                 {isTaprootDestination && <div className="text-lucian text-xs font-semibold">{t('recipient.taprootNotSupported')}</div>}
                 {isDelegatedDestination && <div className="text-lucian text-xs font-semibold">{t('recipient.delegatedNotSupported')}</div>}
                 {destinationCode.isContract && <div className="text-lucian text-xs font-semibold">{t('recipient.contractNotSupported')}</div>}

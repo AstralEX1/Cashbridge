@@ -86,8 +86,13 @@ export const SwapDialog = ({ provider, quote: prepared, binding: destination, wa
     // are plain TRC20 transfers with no on-chain expiry, so dropping the field is safe.
     const route = assetFrom.chain === Chain.Tron && quote.expiration ? ({ ...quote, expiration: undefined } as QuoteResponseRoute) : quote
 
-    // The route must still be the bridge's: THORChain, buying BCH.BCH, paying the bound BCH wallet.
-    if (!binding || !isBridgeRoute(quote, { sellAsset: assetFrom.identifier, destinationAddress: binding.cashAddress }) || !addressPaysScript(quote.destinationAddress, binding.lockingBytecode)) {
+    // Bridge mode: the route must buy BCH.BCH for the bound BCH wallet.
+    // Open-networks pairs use InstantSwapDialog instead of this confirm path.
+    if (
+      !binding ||
+      !isBridgeRoute(quote, { sellAsset: assetFrom.identifier, destinationAddress: binding.cashAddress }) ||
+      !addressPaysScript(quote.destinationAddress, binding.lockingBytecode)
+    ) {
       setSubmitting(false)
       toast.error(t('toast.bridgeRouteMismatch'))
       return

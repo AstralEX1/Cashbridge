@@ -3,15 +3,16 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type ReactElement } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Chain } from '@tcswap/core'
+import { ProviderName } from '@tcswap/helpers'
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react'
 import { useTranslations } from 'next-intl'
 import { AssetIcon } from '@/components/asset-icon'
 import { chainLabel } from '@/components/connect-wallet/config'
 import { Asset } from '@/components/swap/asset'
 import { Tooltip } from '@/components/tooltip'
-import { useModeAssets } from '@/hooks/use-assets'
+import { isNearOnlyAsset, useModeAssets } from '@/hooks/use-assets'
 import { useMimir } from '@/hooks/use-mimir'
-import { useAssetFrom, useSetAssetFrom } from '@/hooks/use-swap'
+import { useAssetFrom, useAssetTo, useSetAssetFrom, useSetAssetTo } from '@/hooks/use-swap'
 import { isAssetHalted } from '@/lib/swap-helpers'
 import { type CauldronToken, FEATURED_TOKENS, fetchCauldronTokens, sameToken, searchCauldronTokens } from '@/lib/cauldron-tokens'
 import { isBridgeSellAsset, isReverseTargetAsset, useSwapStore } from '@/store/swap-store'
@@ -92,9 +93,14 @@ export const BridgeAssetButton = ({
 // the reverse direction the EVM assets it can pay out.
 export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' | 'to'; bch: boolean; open: boolean; onClose: () => void }) => {
   const t = useTranslations('bridge.form')
-  const selected = useAssetFrom()
+  const assetFrom = useAssetFrom()
+  const assetTo = useAssetTo()
   const setAssetFrom = useSetAssetFrom()
+  const setAssetTo = useSetAssetTo()
   const reverse = useSwapStore(state => state.reverse)
+  const openNetworks = useSwapStore(state => state.openNetworks)
+  const other = side === 'from' ? assetTo : assetFrom
+  const selected = side === 'to' && (openNetworks || !bch) ? assetTo : assetFrom
   const bchToken = useSwapStore(state => state.bchToken)
   const setBchToken = useSwapStore(state => state.setBchToken)
   const { assets: modeAssets, isLoading } = useModeAssets()
@@ -102,7 +108,11 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
   const [chain, setChain] = useState<Chain | undefined>(selected?.chain)
   const [search, setSearch] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
-  const assets = useMemo(() => modeAssets?.filter(reverse ? isReverseTargetAsset : isBridgeSellAsset) ?? [], [modeAssets, reverse])
+  const assets = useMemo(() => {
+    if (!modeAssets) return []
+    if (openNetworks) return modeAssets.filter(a => a.identifier !== other?.identifier)
+    return modeAssets.filter(reverse ? isReverseTargetAsset : isBridgeSellAsset)
+  }, [modeAssets, openNetworks, other?.identifier, reverse])
   const chains = useMemo(() => [...new Set(assets.map(a => a.chain))].sort((a, b) => chainLabel(a).localeCompare(chainLabel(b))), [assets])
   const activeChain = bch ? Chain.BitcoinCash : (chain && chains.includes(chain) ? chain : selected && chains.includes(selected.chain) ? selected.chain : chains[0])
   const haltedChains = useMemo(
@@ -110,9 +120,14 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
     [chains, assets, mimir, mayaMimir]
   )
   const query = search.trim().toLowerCase()
-  const tokens = assets.filter(
-    a => a.chain === activeChain && [a.ticker, a.name, a.identifier, chainLabel(a.chain)].some(value => value?.toLowerCase().includes(query))
-  )
+  const tokens = assets.filter(a => {
+    if (a.chain !== activeChain) return false
+    if (!query) return true
+    const haystack = [a.ticker, a.name, a.identifier, chainLabel(a.chain)]
+    // Searching "near" finds rows NEAR Intents lists (including NEAR-only Midgard gaps).
+    if (a.providers?.includes(ProviderName.NEAR)) haystack.push('near', 'near intents')
+    return haystack.some(value => value?.toLowerCase().includes(query))
+  })
 
   const listed = useQuery({ queryKey: ['cauldron-tokens'], queryFn: fetchCauldronTokens, enabled: bch && open, staleTime: 5 * 60_000, retry: 1 })
   const deferredQuery = useDeferredValue(query)
@@ -216,6 +231,7 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
         ) : (
           tokens.map((asset, i) => {
             const halted = isAssetHalted(asset, mimir, mayaMimir)
+            const nearOnly = isNearOnlyAsset(asset)
             return (
               <HaltedTip key={asset.identifier} halted={halted}>
                 <button
@@ -224,15 +240,17 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
                   style={rowIn(i)}
                   aria-pressed={selected?.identifier === asset.identifier}
                   aria-disabled={halted || undefined}
-                  title={halted ? undefined : asset.identifier}
+                  title={halted ? undefined : nearOnly ? `${asset.identifier} · NEAR Intents` : asset.identifier}
                   onClick={() => {
                     if (halted) return
-                    setAssetFrom(asset)
+                    if (side === 'to') setAssetTo(asset)
+                    else setAssetFrom(asset)
                     onClose()
                   }}
                 >
                   <AssetIcon asset={asset} className="size-5 [&_img]:size-5" showNetworkIcons={false} />
                   {asset.ticker}
+                  {nearOnly && <NearMark size={14} />}
                 </button>
               </HaltedTip>
             )

@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArrowRight, FileLock2, Globe, KeyRound, PenLine, Undo2 } from 'lucide-react'
 import { BlazeBanner } from '@/components/blaze-banner'
+import { DocsDemoContract } from '@/components/docs/docs-demo-contract'
 import { BeamDiagram } from '@/components/landing/beam-diagram'
 import { InView } from '@/components/landing/in-view'
 import { LandingVideo } from '@/components/landing/landing-video'
@@ -10,6 +11,7 @@ import { Marquee } from '@/components/landing/marquee'
 import { SiteFooter, SiteHeader } from '@/components/landing/site-chrome'
 import { AppConfig } from '@/config'
 import { FEATURED_TOKENS } from '@/lib/cauldron-tokens'
+import '@/components/docs/docs.css'
 import '@/components/landing/landing.css'
 
 export const metadata: Metadata = {
@@ -158,40 +160,48 @@ export default function Page() {
               <KeyRound size={18} aria-hidden /> Your keys never leave your wallet
             </li>
             <li>
-              <Globe size={18} aria-hidden /> Open, permissionless protocols
+              <Globe size={18} aria-hidden /> THORChain and NEAR Intents to native BCH
+            </li>
+            <li>
+              <FileLock2 size={18} aria-hidden /> Router orders settle in a CashScript covenant
             </li>
           </ul>
         </section>
 
-        <section id="router" className="landing-section landing-split" aria-labelledby="router-title">
-          <LandingVideo
-            className="landing-router-video"
-            src="/landing/cashbridge-router.mp4"
-            poster="/landing/cashbridge-router.webp"
-            label="Turning on the Cashbridge Router in the bridge form. Demo."
-          />
-          <div>
-            <p className="landing-kicker">Cashbridge Router</p>
-            <h2 id="router-title">One signature. Then close the tab.</h2>
-            <ul className="landing-points landing-points-stacked">
-              <li>
-                <PenLine size={18} aria-hidden /> Sign once on the source chain
-              </li>
-              <li>
-                <Undo2 size={18} aria-hidden /> A fixed minimum, or the BCH comes back to you
-              </li>
-              <li>
-                <FileLock2 size={18} aria-hidden /> A contract order can only pay you or refund you
-              </li>
-            </ul>
-            <div className="landing-links">
-              <Link href="/docs/guides/cashbridge-router" className="landing-more">
-                How the Router works <ArrowRight size={16} aria-hidden />
-              </Link>
-              <Link href="/docs/security" className="landing-more">
-                Security and custody <ArrowRight size={16} aria-hidden />
-              </Link>
+        <section id="router" className="landing-section" aria-labelledby="router-title">
+          <div className="landing-split">
+            <LandingVideo
+              className="landing-router-video"
+              src="/landing/cashbridge-router.mp4"
+              poster="/landing/cashbridge-router.webp"
+              label="Turning on the Cashbridge Router in the bridge form. Demo."
+            />
+            <div>
+              <p className="landing-kicker">Cashbridge Router</p>
+              <h2 id="router-title">One signature. Settled by contract.</h2>
+              <ul className="landing-points landing-points-stacked">
+                <li>
+                  <PenLine size={18} aria-hidden /> Sign once on the source chain
+                </li>
+                <li>
+                  <Undo2 size={18} aria-hidden /> A fixed minimum, or the BCH comes back to you
+                </li>
+                <li>
+                  <FileLock2 size={18} aria-hidden /> Per-order P2SH covenant — pay you or refund you
+                </li>
+              </ul>
+              <div className="landing-links">
+                <Link href="/docs/guides/cashbridge-router" className="landing-more">
+                  How the Router works <ArrowRight size={16} aria-hidden />
+                </Link>
+                <Link href="/docs/security" className="landing-more">
+                  Security and custody <ArrowRight size={16} aria-hidden />
+                </Link>
+              </div>
             </div>
+          </div>
+          <div className="landing-contract">
+            <DocsDemoContract />
           </div>
         </section>
 

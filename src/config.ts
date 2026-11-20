@@ -6,7 +6,7 @@ export const AppConfig = {
   appName: 'Cash Bridge',
   title: 'Cash Bridge | Bridge to Bitcoin Cash and PUSD',
   description:
-    'Bridge assets to Bitcoin Cash and CashTokens through THORChain and Cauldron. Choose manual execution, or automatic PUSD delivery with temporary service custody of BCH.',
+    'Bridge assets to Bitcoin Cash and CashTokens through THORChain, NEAR Intents and Cauldron. Manual signing, or Cashbridge Router contract orders that settle under a per-order covenant.',
   baseUrl: process.env.NEXT_PUBLIC_SITE_URL || 'https://cashbridge.space',
   // The bridge's first leg is THORChain alone (see BridgeConfig).
   providers: [ProviderName.THORCHAIN],

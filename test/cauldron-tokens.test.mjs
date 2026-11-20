@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { FEATURED_TOKENS, PUSD_TOKEN, parseIndexedToken, readTokenSlug, tokenSlug, withFeaturedFirst } from '../src/lib/cauldron-tokens.ts'
+import { FEATURED_TOKENS, PUSD_TOKEN, iconUrl, parseIndexedToken, readTokenSlug, tokenSlug, withFeaturedFirst } from '../src/lib/cauldron-tokens.ts'
 
 const MUSD = 'b38a33f750f84c5c169a6f23cb873e6e79605021585d4f3408789689ed87f366'
 const MUSD_V0 = '4046913cba6b70b2214a048a3df92252849f481ffa1455ed7faf17243c36bf67'
@@ -40,4 +40,12 @@ test('a page link names the BCH side by ticker for pinned tokens and by category
   assert.equal(readTokenSlug('MUSDv0'), undefined)
   assert.equal(readTokenSlug('BSC.BNB'), undefined)
   assert.equal(readTokenSlug(null), undefined)
+})
+
+test('BCMR IPFS icons go through the same-origin proxy', () => {
+  assert.equal(iconUrl('ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/icon.png'), '/api/ipfs/bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/icon.png')
+  assert.equal(iconUrl('https://ipfs.io/ipfs/QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG/icon.png'), '/api/ipfs/QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG/icon.png')
+  assert.equal(iconUrl('https://example.com/icon.png'), 'https://example.com/icon.png')
+  assert.equal(iconUrl('data:image/png;base64,aa'), 'data:image/png;base64,aa')
+  assert.equal(iconUrl(''), undefined)
 })

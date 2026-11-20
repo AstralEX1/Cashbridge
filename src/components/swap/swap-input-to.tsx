@@ -20,7 +20,8 @@ import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
 export const SwapInputTo = ({ selecting, onSelectOpenChange }: BridgeInputProps) => {
   const t = useTranslations('bridge.form')
   const assetTo = useAssetTo()
-  const token = useSwapStore(state => state.bchToken)
+  const openNetworks = useSwapStore(state => state.openNetworks)
+  const token = useSwapStore(state => (openNetworks ? null : state.bchToken))
   const { pasteAllowed } = useAutomaticBridge()
   const { quote, isLoading } = useQuote()
   const estimate = useTokenEstimate()
@@ -74,15 +75,21 @@ export const SwapInputTo = ({ selecting, onSelectOpenChange }: BridgeInputProps)
             <BridgeAssetButton
               ref={trigger}
               asset={assetTo}
-              bch
+              bch={!openNetworks}
               token={token}
               aria-label={t('to')}
               aria-expanded={selecting}
               onClick={() => onSelectOpenChange(true)}
             />
-            {pasteAllowed ? <BchDestinationMenu /> : <BridgeWalletBadge kind="bch" />}
+            {openNetworks ? (
+              <BridgeWalletBadge kind="buy" />
+            ) : pasteAllowed ? (
+              <BchDestinationMenu />
+            ) : (
+              <BridgeWalletBadge kind="bch" />
+            )}
           </div>
-          <DestinationAddressInput />
+          {!openNetworks && <DestinationAddressInput />}
           <output className="bridge-amount" aria-label={t('receiveAmount')} aria-live="polite" aria-busy={busy}>
             {busy ? <QuotePlaceholder previous={previous} /> : (output ?? '')}
           </output>
@@ -93,7 +100,7 @@ export const SwapInputTo = ({ selecting, onSelectOpenChange }: BridgeInputProps)
         </section>
       </div>
       <div className="bridge-input-switcher__slot bridge-input-switcher__picker-slot" aria-hidden={!selecting} inert={!selecting}>
-        <BridgeAssetPicker side="to" bch open={selecting} onClose={close} />
+        <BridgeAssetPicker side="to" bch={!openNetworks} open={selecting} onClose={close} />
       </div>
     </BridgeInputSwitcher>
   )

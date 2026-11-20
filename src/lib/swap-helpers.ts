@@ -228,10 +228,13 @@ type Mimir = Record<string, number>
 const isChainHalted = (mimir: Mimir, chain: string) => mimir['HALTTRADING'] > 0 || mimir[`HALT${chain}TRADING`] > 0 || mimir[`HALT${chain}CHAIN`] > 0
 
 // An asset is only unswappable when every provider listing it has halted its chain - one provider
-// halting while another still quotes is not a halt the user ever sees.
+// halting while another still quotes is not a halt the user ever sees. NEAR Intents has no THOR
+// mimir halt, so a NEAR listing keeps the row selectable while THORChain alone is paused.
 export const isAssetHalted = (asset: Asset, mimir: Mimir, mayaMimir: Mimir): boolean => {
-  const chain = assetSourceChain(asset)
+  const providers = asset.providers ?? []
+  if (providers.includes(ProviderName.NEAR)) return false
 
+  const chain = assetSourceChain(asset)
   const haltedOn: Partial<Record<ProviderName, boolean>> = {
     [ProviderName.THORCHAIN]: isChainHalted(mimir, chain),
     [ProviderName.MAYACHAIN]: isChainHalted(mayaMimir, chain)
@@ -239,7 +242,7 @@ export const isAssetHalted = (asset: Asset, mimir: Mimir, mayaMimir: Mimir): boo
 
   // `providers` can be absent on an asset restored from an older persisted store. Only the
   // native protocols raise halt flags; a listing elsewhere (Houdini) neither halts nor un-halts.
-  const providers = (asset.providers ?? []).filter(provider => provider in haltedOn)
+  const native = providers.filter(provider => provider in haltedOn)
 
-  return providers.length > 0 && providers.every(provider => haltedOn[provider])
+  return native.length > 0 && native.every(provider => haltedOn[provider])
 }

@@ -9,7 +9,7 @@ import { useBchWallet } from '@/components/bch-wallet'
 import { ConnectWallet } from '@/components/connect-wallet/connect-wallet'
 import { useDialog } from '@/components/global-dialog'
 import { Tooltip } from '@/components/tooltip'
-import { useAssetFrom } from '@/hooks/use-swap'
+import { useAssetFrom, useAssetTo } from '@/hooks/use-swap'
 import { useConnectedAccount, useDisconnect, useHasHydrated, useSetExternalWalletMode } from '@/hooks/use-wallets'
 import { useSwapStore } from '@/store/swap-store'
 
@@ -18,33 +18,43 @@ export const shortBridgeAddress = (address: string) => {
   return display.length > 14 ? `${display.slice(0, 6)}…${display.slice(-4)}` : display
 }
 
-// The wallet of one side of the form: the other chain's wallet ('other') or the BCH wallet ('bch').
-export const BridgeWalletBadge = ({ kind }: { kind: 'other' | 'bch' }) => {
+// The wallet of one side of the form: source ('other'), BCH destination ('bch'), or open-networks buy side ('buy').
+export const BridgeWalletBadge = ({ kind }: { kind: 'other' | 'bch' | 'buy' }) => {
   const side = kind === 'other' ? 'from' : 'to'
   const reverse = useSwapStore(state => state.reverse)
   const t = useTranslations('bridge.wallet')
   const assetFrom = useAssetFrom()
-  const account = useConnectedAccount(assetFrom?.chain)
+  const assetTo = useAssetTo()
+  const buyChain = kind === 'buy' ? assetTo?.chain : undefined
+  const account = useConnectedAccount(kind === 'buy' ? buyChain : assetFrom?.chain)
   const disconnectSource = useDisconnect()
   const hasHydrated = useHasHydrated()
   const setExternalWalletMode = useSetExternalWalletMode()
   const { openDialog } = useDialog()
   const bch = useBchWallet()
-  const address = side === 'from' ? (assetFrom ? account?.address : undefined) : bch.binding?.cashAddress
-  const chain = side === 'from' ? assetFrom?.chain : Chain.BitcoinCash
+  const address =
+    kind === 'buy'
+      ? account?.address
+      : side === 'from'
+        ? assetFrom
+          ? account?.address
+          : undefined
+        : bch.binding?.cashAddress
+  const chain = kind === 'buy' ? buyChain : side === 'from' ? assetFrom?.chain : Chain.BitcoinCash
 
   if (!chain) return null
 
   if (!address) {
-    const connecting = side === 'from' ? !hasHydrated : bch.state === 'connecting' || bch.state === 'reconnecting'
+    const connecting =
+      kind === 'buy' || side === 'from' ? !hasHydrated : bch.state === 'connecting' || bch.state === 'reconnecting'
     const retryBch = bch.reconnectStalled || bch.mismatch || bch.state === 'connected'
     return (
       <button
         type="button"
         className="bridge-wallet-badge bridge-wallet-connect"
-        disabled={side === 'to' && connecting && !bch.reconnectStalled}
+        disabled={kind === 'bch' && connecting && !bch.reconnectStalled}
         onClick={() => {
-          if (side === 'to') {
+          if (kind === 'bch') {
             if (retryBch) bch.pairAgain()
             else bch.connect()
           } else {
@@ -54,8 +64,18 @@ export const BridgeWalletBadge = ({ kind }: { kind: 'other' | 'bch' }) => {
         }}
       >
         <img className="bridge-wallet-chain" src={`/networks/${chain.toLowerCase()}.svg`} width={18} height={18} alt="" />
-        {connecting && !bch.reconnectStalled ? <LoaderCircle size={14} className="animate-spin" /> : <Wallet size={14} />}
-        {t(connecting && !bch.reconnectStalled ? 'connecting' : side === 'from' ? 'connectSource' : 'connectDestination')}
+        {connecting && !(kind === 'bch' && bch.reconnectStalled) ? (
+          <LoaderCircle size={14} className="animate-spin" />
+        ) : (
+          <Wallet size={14} />
+        )}
+        {t(
+          connecting && !(kind === 'bch' && bch.reconnectStalled)
+            ? 'connecting'
+            : kind === 'buy' || side === 'to'
+              ? 'connectDestination'
+              : 'connectSource'
+        )}
       </button>
     )
   }
@@ -64,11 +84,11 @@ export const BridgeWalletBadge = ({ kind }: { kind: 'other' | 'bch' }) => {
     <WalletAddressBadge
       address={address}
       chain={chain}
-      label={t(side === 'from' ? (reverse ? 'payout' : 'source') : 'destination')}
+      label={t(kind === 'buy' ? 'destination' : side === 'from' ? (reverse ? 'payout' : 'source') : 'destination')}
       showChainIcon
       onDisconnect={() => {
-        if (side === 'from' && account) disconnectSource(account.provider)
-        else if (side === 'to') void bch.disconnect()
+        if ((kind === 'buy' || side === 'from') && account) disconnectSource(account.provider)
+        else if (kind === 'bch') void bch.disconnect()
       }}
     />
   )

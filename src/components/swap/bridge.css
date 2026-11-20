@@ -2043,9 +2043,22 @@ button.bridge-flow-primary:disabled {
 .bridge-router button:disabled { cursor: default; pointer-events: none; }
 .bridge-router[data-disabled] button:disabled { opacity: .5; }
 .bridge-router:not([data-hydrated]) { visibility: hidden; }
-.bridge-router button:focus-visible, .bridge-auto-history:focus-visible { outline: 2px solid #0ac18e; outline-offset: 3px; }
+.bridge-router button:focus-visible, .bridge-auto-history:focus-visible, .bridge-open-networks:focus-visible { outline: 2px solid #0ac18e; outline-offset: 3px; }
 .bridge-router-hint { margin: -2px 4px 12px; color: #c4d2d6; font-size: 13px; line-height: 1.4; }
-@media (max-width: 400px) { .bridge-router button { padding: 7px 10px; } }
+.bridge-open-networks {
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: #ffffff0d;
+  box-shadow: inset 0 0 0 1px #ffffff1a;
+  color: #dce6e8;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.bridge-open-networks[aria-pressed='true'] { background: #0ac18e; color: #0f1820; box-shadow: none; }
+.bridge-open-networks:not([data-hydrated]) { visibility: hidden; }
+@media (max-width: 400px) { .bridge-router button { padding: 7px 10px; } .bridge-open-networks { padding: 7px 10px; } }
 /* BCH receiving address menu (router and plain BCH): the wallet pill opens connect / paste options. */
 .bridge-wallet-menu { cursor: pointer; }
 .bridge-wallet-menu[data-state='open'] { background: #eaf0ef; }
