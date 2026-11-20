@@ -6,6 +6,7 @@ import { Asset } from '@/components/swap/asset'
 import { AppConfig, BridgeConfig } from '@/config'
 import { getMidgardPools } from '@/lib/api'
 import { getNearTokens, mergeNearAssets } from '@/lib/near-intents'
+import type { NearUnquotable } from '@/lib/near-quotable'
 import { useIsPrivateSwap } from '@/store/private-swap-store'
 import { isNetworkAsset, useSwapStore } from '@/store/swap-store'
 
@@ -161,13 +162,30 @@ export const useAssets = (): { assets?: Asset[]; isLoading: boolean } => {
   }
 }
 
-// The assets selectable in the current tab (see isAssetInMode).
+// The assets selectable in the current tab (see isAssetInMode). On the bridge, a NEAR-only row NEAR Intents quotes no
+// route for in this direction is left out; until that list arrives, or when it fails, every row shows.
 export const useModeAssets = (): { assets?: Asset[]; isLoading: boolean } => {
   const { assets, isLoading } = useAssets()
   const isPrivateSwap = useIsPrivateSwap()
   const openNetworks = useSwapStore(state => state.openNetworks)
+  const reverse = useSwapStore(state => state.reverse)
+  const { data: unquotable } = useQuery({
+    queryKey: ['near-unquotable'],
+    queryFn: (): Promise<NearUnquotable> => fetch('/api/near-intents/quotable').then(res => res.json()),
+    enabled: BridgeConfig.nearIntents,
+    staleTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: false
+  })
+  const hidden = openNetworks || isPrivateSwap ? undefined : unquotable?.[reverse ? 'reverse' : 'forward']
 
-  const modeAssets = useMemo(() => assets?.filter(asset => openNetworks ? isNetworkAsset(asset) : isAssetInMode(asset, isPrivateSwap)), [assets, isPrivateSwap, openNetworks])
+  const modeAssets = useMemo(
+    () =>
+      assets?.filter(asset =>
+        openNetworks ? isNetworkAsset(asset) : isAssetInMode(asset, isPrivateSwap) && !(hidden?.includes(asset.identifier) && isNearOnlyAsset(asset))
+      ),
+    [assets, isPrivateSwap, openNetworks, hidden]
+  )
 
   return { assets: modeAssets, isLoading }
 }
