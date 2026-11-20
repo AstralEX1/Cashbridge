@@ -35,7 +35,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     return apiError(400, 'bad_request', 'Invalid IPFS path', 'Only CIDv0/CIDv1 icon paths are forwarded.')
   }
 
-  let buffer: Buffer | undefined
+  let body: Uint8Array | undefined
   let type = ''
   for (const base of UPSTREAMS) {
     let upstream: Response
@@ -55,20 +55,20 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     }
     const contentType = (upstream.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
     // Some gateways omit content-type or send octet-stream; sniff later.
-    const bytes = Buffer.from(await upstream.arrayBuffer())
+    const bytes = new Uint8Array(await upstream.arrayBuffer())
     if (bytes.byteLength === 0 || bytes.byteLength > MAX_BYTES) continue
     const sniffed = contentType && contentType !== 'application/octet-stream' ? contentType : sniffImageType(bytes)
     if (!sniffed || !ALLOWED_TYPES.has(sniffed)) continue
-    buffer = bytes
+    body = bytes
     type = sniffed
     break
   }
 
-  if (!buffer || !type) {
+  if (!body || !type) {
     return apiError(502, 'upstream_unreachable', 'IPFS gateway unreachable', 'Retry in a moment.')
   }
 
-  return new NextResponse(buffer, {
+  return new NextResponse(body, {
     status: 200,
     headers: {
       'Content-Type': type,
@@ -78,12 +78,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
   })
 }
 
-function sniffImageType(bytes: Buffer) {
+function sniffImageType(bytes: Uint8Array) {
   if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png'
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
-  if (bytes.length >= 12 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') return 'image/webp'
-  if (bytes.length >= 6 && (bytes.toString('ascii', 0, 6) === 'GIF87a' || bytes.toString('ascii', 0, 6) === 'GIF89a')) return 'image/gif'
-  const head = bytes.subarray(0, Math.min(bytes.length, 256)).toString('utf8').trimStart()
+  if (bytes.length >= 12 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50)
+    return 'image/webp'
+  if (bytes.length >= 6 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38 && (bytes[4] === 0x37 || bytes[4] === 0x39) && bytes[5] === 0x61) return 'image/gif'
+  const head = new TextDecoder().decode(bytes.subarray(0, Math.min(bytes.length, 256))).trimStart()
   if (head.startsWith('<svg') || head.startsWith('<?xml')) return 'image/svg+xml'
   return undefined
 }
