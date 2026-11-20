@@ -11,7 +11,7 @@ import { BridgeConfig } from '../src/config.ts'
 import { createOrder } from '../src/server/auto-bridge/api.ts'
 import { OrderStore } from '../src/server/auto-bridge/store.ts'
 import { orderUnlockBytes, WorkerWallet } from '../src/server/auto-bridge/wallet.ts'
-import { processSale } from '../src/server/auto-bridge/worker.ts'
+import { processSale, THORCHAIN_QUOTE_MS } from '../src/server/auto-bridge/worker.ts'
 import { otherPubkey, pubkey } from './fixtures/bridge-fixtures.mjs'
 
 const limits = { maxOrderSats: 100_000_000n, maxPendingSats: 1_000_000_000n, maxOpenOrders: 100 }
@@ -100,7 +100,8 @@ const setup = () => {
   const signer = wallet()
   const store = new OrderStore(':memory:', signer.xpub, limits, undefined, undefined, false, true)
   const token = capability()
-  const order = store.create(randomUUID(), token, intent, '300000', 1_000_000)
+  // Opened a little before the tokens arrive, inside THORChain's quote lifetime.
+  const order = store.create(randomUUID(), token, intent, '300000', 1_500_000)
   const net = network()
   const run = (now = 2_000_000, build = localSale) => processSale(store, net.gateway, signer, store.get(order.id), policy, build, () => now)
   const tokens = (amount = 100n, value = 2000n) => net.receive([{ lockingBytecode: hexToBin(order.binding.lockingBytecode), valueSatoshis: value, token: { category: hexToBin(category), amount } }])
@@ -190,12 +191,12 @@ test('a THORChain refund paid straight to the customer ends the order', async ()
   }
 })
 
-test('a second coin, a moved vault or a missed deadline sends the tokens back as they came', async () => {
-  for (const scenario of ['two coins', 'vault moved', 'late']) {
+test('tokens split over two coins, a moved vault, a lapsed quote or a missed deadline send the tokens back as they came', async () => {
+  for (const scenario of ['two coins', 'vault moved', 'quote lapsed', 'late']) {
     const { store, net, run, tokens, get } = setup()
     try {
-      tokens()
-      if (scenario === 'two coins') tokens(5n)
+      if (scenario === 'two coins') (tokens(60n), tokens(40n))
+      else tokens()
       if (scenario === 'vault moved') net.state.inbounds[0].address = customer.cashAddress
       if (scenario === 'late') {
         // No sale meets the floor before the deadline, which starts when the tokens are seen.
@@ -203,7 +204,7 @@ test('a second coin, a moved vault or a missed deadline sends the tokens back as
         assert.equal(get().state, 'retrying')
         assert.equal(store.attempts(get().id).length, 0)
       }
-      await run(scenario === 'late' ? 2_000_000 + policy.maxWaitMs : 2_000_000)
+      await run(scenario === 'late' ? 2_000_000 + policy.maxWaitMs : scenario === 'quote lapsed' ? 1_500_000 + THORCHAIN_QUOTE_MS : 2_000_000)
       const attempts = store.attempts(get().id)
       assert.deepEqual(attempts.map(a => a.kind), ['refund'], scenario)
       const out = decodeTx(attempts[0].hex).outputs
@@ -393,6 +394,27 @@ test('the sale API checks a routed sale against 1Click: recipient, refund, asset
     assert.equal((await createOrder(request({ id: randomUUID(), ...intent, sale: routedSale('near') }), service)).status, 409, 'asks more than the sale guarantees')
     quote = oneClick('near', { deadline: later, minAmountIn: '2900000' })
     assert.equal((await createOrder(request({ id: randomUUID(), ...intent, sale: routedSale('near') }), service)).status, 201)
+  } finally {
+    store.close()
+  }
+})
+
+test("a stranger's BCH beside the tokens neither stops the sale nor stays at the contract, and dust is left alone", async () => {
+  const { store, net, run, tokens, get } = setup()
+  try {
+    tokens()
+    net.receive([{ lockingBytecode: hexToBin(get().binding.lockingBytecode), valueSatoshis: 5000n }])
+    net.receive([{ lockingBytecode: hexToBin(get().binding.lockingBytecode), valueSatoshis: 700n }])
+    await run()
+    const [sold, deposited] = store.attempts(get().id)
+    assert.deepEqual([sold.kind, deposited.kind], ['swap', 'deposit'])
+    assert.equal(get().funding.length, 1, 'only the token coin is sold')
+    await run()
+    const back = store.attempts(get().id).find(a => a.kind === 'refund')
+    assert.ok(back && net.state.sent.some(a => a.txid === back.txid), 'the stray BCH goes to the customer')
+    const tx = decodeTx(back.hex)
+    assert.equal(tx.inputs.length, 1)
+    assert.equal(binToHex(tx.outputs[0].lockingBytecode), customer.lockingBytecode)
   } finally {
     store.close()
   }

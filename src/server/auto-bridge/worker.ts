@@ -626,6 +626,9 @@ async function contractCoins(gateway: Gateway, order: Order): Promise<SaleCoin[]
 
 // The fee rate for the deposit while THORChain takes BCH at the order's vault and pays the asked chain, or while a
 // routed sale's NEAR Intents address still waits for it with time to count it; else undefined.
+// How long a sale's THORChain memo, quoted when the order opened, may still be deposited.
+export const THORCHAIN_QUOTE_MS = 10 * 60_000
+
 async function depositFeeRate(gateway: Gateway, order: Order, now: number) {
   if (order.sale!.route) {
     const status = await gateway.nearStatus?.(order.sale!.vaultAddress).catch(() => undefined)
@@ -651,7 +654,8 @@ export async function processSale(
   store.assertWritable()
   let order = store.get(original.id)
   if (!order?.sale) return
-  const coins = await contractCoins(gateway, order)
+  // A stranger's BCH dust at the contract is no coin of the order: it can neither be sold nor given back.
+  const coins = (await contractCoins(gateway, order)).filter(coin => coin.token || BigInt(coin.value) >= MIN_ORDER_COIN_SATS)
   const set = (patch: Parameters<OrderStore['update']>[2]) => {
     store.update(order!.id, order!.version, patch, clock())
     order = store.get(order!.id)!
@@ -748,11 +752,16 @@ export async function processSale(
 
   const now = clock()
   if (!order.receivedAt) set({ receivedAt: now, deadline: now + Math.min(order.maxWaitMs, policy.maxWaitMs) })
-  set({ funding: coins })
-  const [coin] = coins
-  const sellable = coins.length === 1 && coin.token?.category === order.sale.category && !coin.token.nft && BigInt(coin.token.amount) >= BigInt(order.sale.tokenAmount)
-  const feeRate = sellable && now < order.deadline! ? await depositFeeRate(gateway, order, now) : undefined
-  if (feeRate === undefined) return giveBack(sellable && now < order.deadline! ? 'The bridge is not taking BCH at this deposit address; returning the tokens.' : undefined)
+  // The coin with the ordered tokens is sold; another coin (a stranger's BCH) goes back to the customer after the deposit.
+  const terms = order.sale
+  const coin = coins.find(c => c.token?.category === terms.category && !c.token.nft && BigInt(c.token.amount) >= BigInt(terms.tokenAmount))
+  set({ funding: coin ? [coin] : coins })
+  // THORChain: "Quotes should only be considered valid for 10 minutes" and "Do not send funds after the expiry".
+  const quoted = !!terms.route || now < order.createdAt + THORCHAIN_QUOTE_MS
+  const open = !!coin && quoted && now < order.deadline!
+  const feeRate = open ? await depositFeeRate(gateway, order, now) : undefined
+  if (feeRate === undefined)
+    return giveBack(open ? 'The bridge is not taking BCH at this deposit address; returning the tokens.' : coin && !quoted ? 'The THORChain quote expired before the tokens arrived; returning them.' : undefined)
   try {
     const trade = await build(order)
     const { reviewBuild, sourcesOf } = await import('@/lib/cauldron')
