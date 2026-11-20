@@ -87,6 +87,7 @@ export const providerLabel = (provider: ProviderName): string => {
   if (provider === 'NEAR') return 'Near'
   if (provider === 'ONEINCH') return '1inch'
   if (provider === 'HOUDINI') return 'Houdini Swap'
+  if ((provider as string) === 'SHAPESHIFT') return 'ShapeShift'
   return 'Unknown'
 }
 

@@ -4,7 +4,8 @@ import { ProviderName } from '@tcswap/helpers'
 import { AxiosError } from 'axios'
 import { getTrack } from '@/lib/api'
 import { getTransferStatus, transferDropWindow } from '@/lib/transfer-status'
-import { SendTransaction, TxStatus, useSyncablePlainTransactions, useSetTransactionDetails, useSetTransactionStatus } from '@/store/transaction-store'
+import { SendTransaction, TxStatus, transactionStore, useSyncablePlainTransactions, useSetTransactionDetails, useSetTransactionStatus } from '@/store/transaction-store'
+import { syncNetworkSwap } from '@/lib/network-swap-tracker'
 
 // A send still unseen past its drop window becomes 'unknown' - but only after this many inconclusive
 // lookups, at most one per poll interval, so a single erroring or lagging node can't freeze a
@@ -61,6 +62,14 @@ export const useSyncTransactions = () => {
       refetchIntervalInBackground: false,
       queryFn: () => {
         if (tx.kind === 'send') return syncSend(tx, setTransactionStatus)
+        // A wallet answer was lost before returning a hash; there is no safe tracker identity yet.
+        if (!tx.hash && !tx.qrCodeData) return null
+        const syncNetwork = async (hash?: string) => {
+          const patch = await syncNetworkSwap({ ...tx, hash })
+          transactionStore.setState(state => ({ transactions: state.transactions.map(current => current.uid === tx.uid && current.kind !== 'send' ? { ...current, ...patch } : current) }))
+          return patch
+        }
+        if (tx.networkSwap && tx.hash) return syncNetwork(tx.hash)
 
         // A deposit channel the provider has not seen a deposit into: once its window closes there
         // is nothing to track. Not for a Houdini order - Houdini watches the deposit itself and
@@ -89,6 +98,7 @@ export const useSyncTransactions = () => {
           providerSwapId: tx.providerSwapId
         })
           .then(data => {
+            if (tx.networkSwap) return syncNetwork(typeof data.hash === 'string' ? data.hash : undefined)
             setTransactionDetails(tx.uid, data)
             return data
           })

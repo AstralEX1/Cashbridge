@@ -30,6 +30,7 @@ import { hasDepositArrived, isTxPending, Transaction, useTransactions } from '@/
 import { autoBridgeStore } from '@/store/auto-bridge-store'
 import { AutomaticHistoryRow } from '@/components/swap/auto-bridge-progress'
 import { useAutomaticHydrated } from '@/hooks/use-automatic-bridge'
+import { NetworkSwapRecovery } from '@/components/swap/network-swap-recovery'
 
 interface HistoryDialogProps {
   isOpen: boolean
@@ -330,7 +331,9 @@ export const TransactionHistoryDialog = ({ isOpen, onOpenChange }: HistoryDialog
                       </div>
                     )}
 
-                    {isExpanded && (details || isSend) && (
+                    {!isSend && tx.networkSwap && tx.status === 'unknown' && !tx.hash && !tx.qrCodeData && <NetworkSwapRecovery tx={tx} />}
+
+                    {isExpanded && (details || isSend || tx.networkSwap) && (
                       <div className="mt-3 space-y-4 border-t py-4 text-xs font-semibold">
                         {fromAddress && (
                           <div className="text-txt-label-small flex items-center justify-between">
@@ -438,7 +441,8 @@ function getExplorerLinks(tx: Transaction): ExplorerLink[] {
   const destLeg = [...legs].reverse().find(leg => ChainIdToChain[leg.chainId as ChainId] === toChain)
 
   const sourceUrl = legExplorerUrl(sourceLeg, fromChain) ?? (tx.hash ? getExplorerTxUrl({ chain: fromChain, txHash: tx.hash }) || null : null)
-  const destUrl = legExplorerUrl(destLeg, toChain)
+  const payoutHash = tx.kind !== 'send' ? tx.networkSwap?.payout?.hash : undefined
+  const destUrl = legExplorerUrl(destLeg, toChain) ?? (payoutHash ? getExplorerTxUrl({ chain: toChain, txHash: payoutHash }) || null : null)
 
   const links: ExplorerLink[] = []
   const add = (url: string | null) => {

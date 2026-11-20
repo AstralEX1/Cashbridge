@@ -17,6 +17,8 @@ import { isHoudiniProvider, resolvePriceImpact } from '@/lib/swap-helpers'
 import { generateId } from '@/lib/utils'
 import { useIsLimitSwap, useLimitSwapBuyAmount } from '@/store/limit-swap-store'
 import { useSetTransaction } from '@/store/transaction-store'
+import { useSwapStore } from '@/store/swap-store'
+import { toBaseUnits } from '@/lib/bridge'
 
 interface InstantSwapDialogProps {
   provider: ProviderName
@@ -42,6 +44,7 @@ export const InstantSwapDialog = ({ provider, isOpen, onOpenChange }: InstantSwa
   const assetTo = useAssetTo()
   const { valueFrom } = useSwap()
   const setTransaction = useSetTransaction()
+  const openNetworks = useSwapStore(state => state.openNetworks)
   const isLimitSwap = useIsLimitSwap()
   const limitSwapBuyAmount = useLimitSwapBuyAmount()
   const { rateFrom, rateTo } = useSwapRates()
@@ -93,7 +96,8 @@ export const InstantSwapDialog = ({ provider, isOpen, onOpenChange }: InstantSwa
         isLimitSwap && limitSwapBuyAmount && !sentAmount.eq(0)
           ? USwapNumber.fromBigInt(BigInt(limitSwapBuyAmount), 8).div(sentAmount).toSignificant()
           : undefined,
-      providerSwapId: quote.meta?.houdini?.houdiniId
+      providerSwapId: quote.meta?.houdini?.houdiniId,
+      ...(openNetworks && { networkSwap: { minOutput: toBaseUnits(quote.expectedBuyAmountMaxSlippage ?? quote.expectedBuyAmount, assetTo.decimals).toString() } })
     })
   }
 

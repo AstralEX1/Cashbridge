@@ -20,6 +20,7 @@ import { useConnectedAccount } from '@/hooks/use-wallets'
 import { getAssetBalance, getThorBankBalances } from '@/lib/api'
 import { thorBalanceKey } from '@/lib/swap-helpers'
 import { getUSwap } from '@/lib/wallets'
+import { useSwapStore } from '@/store/swap-store'
 
 type UseBalance = {
   balance?: {
@@ -34,7 +35,8 @@ type UseBalance = {
 export const useBalance = (): UseBalance => {
   const uSwap = getUSwap()
   const assetFrom = useAssetFrom()
-  const selected = useConnectedAccount(assetFrom?.chain)
+  const openNetworks = useSwapStore(state => state.openNetworks)
+  const selected = useConnectedAccount(assetFrom?.chain, openNetworks)
   const queryClient = useQueryClient()
 
   const {

@@ -76,6 +76,18 @@ test('a Solana payout sums system transfers to the destination; a memo, if any, 
   assert.equal(solanaPayout(null, 'S', expect), undefined)
 })
 
+test('a Solana token payout verifies the case-sensitive mint and destination owner balance increase', () => {
+  const destination = 'So1Destination111111111111111111111111111111'
+  const mint = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
+  const expect = { destination, depositTxid: deposit, buyAsset: `SOL.USD-COIN-${mint}` }
+  const balance = (amount, owner = destination, token = mint) => ({ accountIndex: 3, owner, mint: token, uiTokenAmount: { amount } })
+  const tx = { meta: { err: null, preTokenBalances: [balance('10')], postTokenBalances: [balance('100010')] }, transaction: { message: { instructions: [] } } }
+  assert.deepEqual(solanaPayout(tx, 'S', expect), { hash: 'S', amount: '100000' })
+  assert.equal(solanaPayout(tx, 'S', { ...expect, buyAsset: `SOL.USDC-${mint.toLowerCase()}` }), undefined)
+  assert.equal(solanaPayout(tx, 'S', { ...expect, destination: 'Other' }), undefined)
+  assert.equal(solanaPayout({ ...tx, meta: { ...tx.meta, err: 'failed' } }, 'S', expect), undefined)
+})
+
 test('a TRON payout pays the destination in TRX or in the asked TRC-20 contract', () => {
   const destinationHex = `41${'12'.repeat(20)}`
   const destination = encodeBase58AddressFormat(0x41, hexToBin('12'.repeat(20)))

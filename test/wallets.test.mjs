@@ -27,7 +27,7 @@ globalThis.document = {
   }
 }
 
-const { useWalletStore, connectedAccount } = await import('../src/store/wallets-store.ts')
+const { useWalletStore, connectedAccount, accountForChain } = await import('../src/store/wallets-store.ts')
 const { SESSION_KEY, clearBchSession, migrateLegacyBchSession } = await import('../src/components/bch-wallet.tsx')
 const { BridgeWalletBadge } = await import('../src/components/swap/bridge-wallet-badge.tsx')
 const { BridgeCompletion } = await import('../src/components/swap/bridge-completion.tsx')
@@ -72,6 +72,15 @@ beforeEach(() => {
   controls.walletState = undefined
   controls.queryData = undefined
   useWalletStore.setState({ accounts: [], selected: undefined, connectedWallets: [], hasHydrated: true, externalWalletMode: false })
+})
+
+test('free-pair source and destination resolve independently from connected accounts', () => {
+  const source = account('0xsource', Chain.Ethereum)
+  const destination = account('0xdestination', Chain.Base)
+  const state = { accounts: [source, destination], selected: source }
+  assert.equal((accountForChain ?? connectedAccount)(state, Chain.Base), destination)
+  assert.equal((accountForChain ?? connectedAccount)(state, Chain.Ethereum), source)
+  assert.equal(connectedAccount(state), source, 'bridge mode still uses the selected wallet')
 })
 
 test('the completion receipt links each transaction and puts the live Earn button under Received', () => {
@@ -482,15 +491,20 @@ test('the BCH badge shows the connected destination and removes the connect acti
 })
 
 test('balances are scoped to the account address and cached funds disappear immediately on disconnect', () => {
+  const balance = () => {
+    let result
+    render(() => { result = useBalance(); return null })
+    return result
+  }
   controls.account = account()
-  useBalance()
+  balance()
   const firstKey = controls.queryOptions.queryKey
   controls.account = account('0x2222222222222222222222222222222222222222')
-  useBalance()
+  balance()
   assert.notDeepEqual(controls.queryOptions.queryKey, firstKey)
   controls.queryData = { total: new USwapNumber('101'), spendable: new USwapNumber('100.61') }
   controls.account = undefined
-  assert.equal(useBalance().balance, null)
+  assert.equal(balance().balance, null)
   assert.equal(controls.queryOptions.enabled, false)
 })
 

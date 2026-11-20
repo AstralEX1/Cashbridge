@@ -56,6 +56,10 @@
 }
 .bridge-tools {
   color: var(--leah);
+  scrollbar-width: none;
+}
+.bridge-tools::-webkit-scrollbar {
+  display: none;
 }
 .bridge-tools [data-slot='button'] {
   background: var(--menu);

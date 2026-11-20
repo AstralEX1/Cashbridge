@@ -23,7 +23,7 @@ import { AddressCheck, useValidAddress } from '@/hooks/use-valid-address'
 import { useAssetFrom, useAssetTo, useCustomInterval, useCustomQuantity, useSlippage, useSwap } from '@/hooks/use-swap'
 import { useAccounts, useConnectedAccount, useSelectedAccount } from '@/hooks/use-wallets'
 import { useSwapStore } from '@/store/swap-store'
-import { getQuotes } from '@/lib/api'
+import { getNetworkQuotes, getQuotes } from '@/lib/api'
 import { resolveQuoteError } from '@/lib/errors'
 import { prepareQuoteForLimitSwap } from '@/lib/memo-helpers'
 import {
@@ -68,8 +68,11 @@ const RecipientForm = ({
   const slippage = useSlippage()
   const customInterval = useCustomInterval()
   const customQuantity = useCustomQuantity()
+  const openNetworks = useSwapStore(state => state.openNetworks)
   const accounts = useAccounts()
-  const selectedAccount = useSelectedAccount()
+  const legacyAccount = useSelectedAccount()
+  const sourceAccount = useConnectedAccount(assetFrom.chain, openNetworks)
+  const selectedAccount = openNetworks ? sourceAccount : legacyAccount
   const isLimitSwap = useIsLimitSwap()
   const limitSwapBuyAmount = useLimitSwapBuyAmount()
   const limitSwapExpiry = useLimitSwapExpiry()
@@ -83,13 +86,12 @@ const RecipientForm = ({
 
   // A replacement for a cancelled limit order keeps the destination the original order paid out to.
   const replacementOrder = useReplacementOrder()
-  const openNetworks = useSwapStore(state => state.openNetworks)
   // Bridge mode always pays the connected BCH wallet. Open networks pays the buy-chain wallet (editable).
   const { binding } = useBchWallet()
-  const buyAccount = useConnectedAccount(assetTo.chain)
-  const [typedDestination, setTypedDestination] = useState('')
+  const buyAccount = useConnectedAccount(assetTo.chain, openNetworks)
+  const [typedDestination, setTypedDestination] = useState<string>()
   const destinationAddress = openNetworks
-    ? typedDestination || buyAccount?.address || ''
+    ? typedDestination ?? buyAccount?.address ?? ''
     : (binding?.cashAddress ?? '')
   const setDestinationAddress = openNetworks ? setTypedDestination : (_: string) => {}
   void replacementOrder
@@ -148,7 +150,8 @@ const RecipientForm = ({
     const isThorchain = provider === 'THORCHAIN' || provider === 'THORCHAIN_STREAMING'
     const supportsStreaming = isThorchain || isMayachain
 
-    getQuotes({
+    ;(openNetworks ? getNetworkQuotes : getQuotes)({
+      ...(openNetworks && { buyAssetShortCode: assetTo.shortCode }),
       buyAsset: assetTo.identifier,
       sellAsset: assetFrom.identifier,
       sellAmount: valueFrom.toSignificant(),

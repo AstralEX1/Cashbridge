@@ -276,6 +276,8 @@ export const prepareNearDeposit = async ({
   const sizingScript = binding.lockingBytecode
   if (!payAll) funding = pickBchFunding(funding, amountSats ?? 0n, binding.lockingBytecode, sizingScript, feeRate)
   const amount = buildDeposit({ funding, lockingBytecode: binding.lockingBytecode, vaultScript: sizingScript, payAll, amountSats, feeRate }).amountSats
+  // FLEX_INPUT (Hashi-style): the deposit may land at or above the quoted minimum; Cauldron sale
+  // proceeds are rarely exact to the dry quote, so EXACT_INPUT would reject a shortfall.
   const route = await getNearQuote({
     sellAsset: BridgeConfig.buyAsset,
     buyAsset,
@@ -283,11 +285,13 @@ export const prepareNearDeposit = async ({
     recipient: destination,
     refundTo: binding.cashAddress,
     dry: false,
+    flexible: true,
     slippageBps: nearSlippageBps(slippage)
   })
   if (!route) throw new DepositError('NEAR Intents does not carry this asset')
   const near = nearLegOf(route)
-  if (BigInt(near.amountIn) !== amount) throw new DepositError('The NEAR Intents quote is for a different amount')
+  const minIn = BigInt(route.near.quote.minAmountIn ?? near.amountIn)
+  if (amount < minIn) throw new DepositError('The deposit is below the NEAR Intents minimum')
   const vaultScript = addressToLockingBytecode(near.depositAddress)
   if (!vaultScript || vaultScript === binding.lockingBytecode) throw new DepositError('The NEAR Intents deposit address is not a BCH address')
   const built = buildDeposit({ funding, lockingBytecode: binding.lockingBytecode, vaultScript, amountSats: amount, feeRate })
@@ -303,7 +307,7 @@ export const prepareNearBchDeposit = async (args: { amountSats: bigint; binding:
 
 // A transaction on the destination chain named by its hash, counted only if that chain's own node shows it paying the
 // destination (no memo asked): an EVM receipt and transaction, or the chain's own lookup.
-const payoutByHash = async (chain: string, hash: string, expect: PayoutExpectation): Promise<ChainPayout | undefined> => {
+export const payoutByHash = async (chain: string, hash: string, expect: PayoutExpectation): Promise<ChainPayout | undefined> => {
   if (!isEvmChain(chain)) return payoutOnChain(chain, hash, expect)
   const provider = await getProvider(chain as EVMChain)
   const id = hash.startsWith('0x') ? hash : `0x${hash}`
@@ -454,18 +458,25 @@ export const confirmReportedPayout = async (op: BridgeOperation) => {
   const reverse = op.reverse
   const depositTxid = reverse?.deposit?.txid
   if (!reverse || !depositTxid) return undefined
-  const chain = destinationChainOf(reverse.buyAsset)
+  return confirmPayout({ destination: reverse.destination, depositTxid, buyAsset: reverse.buyAsset, router: reverse.deposit?.router })
+}
+
+// Shared by reverse bridges and free-pair swaps: THORNode names an outbound; its own chain proves it.
+export const confirmPayout = async ({ destination, depositTxid, buyAsset, router: knownRouter }: {
+  destination: string; depositTxid: string; buyAsset: string; router?: string
+}) => {
+  const chain = destinationChainOf(buyAsset)
   const status = await getTxStatus(depositTxid)
   const outs = (status.out_txs ?? []).filter(o => o.chain?.toUpperCase() === chain && o.memo?.toUpperCase().startsWith('OUT:'))
   if (outs.length === 0) return undefined
   if (!isEvmChain(chain)) {
     for (const out of outs) {
-      const found = await nonEvmPayout(chain, out, { destination: reverse.destination, depositTxid, buyAsset: reverse.buyAsset }).catch(() => undefined)
+      const found = await nonEvmPayout(chain, out, { destination, depositTxid, buyAsset }).catch(() => undefined)
       if (found) return found
     }
     return undefined
   }
-  const router = reverse.deposit?.router
+  const router = knownRouter ?? (await getInboundAddresses()).find(inbound => inbound.chain === chain)?.router
   if (!router) return undefined
   const provider = await getProvider(chain as EVMChain)
   for (const out of outs) {
@@ -473,7 +484,7 @@ export const confirmReportedPayout = async (op: BridgeOperation) => {
     if (!receipt || receipt.status !== 1) continue
     const match = matchPayout(
       receipt.logs.map(l => ({ address: l.address, topics: [...l.topics], data: l.data, transactionHash: receipt.hash, blockNumber: receipt.blockNumber })),
-      { destination: reverse.destination, depositTxid, router, buyAsset: reverse.buyAsset }
+      { destination, depositTxid, router, buyAsset }
     )
     if (match) return { hash: match.hash, amount: match.amount }
   }

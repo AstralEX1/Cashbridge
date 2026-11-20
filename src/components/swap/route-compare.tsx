@@ -1,7 +1,7 @@
 'use client'
 
 import { useTranslations } from 'next-intl'
-import { NearMark, ThorchainMark } from '@/components/swap/bridge-marks'
+import { NearMark, ShapeShiftMark, ThorchainMark } from '@/components/swap/bridge-marks'
 import { useTokenQuoteFor } from '@/components/swap/pusd-swap'
 import { useQuote } from '@/hooks/use-quote'
 import { useAssetFrom, useSwap } from '@/hooks/use-swap'
@@ -11,15 +11,16 @@ import { useSwapStore } from '@/store/swap-store'
 
 const ROUTES = [
   { key: 'thorchain', name: 'THORChain', Mark: ThorchainMark },
-  { key: 'near', name: 'NEAR Intents', Mark: NearMark }
+  { key: 'near', name: 'NEAR Intents', Mark: NearMark },
+  { key: 'shapeshift', name: 'ShapeShift', Mark: ShapeShiftMark }
 ] as const
 
-// The two bridges side by side when NEAR is allowed and an amount is set — even if one quote fails.
+// The routes side by side when NEAR or ShapeShift is allowed and an amount is set — even if one quote fails.
 // What each would deliver (into BCH: the token through the same Cauldron swap, else BCH; back from BCH:
 // the other chain's asset) and how long it takes. The better one is taken unless the user picks the other.
 export const RouteCompare = () => {
   const t = useTranslations('bridge.routes')
-  const { routes, quote, best, nearAllowed, isLoading } = useQuote()
+  const { routes, quote, best, nearAllowed, shapeshiftAllowed, isLoading } = useQuote()
   const { valueFrom } = useSwap()
   const reverse = useSwapStore(state => state.reverse)
   const openNetworks = useSwapStore(state => state.openNetworks)
@@ -30,15 +31,16 @@ export const RouteCompare = () => {
   const setChoice = useSwapStore(state => state.setRouteChoice)
   const estimates = {
     thorchain: useTokenQuoteFor(token ? routes?.thorchain?.expectedBuyAmount : undefined, token),
-    near: useTokenQuoteFor(token ? routes?.near?.expectedBuyAmount : undefined, token)
+    near: useTokenQuoteFor(token ? routes?.near?.expectedBuyAmount : undefined, token),
+    shapeshift: useTokenQuoteFor(token ? routes?.shapeshift?.expectedBuyAmount : undefined, token)
   }
   const amountSet = !valueFrom.eqValue(0)
-  // Show both route cards whenever NEAR is in play and the user typed an amount — not only when NEAR succeeds.
-  if (!nearAllowed || !amountSet) return null
+  // Show the route cards whenever an extra route is in play and the user typed an amount — not only when it succeeds.
+  if (!(nearAllowed || shapeshiftAllowed) || !amountSet) return null
 
   return (
     <div className="bridge-routes" role="radiogroup" aria-label={t('label')} data-loading={isLoading || undefined}>
-      {ROUTES.map(({ key, name, Mark }) => {
+      {ROUTES.filter(({ key }) => key === 'thorchain' || (key === 'near' ? nearAllowed : shapeshiftAllowed)).map(({ key, name, Mark }) => {
         const route = routes?.[key]
         const estimate = estimates[key]
         const amount = !route

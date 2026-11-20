@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { DocsDemoContract } from '@/components/docs/docs-demo-contract'
 import { Callout, DocsArticle } from '@/components/docs/docs-ui'
 
 export const metadata: Metadata = {
@@ -27,8 +26,6 @@ export default function Page() {
       <Callout kind="warning" title="The Router decides when your BCH moves, not where">
         For <code>apiVersion=2</code> purchase orders, the bridge pays BCH to a P2SH20 contract built from your order terms. Only the Router key for that order can spend early, and only to pay you at least the quoted minimum of your token (<code>convert</code>) or to send BCH to your fallback (<code>giveBack</code>, ≤ 2,000 sats miner fee). After <code>refundAfter</code> — set about three hours from order creation; Bitcoin Cash median time runs about an hour behind wall clock — anyone may <code>expire</code> on the same refund terms.
       </Callout>
-
-      <DocsDemoContract />
 
       <p>What the service does, and what the contract prevents:</p>
       <ul>

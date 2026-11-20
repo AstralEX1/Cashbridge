@@ -5,7 +5,7 @@ import { QuoteResponseRoute } from '@tcswap/helpers/api'
 import { AppConfig, BridgeConfig } from '@/config'
 import { isNearOnlyAsset } from '@/hooks/use-assets'
 import { useAssetFrom, useAssetTo, useCustomInterval, useCustomQuantity, useSlippage, useSwap } from '@/hooks/use-swap'
-import { getQuotes, QuoteTimeoutError } from '@/lib/api'
+import { getNetworkQuotes, getQuotes, QuoteTimeoutError } from '@/lib/api'
 import { BelowMinimumError, resolveQuoteError } from '@/lib/errors'
 import { isHoudiniProvider } from '@/lib/swap-helpers'
 import { useIsPrivateSend, useIsPrivateSwap } from '@/store/private-swap-store'
@@ -13,12 +13,16 @@ import { useTokenSale } from '@/hooks/use-token-sale'
 import { useSwapStore } from '@/store/swap-store'
 import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
 import { getNearQuote, nearSlippageBps, type NearRoute } from '@/lib/near-intents'
+import { getShapeShiftQuote, type ShapeShiftRoute } from '@/lib/shapeshift'
 
-// The two bridges' quotes for the same transfer; either may be missing.
+// The routes' quotes for the same transfer; any may be missing. ShapeShift is quoted on open-network pairs only.
 export interface BridgeRoutes {
   thorchain?: QuoteResponseRoute
   near?: NearRoute
+  shapeshift?: ShapeShiftRoute
 }
+
+export type RouteKey = keyof BridgeRoutes
 
 type UseQuote = {
   isLoading: boolean
@@ -26,9 +30,10 @@ type UseQuote = {
   // The route the transfer takes: the user's pick when it quotes, else the better one.
   quote?: QuoteResponseRoute
   routes?: BridgeRoutes
-  best?: 'thorchain' | 'near'
-  // True when NEAR Intents is quoted beside THORChain for this mode (drives the route compare UI).
+  best?: RouteKey
+  // True when NEAR Intents or ShapeShift is quoted beside THORChain for this mode (drives the route compare UI).
   nearAllowed: boolean
+  shapeshiftAllowed: boolean
   // The quote to price the pair by: `quote`, or while it refetches, the previous one for the same pair.
   pricingQuote?: QuoteResponseRoute
   error: Error | null
@@ -68,13 +73,13 @@ export const useQuote = (): UseQuote => {
     !openNetworks && reverse && bchToken ? sale.bridgeAmount : valueFrom.eqValue(0) ? undefined : valueFrom.toSignificant()
   // NEAR Intents carries manual transfers both ways, and the Cashbridge Router's forward ones when switched on.
   const { automatic } = useAutomaticBridge()
-  const nearPair =
-    !!openNetworks &&
-    (sellAsset?.toUpperCase() === BridgeConfig.buyAsset || buyAsset?.toUpperCase() === BridgeConfig.buyAsset)
   const nearAllowed =
     BridgeConfig.nearIntents &&
+    !openNetworks &&
     !isPrivateSwap &&
-    (openNetworks ? nearPair : !automatic || (BridgeConfig.routerNear && !reverse))
+    (!automatic || (BridgeConfig.routerNear && !reverse))
+  // ShapeShift carries free pairs: a deposit-address route that signs in the source wallet, like THORChain there.
+  const shapeshiftAllowed = BridgeConfig.shapeshift && openNetworks && !isPrivateSwap
   // On the bridge form `assetFrom` is the non-BCH side; NEAR-only rows must never ask THORChain for a deposit.
   const nearOnly = !openNetworks && isNearOnlyAsset(assetFrom)
   const choice = useSwapStore(state => state.routeChoice)
@@ -93,6 +98,7 @@ export const useQuote = (): UseQuote => {
     customQuantity,
     isPrivateSwap,
     nearAllowed,
+    shapeshiftAllowed,
     nearOnly
   ]
 
@@ -131,9 +137,19 @@ export const useQuote = (): UseQuote => {
             return undefined
           })
         : undefined
+      const shapeshift =
+        shapeshiftAllowed && assetFrom && assetTo
+          ? getShapeShiftQuote(
+              { sellAsset, buyAsset, sellAmount, sellDecimals: assetFrom.decimals, buyDecimals: assetTo.decimals, slippage },
+              signal
+            ).catch(error => {
+              if (!signal?.aborted) console.warn('ShapeShift quote failed', error)
+              return undefined
+            })
+          : undefined
       const thorchain = nearOnly
         ? Promise.resolve(undefined)
-        : getQuotes(
+        : (openNetworks ? getNetworkQuotes : getQuotes)(
             {
               buyAsset,
               sellAsset,
@@ -158,13 +174,17 @@ export const useQuote = (): UseQuote => {
               new USwapNumber(current.expectedBuyAmount).gt(new USwapNumber(best.expectedBuyAmount)) ? current : best
             )
           })
-      const [thor, nearRoute] = await Promise.allSettled([thorchain, near])
-      const result = { thorchain: thor.status === 'fulfilled' ? thor.value : undefined, near: nearRoute.status === 'fulfilled' ? nearRoute.value : undefined }
-      if (!result.thorchain && !result.near) throw thor.status === 'rejected' ? thor.reason : new Error('No route for this amount')
+      const [thor, nearRoute, shapeRoute] = await Promise.allSettled([thorchain, near, shapeshift])
+      const result = {
+        thorchain: thor.status === 'fulfilled' ? thor.value : undefined,
+        near: nearRoute.status === 'fulfilled' ? nearRoute.value : undefined,
+        shapeshift: shapeRoute.status === 'fulfilled' ? shapeRoute.value : undefined
+      }
+      if (!result.thorchain && !result.near && !result.shapeshift) throw thor.status === 'rejected' ? thor.reason : new Error('No route for this amount')
       return result
     },
     placeholderData: previous => {
-      const sample = previous?.thorchain ?? previous?.near
+      const sample = previous?.thorchain ?? previous?.near ?? previous?.shapeshift
       return sample && isQuoteFor(sample, sellAsset, buyAsset) && isHoudiniProvider(sample.providers[0]) === isPrivateSwap ? previous : undefined
     },
     enabled: !!(sellAmount && sellAsset && buyAsset && (reverse || pairMatchesMode)),
@@ -183,11 +203,9 @@ export const useQuote = (): UseQuote => {
     routes &&
     (nearOnly
       ? routes.near
-      : choice === 'near'
-        ? (routes.near ?? routes.thorchain)
-        : choice === 'thorchain'
-          ? (routes.thorchain ?? routes.near)
-          : best && routes[best])
+      : choice === 'auto'
+        ? best && routes[best]
+        : (routes[choice] ?? routes.thorchain ?? routes.near ?? routes.shapeshift))
   // First paint only: keep last routes/quote on screen through refetches and Cauldron sale reloads.
   const waiting = isLoading && !isPlaceholderData && !routes
   const saleLoading = reverse && !!bchToken && sale.isLoading
@@ -198,17 +216,21 @@ export const useQuote = (): UseQuote => {
     routes: error ? undefined : routes,
     best: nearOnly ? (routes?.near ? 'near' : undefined) : best,
     nearAllowed,
+    shapeshiftAllowed,
     pricingQuote: error ? undefined : quote,
     error: saleError ?? newError,
     minimum: error instanceof BelowMinimumError ? error.minimum : undefined
   }
 }
 
-// The route paying more of the bought asset; THORChain on a tie.
-export const bestRoute = (routes?: BridgeRoutes): 'thorchain' | 'near' | undefined => {
-  if (!routes?.near) return routes?.thorchain ? 'thorchain' : undefined
-  if (!routes.thorchain) return 'near'
-  return new USwapNumber(routes.near.expectedBuyAmount).gt(new USwapNumber(routes.thorchain.expectedBuyAmount)) ? 'near' : 'thorchain'
+// The route paying most of the bought asset; THORChain, then NEAR, win a tie.
+export const bestRoute = (routes?: BridgeRoutes): RouteKey | undefined => {
+  let best: RouteKey | undefined
+  for (const key of ['thorchain', 'near', 'shapeshift'] as const) {
+    const route = routes?.[key]
+    if (route && (!best || new USwapNumber(route.expectedBuyAmount).gt(new USwapNumber(routes![best]!.expectedBuyAmount)))) best = key
+  }
+  return best
 }
 
 export const isQuoteFor = (quote: QuoteResponseRoute, sellAsset?: string, buyAsset?: string) =>

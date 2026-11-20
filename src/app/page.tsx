@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArrowRight, FileLock2, Globe, KeyRound, PenLine, Undo2 } from 'lucide-react'
 import { BlazeBanner } from '@/components/blaze-banner'
-import { DocsDemoContract } from '@/components/docs/docs-demo-contract'
 import { BeamDiagram } from '@/components/landing/beam-diagram'
 import { InView } from '@/components/landing/in-view'
 import { LandingVideo } from '@/components/landing/landing-video'
@@ -51,6 +50,7 @@ const ROUTES = [
 const INTEGRATIONS: { name: string; logo?: string; href: string; show?: boolean }[] = [
   { name: 'THORChain', logo: '/providers/thorchain.svg', href: 'https://thorchain.org' },
   { name: 'NEAR Intents', logo: '/providers/near.svg', href: 'https://near-intents.org', show: NEAR_INTENTS },
+  { name: 'ShapeShift', logo: '/providers/shapeshift.svg', href: 'https://shapeshift.com' },
   { name: 'Cauldron', logo: '/providers/cauldron.png', href: 'https://cauldron.quest' },
   { name: 'WalletConnect', logo: '/wallets/walletconnect.svg', href: 'https://walletconnect.network' },
   { name: 'WizardConnect', logo: '/integrations/wizardconnect.png', href: 'https://docs.riftenlabs.com/wizardconnect/dapp' },
@@ -199,9 +199,6 @@ export default function Page() {
                 </Link>
               </div>
             </div>
-          </div>
-          <div className="landing-contract">
-            <DocsDemoContract />
           </div>
         </section>
 

@@ -6,6 +6,7 @@ import { Asset } from '@/components/swap/asset'
 import { AppConfig, BridgeConfig } from '@/config'
 import { getNearTokens, mergeNearAssets } from '@/lib/near-intents'
 import { useIsPrivateSwap } from '@/store/private-swap-store'
+import { isNetworkAsset, useSwapStore } from '@/store/swap-store'
 
 // Chains a private (Houdini) swap may start or end on. Houdini lists more, but an asset is only
 // offered where this app can validate the address it pays out to and show the chain - so every
@@ -154,8 +155,9 @@ export const useAssets = (): { assets?: Asset[]; isLoading: boolean } => {
 export const useModeAssets = (): { assets?: Asset[]; isLoading: boolean } => {
   const { assets, isLoading } = useAssets()
   const isPrivateSwap = useIsPrivateSwap()
+  const openNetworks = useSwapStore(state => state.openNetworks)
 
-  const modeAssets = useMemo(() => assets?.filter(asset => isAssetInMode(asset, isPrivateSwap)), [assets, isPrivateSwap])
+  const modeAssets = useMemo(() => assets?.filter(asset => openNetworks ? isNetworkAsset(asset) : isAssetInMode(asset, isPrivateSwap)), [assets, isPrivateSwap, openNetworks])
 
   return { assets: modeAssets, isLoading }
 }

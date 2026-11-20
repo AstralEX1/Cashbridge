@@ -22,11 +22,12 @@ export const shortBridgeAddress = (address: string) => {
 export const BridgeWalletBadge = ({ kind }: { kind: 'other' | 'bch' | 'buy' }) => {
   const side = kind === 'other' ? 'from' : 'to'
   const reverse = useSwapStore(state => state.reverse)
+  const openNetworks = useSwapStore(state => state.openNetworks)
   const t = useTranslations('bridge.wallet')
   const assetFrom = useAssetFrom()
   const assetTo = useAssetTo()
   const buyChain = kind === 'buy' ? assetTo?.chain : undefined
-  const account = useConnectedAccount(kind === 'buy' ? buyChain : assetFrom?.chain)
+  const account = useConnectedAccount(kind === 'buy' ? buyChain : assetFrom?.chain, openNetworks)
   const disconnectSource = useDisconnect()
   const hasHydrated = useHasHydrated()
   const setExternalWalletMode = useSetExternalWalletMode()

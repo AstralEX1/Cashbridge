@@ -56,6 +56,8 @@ export const BridgeConfig = {
   routerSales: process.env.NEXT_PUBLIC_ROUTER_SALES !== 'false',
   // NEAR Intents (1Click) quoted beside THORChain on manual forward transfers; 'false' leaves THORChain alone.
   nearIntents: process.env.NEXT_PUBLIC_NEAR_INTENTS !== 'false',
+  // ShapeShift's swap API quoted beside THORChain on open-network pairs; 'false' leaves THORChain alone.
+  shapeshift: process.env.NEXT_PUBLIC_SHAPESHIFT !== 'false',
   // NEAR Intents for the Cashbridge Router's forward transfers too, which the Router admits with AUTO_BRIDGE_NEAR_ORDERS (a
   // Router that does not falls back to THORChain). On by default; NEXT_PUBLIC_ROUTER_NEAR=false leaves the Router on THORChain.
   routerNear: process.env.NEXT_PUBLIC_ROUTER_NEAR !== 'false',

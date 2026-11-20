@@ -18,7 +18,7 @@ import { SwapInputFrom } from '@/components/swap/swap-input-from'
 import { SwapInputTo } from '@/components/swap/swap-input-to'
 import { SwapSettings } from '@/components/swap/swap-settings'
 import { RefreshButton } from '@/components/swap/refresh-button'
-import { OpenNetworksToggle, RouterHint, RouterSelector } from '@/components/swap/automatic-bridge-controls'
+import { RouterHint, RouterSelector } from '@/components/swap/automatic-bridge-controls'
 import { RouteCompare } from '@/components/swap/route-compare'
 import { AutomaticOrders } from '@/components/swap/auto-bridge-progress'
 import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
@@ -28,7 +28,7 @@ import { useSetAssetFrom, useSetAssetTo } from '@/hooks/use-swap'
 import { useTradingHalt } from '@/hooks/use-trading-halt'
 import { urlBuyAsset, useUrlParams } from '@/hooks/use-url-params'
 import { useIsPrivateSend } from '@/store/limit-swap-store'
-import { isReverseTargetAsset, useSwapStore } from '@/store/swap-store'
+import { isNetworkAsset, isReverseTargetAsset, useSwapStore } from '@/store/swap-store'
 import { useActiveBridge } from '@/store/transaction-store'
 import './bridge.css'
 
@@ -117,17 +117,12 @@ export const Swap = () => {
   useEffect(() => {
     if (!openNetworks || !assets?.length) return
     const { assetFrom: from, assetTo: to } = useSwapStore.getState()
-    if (!from) {
-      const seed = assets.find(a => a.identifier === DEFAULT_SELL) ?? assets[0]
-      if (seed) setAssetFrom(seed)
-      return
-    }
-    if (!to || to.identifier === from.identifier) {
-      const seed =
-        assets.find(a => a.identifier === 'ETH.ETH' && a.identifier !== from.identifier) ??
-        assets.find(a => a.identifier !== from.identifier)
-      if (seed) setAssetTo(seed)
-    }
+    const listed = assets.filter(isNetworkAsset)
+    const nextFrom = listed.find(a => a.identifier === from?.identifier) ?? listed.find(a => a.identifier === DEFAULT_SELL) ?? listed[0]
+    const nextTo = listed.find(a => a.identifier === to?.identifier && a.identifier !== nextFrom?.identifier) ??
+      listed.find(a => a.identifier === 'ETH.ETH' && a.identifier !== nextFrom?.identifier) ??
+      listed.find(a => a.identifier !== nextFrom?.identifier)
+    if (nextFrom !== from || nextTo !== to) useSwapStore.setState({ assetFrom: nextFrom, assetTo: nextTo })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openNetworks, assets, pairKey])
 
@@ -136,14 +131,11 @@ export const Swap = () => {
       <div className="bridge-heading">
         <h1>{tBridge(openNetworks ? 'headingOpen' : reverse ? 'headingReverse' : 'heading')}</h1>
       </div>
-      {/* Wraps on narrow phones, where the selector and three round buttons don't fit one row. */}
-      <div className="bridge-tools mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <RouterSelector />
-          <OpenNetworksToggle />
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <TransactionHistoryButton />
+      {/* One row: Manual/Router, History, then refresh/settings. Any network lives in the BCH asset picker. */}
+      <div className="bridge-tools mb-3 flex flex-nowrap items-center gap-2 overflow-x-auto">
+        <RouterSelector />
+        <TransactionHistoryButton />
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           <RefreshButton />
           <SwapSettings />
         </div>

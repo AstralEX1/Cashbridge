@@ -42,6 +42,9 @@ export interface SwapTransaction extends BaseTransaction {
   // Set on a bridge operation (either direction); the record's `status` is then the
   // operation's overall status (bridgeTxStatus), never the first leg's alone.
   bridge?: BridgeOperation
+  // Free pairs settle only after source success and a chain-verified payout meeting this floor.
+  // `shapeshift`: a deposit-address swap tracked by ShapeShift's quote id instead of a THORChain memo.
+  networkSwap?: { minOutput: string; memo?: string; shapeshift?: { quoteId: string; depositAddress: string }; payout?: { hash: string; amount: string } }
 }
 
 // --- Bridge operation (two legs) -----------------------------------------------------------------

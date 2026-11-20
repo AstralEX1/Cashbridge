@@ -41,8 +41,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     let upstream: Response
     try {
       upstream = await fetch(`${base}/${joined}`, {
-        cache: 'force-cache',
-        redirect: 'follow',
+        // Next's fetch cache buffers a clone before our size check; cache only the bounded response.
+        cache: 'no-store',
+        redirect: 'error',
         signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
         headers: { Accept: 'image/*,*/*;q=0.8' }
       })
@@ -55,12 +56,33 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     }
     const contentType = (upstream.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
     // Some gateways omit content-type or send octet-stream; sniff later.
-    const buffer = await upstream.arrayBuffer()
-    if (buffer.byteLength === 0 || buffer.byteLength > MAX_BYTES) continue
-    const bytes = new Uint8Array(buffer)
+    if ((contentType && contentType !== 'application/octet-stream' && !ALLOWED_TYPES.has(contentType)) || Number(upstream.headers.get('content-length')) > MAX_BYTES) {
+      await upstream.body?.cancel().catch(() => {})
+      continue
+    }
+    const reader = upstream.body?.getReader()
+    if (!reader) continue
+    const chunks: Uint8Array[] = []
+    let length = 0
+    try {
+      while (true) {
+        const next = await reader.read()
+        if (next.done) break
+        length += next.value.byteLength
+        if (length > MAX_BYTES) break
+        chunks.push(next.value)
+      }
+    } catch {
+      continue
+    } finally {
+      await reader.cancel().catch(() => {})
+      reader.releaseLock()
+    }
+    if (!length || length > MAX_BYTES) continue
+    const bytes = Uint8Array.from(Buffer.concat(chunks))
     const sniffed = contentType && contentType !== 'application/octet-stream' ? contentType : sniffImageType(bytes)
     if (!sniffed || !ALLOWED_TYPES.has(sniffed)) continue
-    payload = buffer
+    payload = bytes.buffer
     type = sniffed
     break
   }
@@ -74,6 +96,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     headers: {
       'Content-Type': type,
       'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
+      // SVG is untrusted active content when opened directly, even when <img> cannot run it.
+      'Content-Security-Policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'",
+      'X-Content-Type-Options': 'nosniff',
       'Cross-Origin-Resource-Policy': 'same-origin'
     }
   })

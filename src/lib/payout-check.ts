@@ -85,12 +85,22 @@ interface SolInstruction {
 }
 
 export const solanaPayout = (result: unknown, hash: string, expect: PayoutExpectation): ChainPayout | undefined => {
-  const tx = result as { meta?: { err?: unknown; innerInstructions?: { instructions?: SolInstruction[] }[] }; transaction?: { message?: { instructions?: SolInstruction[] } } }
+  type TokenBalance = { accountIndex: number; owner?: string; mint: string; uiTokenAmount: { amount: string } }
+  const tx = result as { meta?: { err?: unknown; innerInstructions?: { instructions?: SolInstruction[] }[]; preTokenBalances?: TokenBalance[]; postTokenBalances?: TokenBalance[] }; transaction?: { message?: { instructions?: SolInstruction[] } } }
   if (!tx?.meta || tx.meta.err) return undefined
   const instructions = [...(tx.transaction?.message?.instructions ?? []), ...(tx.meta.innerInstructions ?? []).flatMap(i => i.instructions ?? [])]
   // A memo, when the transaction carries one, must be this deposit's.
   const memos = instructions.filter(i => i.program === 'spl-memo' && typeof i.parsed === 'string').map(i => i.parsed as string)
   if (memos.length && !memos.some(m => memoMatches(m, expect.depositTxid))) return undefined
+  const mint = expect.buyAsset.includes('-') ? expect.buyAsset.slice(expect.buyAsset.lastIndexOf('-') + 1) : undefined
+  if (mint) {
+    const paid = (tx.meta.postTokenBalances ?? []).filter(balance => balance.owner === expect.destination && balance.mint === mint)
+      .reduce((sum, balance) => {
+        const before = tx.meta!.preTokenBalances?.find(old => old.accountIndex === balance.accountIndex && old.mint === mint)
+        return sum + BigInt(balance.uiTokenAmount.amount) - BigInt(before?.uiTokenAmount.amount ?? '0')
+      }, 0n)
+    return paid > 0n ? { hash, amount: paid.toString() } : undefined
+  }
   let paid = 0n
   for (const i of instructions) {
     const parsed = i.parsed as { type?: string; info?: { destination?: string; lamports?: number | string } } | undefined

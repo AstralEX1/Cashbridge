@@ -29,3 +29,10 @@ test('NEAR listing keeps Base selectable while THORChain alone is paused', () =>
 test('no halt when THORChain is clear', () => {
   assert.equal(isAssetHalted(baseUsdc([ProviderName.THORCHAIN]), clear, clear), false)
 })
+
+test('THOR-only free-pair halt checks preserve the canonical NEAR bridge fallback', () => {
+  const asset = baseUsdc([ProviderName.THORCHAIN, ProviderName.NEAR])
+  assert.equal(isAssetHalted({ ...asset, providers: [ProviderName.THORCHAIN] }, halted, clear), true)
+  assert.equal(isAssetHalted(asset, halted, clear), false)
+  assert.deepEqual(asset.providers, [ProviderName.THORCHAIN, ProviderName.NEAR])
+})

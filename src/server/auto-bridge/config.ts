@@ -45,11 +45,9 @@ export function loadConfig() {
     zeroConfMaxSats: BigInt(zero),
     maxWaitMs: integer('AUTO_BRIDGE_MAX_WAIT_SECONDS', 1800, 60, 86400) * 1000,
     pollMs: integer('AUTO_BRIDGE_POLL_SECONDS', 5, 1, 60) * 1000,
-    // Off until the owner switches it on: new orders then pay into their own contract (src/lib/router-contract.ts).
-    contractOrders: process.env.AUTO_BRIDGE_CONTRACT_ORDERS === 'true',
-    // Off until the owner switches it on: transfers back from BCH through the sale contract.
-    saleOrders: process.env.AUTO_BRIDGE_SALE_ORDERS === 'true',
-    // Off until the owner switches it on: first legs through NEAR Intents as well as THORChain.
-    nearOrders: process.env.AUTO_BRIDGE_NEAR_ORDERS === 'true'
+    // On by default (production worker already sets these true). Set …=false to fall back to legacy P2PKH.
+    contractOrders: process.env.AUTO_BRIDGE_CONTRACT_ORDERS !== 'false',
+    saleOrders: process.env.AUTO_BRIDGE_SALE_ORDERS !== 'false',
+    nearOrders: process.env.AUTO_BRIDGE_NEAR_ORDERS !== 'false'
   }
 }

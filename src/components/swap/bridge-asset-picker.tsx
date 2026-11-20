@@ -93,14 +93,16 @@ export const BridgeAssetButton = ({
 // the reverse direction the EVM assets it can pay out.
 export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' | 'to'; bch: boolean; open: boolean; onClose: () => void }) => {
   const t = useTranslations('bridge.form')
+  const tAuto = useTranslations('automatic')
   const assetFrom = useAssetFrom()
   const assetTo = useAssetTo()
   const setAssetFrom = useSetAssetFrom()
   const setAssetTo = useSetAssetTo()
   const reverse = useSwapStore(state => state.reverse)
   const openNetworks = useSwapStore(state => state.openNetworks)
+  const setOpenNetworks = useSwapStore(state => state.setOpenNetworks)
   const other = side === 'from' ? assetTo : assetFrom
-  const selected = side === 'to' && (openNetworks || !bch) ? assetTo : assetFrom
+  const selected = openNetworks && side === 'to' ? assetTo : assetFrom
   const bchToken = useSwapStore(state => state.bchToken)
   const setBchToken = useSwapStore(state => state.setBchToken)
   const { assets: modeAssets, isLoading } = useModeAssets()
@@ -116,8 +118,8 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
   const chains = useMemo(() => [...new Set(assets.map(a => a.chain))].sort((a, b) => chainLabel(a).localeCompare(chainLabel(b))), [assets])
   const activeChain = bch ? Chain.BitcoinCash : (chain && chains.includes(chain) ? chain : selected && chains.includes(selected.chain) ? selected.chain : chains[0])
   const haltedChains = useMemo(
-    () => new Set(chains.filter(item => assets.filter(a => a.chain === item).every(a => isAssetHalted(a, mimir, mayaMimir)))),
-    [chains, assets, mimir, mayaMimir]
+    () => new Set(chains.filter(item => assets.filter(a => a.chain === item).every(a => isAssetHalted(openNetworks ? { ...a, providers: [ProviderName.THORCHAIN] } : a, mimir, mayaMimir)))),
+    [chains, assets, mimir, mayaMimir, openNetworks]
   )
   const query = search.trim().toLowerCase()
   const tokens = assets.filter(a => {
@@ -194,14 +196,31 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
               type="button"
               className="bridge-pill"
               data-halted={!bch && haltedChains.has(item) ? 'true' : undefined}
-              aria-pressed={item === activeChain}
-              onClick={() => setChain(item)}
+              aria-pressed={item === activeChain && !openNetworks}
+              onClick={() => {
+                if (bch && openNetworks) setOpenNetworks(false)
+                setChain(item)
+              }}
             >
               <img src={`/networks/${item.toLowerCase()}.svg`} width={20} height={20} alt="" />
               {chainLabel(item)}
             </button>
           </HaltedTip>
         ))}
+        {(bch || openNetworks) && (
+          <button
+            type="button"
+            className="bridge-pill"
+            aria-pressed={openNetworks}
+            title={tAuto('openNetworksHint')}
+            onClick={() => {
+              setOpenNetworks(!openNetworks)
+              onClose()
+            }}
+          >
+            {tAuto('openNetworks')}
+          </button>
+        )}
       </div>
       <p className="bridge-picker-label">{t('tokens')}</p>
       <div key={open ? activeChain : 'closed'} className="bridge-options bridge-token-options" role="group" aria-label={t('tokens')}>
@@ -230,7 +249,7 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
           </>
         ) : (
           tokens.map((asset, i) => {
-            const halted = isAssetHalted(asset, mimir, mayaMimir)
+            const halted = isAssetHalted(openNetworks ? { ...asset, providers: [ProviderName.THORCHAIN] } : asset, mimir, mayaMimir)
             const nearOnly = isNearOnlyAsset(asset)
             return (
               <HaltedTip key={asset.identifier} halted={halted}>
@@ -243,7 +262,7 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
                   title={halted ? undefined : nearOnly ? `${asset.identifier} · NEAR Intents` : asset.identifier}
                   onClick={() => {
                     if (halted) return
-                    if (side === 'to') setAssetTo(asset)
+                    if (openNetworks && side === 'to') setAssetTo(asset)
                     else setAssetFrom(asset)
                     onClose()
                   }}

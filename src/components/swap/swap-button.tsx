@@ -11,6 +11,7 @@ import { chainLabel } from '@/components/connect-wallet/config'
 import { ConnectWallet } from '@/components/connect-wallet/connect-wallet'
 import { useDialog } from '@/components/global-dialog'
 import { InstantSwapDialog } from '@/components/swap/instant-swap-dialog'
+import { NetworkSwapDialog } from '@/components/swap/network-swap-dialog'
 import { SwapDialog } from '@/components/swap/swap-dialog'
 import { useBalance } from '@/hooks/use-balance'
 import { useIsLimitSwapPaused, useIsMemolessHalted, useMimir } from '@/hooks/use-mimir'
@@ -55,8 +56,9 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
   const slippage = useSlippage()
   const assetFrom = useAssetFrom()
   const assetTo = useAssetTo()
+  const openNetworks = useSwapStore(state => state.openNetworks)
   const uSwap = getUSwap()
-  const selectedAccount = useConnectedAccount(assetFrom?.chain)
+  const selectedAccount = useConnectedAccount(assetFrom?.chain, openNetworks)
   const isLimitSwap = useIsLimitSwap()
   const limitSwapBuyAmount = useLimitSwapBuyAmount()
   const isPrivateSwap = useIsPrivateSwap()
@@ -92,9 +94,9 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
   const onSwap = async (quote: QuoteResponseRoute) => {
     if (!assetFrom || preparing) return
     const provider = quote.providers[0]
-    // Open networks: InstantSwap / SwapRecipient names the destination on the buy chain.
+    // Free pairs sign directly in the connected source wallet.
     if (useSwapStore.getState().openNetworks) {
-      openDialog(InstantSwapDialog, { provider })
+      openDialog(NetworkSwapDialog, { provider })
       return
     }
     if (!selectedAccount) return
@@ -211,8 +213,6 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
     }
   }
 
-  const openNetworks = useSwapStore(state => state.openNetworks)
-
   const getState = (): ButtonState => {
     if (preparing) return { text: t('recipient.preparingSwap'), spinner: true, accent: true }
     // Open-networks swaps settle to the destination chain wallet via InstantSwap / SwapRecipient — no BCH bind.
@@ -229,7 +229,7 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
         }
       }
     }
-    if (assetFrom && !selectedAccount && !instantSwapSupported) {
+    if (assetFrom && !selectedAccount && (!instantSwapSupported || (openNetworks && isMemolessHalted))) {
       return { text: t('button.connectWallet', { chain: chainLabel(assetFrom.chain) }), spinner: false, accent: true, onClick: connectSource }
     }
     if (activeBridge) return { text: t('button.viewBridge'), spinner: false, accent: true, onClick: onShowBridge }

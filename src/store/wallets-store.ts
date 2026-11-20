@@ -69,6 +69,11 @@ export const connectedAccount = (state: Pick<WalletState, 'accounts' | 'selected
     account => account.provider === state.selected?.provider && account.network === state.selected?.network && account.address === state.selected?.address
   )
 
+export const accountForChain = (state: Pick<WalletState, 'accounts' | 'selected'>, chain: Chain) => {
+  const selected = connectedAccount(state)
+  return selected?.network === chain ? selected : state.accounts.find(account => account.network === chain)
+}
+
 export const useWalletStore = create<WalletState>()(
   persist(
     (set, get) => ({

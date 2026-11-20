@@ -4,10 +4,10 @@ import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { Asset } from '@/components/swap/asset'
 import { BridgeConfig } from '@/config'
-import { useModeAssets } from '@/hooks/use-assets'
+import { useAssets } from '@/hooks/use-assets'
 import { readTokenSlug, searchCauldronTokens, tokenSlug } from '@/lib/cauldron-tokens'
 import { useIsPrivateSwap, useSetIsPrivateSwap } from '@/store/private-swap-store'
-import { FIRST_VISIT_AMOUNT, isReverseTargetAsset, useSwapStore } from '@/store/swap-store'
+import { FIRST_VISIT_AMOUNT, isNetworkAsset, isReverseTargetAsset, useSwapStore } from '@/store/swap-store'
 
 const DEFAULT_SELL = 'BTC.BTC'
 // The bridge buys native BCH whatever the URL names (see BridgeConfig).
@@ -61,8 +61,8 @@ export const useUrlParams = () => {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const isWidget = pathname.startsWith('/widget')
-  const { assets } = useModeAssets()
-  const { assetFrom, assetTo, bchToken, reverse, hasHydrated, setAssetFrom, setAssetTo } = useSwapStore()
+  const { assets } = useAssets()
+  const { assetFrom, assetTo, bchToken, reverse, openNetworks, hasHydrated, setAssetFrom, setAssetTo } = useSwapStore()
   const isPrivateSwap = useIsPrivateSwap()
   const setIsPrivateSwap = useSetIsPrivateSwap()
   const isPrivateUrl = searchParams.get('private') === 'true'
@@ -84,6 +84,19 @@ export const useUrlParams = () => {
     // The BCH side (native BCH or a Cauldron token) on the buy side links a transfer to BCH, on the sell
     // side a transfer back from it; the other side names the other chain's asset.
     const { sell, buy } = readPair(pathname, searchParams)
+    const { assetTo: savedTo, setOpenNetworks } = useSwapStore.getState()
+    const networkMode = !isPrivateSwap && (searchParams.get('networks') === 'true' || (!sell && !buy && openNetworks))
+    if (networkMode !== openNetworks) setOpenNetworks(networkMode)
+    if (networkMode) {
+      const listed = assets.filter(isNetworkAsset)
+      const savedFrom = useSwapStore.getState().assetFrom
+      const from = resolveAsset(listed, sell, savedFrom?.identifier ?? DEFAULT_SELL) ?? listed[0]
+      const to = resolveAsset(listed, buy, savedTo?.identifier ?? 'ETH.ETH')
+      const nextTo = to?.identifier !== from?.identifier ? to : listed.find(asset => asset.identifier !== from?.identifier)
+      useSwapStore.setState({ assetFrom: from, assetTo: nextTo, reverse: false, bchToken: null })
+      initialized.current = true
+      return
+    }
     const toBch = readTokenSlug(buy)
     const fromBch = toBch ? undefined : readTokenSlug(sell)
     const { assetFrom: savedFrom, amountFrom, setAmountFrom, setBchToken } = useSwapStore.getState()
@@ -119,6 +132,8 @@ export const useUrlParams = () => {
     searchParams,
     isWidget,
     urlTabApplied,
+    openNetworks,
+    isPrivateSwap,
     setAssetFrom,
     setAssetTo,
     setIsPrivateSwap
@@ -135,16 +150,20 @@ export const useUrlParams = () => {
     // A same-asset pair exists only in the PRIVATE tab's Send mode, which the URL does not carry: opened
     // as a link it would land on Swap mode as an invalid pair, so the address keeps the last real pair.
     if (assetFrom.identifier === assetTo.identifier) return
-    const [sell, buy] = reverse ? [tokenSlug(bchToken), toSlug(assetFrom)] : [toSlug(assetFrom), tokenSlug(bchToken)]
+    const [sell, buy] = openNetworks
+      ? [encodeURIComponent(assetFrom.identifier), encodeURIComponent(assetTo.identifier)]
+      : reverse ? [tokenSlug(bchToken), toSlug(assetFrom)] : [toSlug(assetFrom), tokenSlug(bchToken)]
     const newPath = `/${SELL}${sell}${BUY}${buy}`
     const params = new URLSearchParams(window.location.search)
     params.delete('private')
+    if (openNetworks) params.set('networks', 'true')
+    else params.delete('networks')
     const search = params.toString()
     const newUrl = search ? `${newPath}?${search}` : newPath
     if (window.location.pathname + window.location.search !== newUrl) {
       window.history.replaceState(window.history.state, '', newUrl)
     }
-  }, [assetFrom, assetTo, bchToken, reverse, isPrivateSwap, isPrivateUrl, isWidget])
+  }, [assetFrom, assetTo, bchToken, reverse, openNetworks, isPrivateSwap, isPrivateUrl, isWidget])
 
   // The tab to render: the URL's until it is in the store, so the server and the first client
   // render already show it instead of switching after load

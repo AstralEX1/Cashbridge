@@ -44,7 +44,7 @@ export const RouterSelector = () => {
   return routerAvailable ? selector : <Tooltip content={t('routerUnavailable')}>{selector}</Tooltip>
 }
 
-// Small switch beside the Router selector: unlock any THORChain / NEAR pair (not only to/from BCH).
+// Free pairs execute through THORChain; NEAR Intents retains the established BCH bridge flow.
 export const OpenNetworksToggle = () => {
   const t = useTranslations('automatic')
   const openNetworks = useSwapStore(state => state.openNetworks)
@@ -70,6 +70,8 @@ export const OpenNetworksToggle = () => {
 export const RouterHint = () => {
   const t = useTranslations('automatic')
   const { automatic } = useAutomaticBridge()
+  const openNetworks = useSwapStore(state => state.openNetworks)
+  if (openNetworks) return <p className="bridge-router-hint">{t('openNetworksHint')}</p>
   return automatic ? (
     <p id={ROUTER_HINT_ID} className="bridge-router-hint">
       {t('routerHint')}

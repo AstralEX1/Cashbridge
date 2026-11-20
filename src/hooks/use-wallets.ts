@@ -1,5 +1,5 @@
 import { useIsMemolessHalted } from '@/hooks/use-mimir'
-import { connectedAccount, useWalletStore } from '@/store/wallets-store'
+import { accountForChain, connectedAccount, useWalletStore } from '@/store/wallets-store'
 import type { Chain } from '@tcswap/core'
 
 export const useAccounts = () => useWalletStore(state => state.accounts)
@@ -26,8 +26,11 @@ export const useSelectedAccount = () => {
   return externalWalletMode ? null : selected
 }
 
-export const useConnectedAccount = (chain?: Chain) => {
+export const useConnectedAccount = (chain?: Chain, independent = false) => {
   const selected = useSelectedAccount()
+  const connected = useWalletStore(state => chain && independent ? accountForChain(state, chain) : undefined)
+  const external = useExternalWalletMode()
+  if (independent) return external ? undefined : connected
   return selected && (!chain || selected.network === chain) ? selected : undefined
 }
 

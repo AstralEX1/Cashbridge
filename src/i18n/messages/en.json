@@ -635,6 +635,14 @@
     "close": "Close"
   },
   "tx": {
+    "networkRecovery": {
+      "intro": "The wallet request may have sent this swap. Check your wallet activity before sending again.",
+      "hash": "Source transaction hash from your wallet",
+      "track": "Check and track transaction",
+      "acknowledgement": "I checked my wallet activity, confirmed nothing was sent, and rejected every pending request for this swap.",
+      "clear": "Clear the unsent request",
+      "failed": "Could not verify this transaction. Check the hash and retry later."
+    },
     "title": "History",
     "today": "Today",
     "yesterday": "Yesterday",
@@ -1008,7 +1016,7 @@
     "router": "Cashbridge Router",
     "routerHint": "You sign once on the source chain. BCH settles into a per-order purchase contract that can only pay your CashToken minimum or refund your fallback.",
     "openNetworks": "Any network",
-    "openNetworksHint": "Swap between any listed chains — not only to or from Bitcoin Cash. Cashbridge Router stays off in this mode.",
+    "openNetworksHint": "Swap between THORChain-listed assets with Manual execution. For NEAR Intents and CashTokens, turn off Any network.",
     "routerUnavailable": "Cashbridge Router works for transfers to Bitcoin Cash tokens or plain BCH. Turn off Any network, or sign this route in your own wallets.",
     "automaticHint": "Cashbridge Router buys the token with the BCH. Your source wallet authorizes the first transfer.",
     "unsupported": "Automatic is available for forward transfers to Bitcoin Cash tokens. This route uses manual execution.",

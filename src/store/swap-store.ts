@@ -14,6 +14,7 @@ export const FIRST_VISIT_AMOUNT = '0.00156'
 // and nothing else is bought or sold through THORChain on the BCH side.
 export const isBridgeBuyAsset = (asset?: Pick<Asset, 'identifier'>) => asset?.identifier.toUpperCase() === BridgeConfig.buyAsset
 export const isBridgeSellAsset = (asset?: Asset) => !!asset && !isBridgeBuyAsset(asset) && asset.chain !== 'BCH'
+export const isNetworkAsset = (asset?: Asset) => !!asset && !!asset.providers?.some(provider => BridgeConfig.providers.includes(provider))
 
 // On the PRIVATE tab picking the other side's asset switches Send on instead of flipping. Pickers
 // only: the URL and tab-switch code pass through momentary same-asset pairs.
@@ -32,7 +33,7 @@ export const INITIAL_CUSTOM_QUANTITY = 0
 export const isReverseTargetAsset = (asset?: Asset) => isBridgeSellAsset(asset) && isPayoutChain(asset!.chain)
 
 // Which bridge carries the first leg: the better quote ('auto'), or the one the user picked.
-export type RouteChoice = 'auto' | 'thorchain' | 'near'
+export type RouteChoice = 'auto' | 'thorchain' | 'near' | 'shapeshift'
 
 interface SwapState {
   routeChoice: RouteChoice
@@ -111,6 +112,7 @@ export const useSwapStore = create<SwapState>()(
       setAssetFrom: asset => {
         const { openNetworks, assetTo } = get()
         if (openNetworks) {
+          if (!isNetworkAsset(asset)) return
           if (asset.identifier === assetTo?.identifier) return
           set({ assetFrom: asset })
           return
@@ -122,6 +124,7 @@ export const useSwapStore = create<SwapState>()(
       setAssetTo: asset => {
         const { openNetworks, assetFrom } = get()
         if (openNetworks) {
+          if (!isNetworkAsset(asset)) return
           if (asset.identifier === assetFrom?.identifier) return
           set({ assetTo: asset })
           return
@@ -149,6 +152,10 @@ export const useSwapStore = create<SwapState>()(
         const state = { ...current, ...(persisted as Partial<SwapState>) }
         if (typeof state.openNetworks !== 'boolean') state.openNetworks = false
         if (state.openNetworks) {
+          state.reverse = false
+          state.bchToken = null
+          if (!isNetworkAsset(state.assetFrom)) state.assetFrom = undefined
+          if (!isNetworkAsset(state.assetTo)) state.assetTo = undefined
           if (state.assetFrom?.identifier === state.assetTo?.identifier) state.assetTo = undefined
         } else {
           if (!isBridgeSellAsset(state.assetFrom)) state.assetFrom = undefined

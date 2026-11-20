@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { AssetValue, Chain, getChainConfig } from '@tcswap/core'
+import { AssetValue, Chain, EVMChains, getChainConfig } from '@tcswap/core'
 import { ProviderName, USwapError } from '@tcswap/helpers'
 import { BalanceResponse, QuoteRequest, QuoteResponse, QuoteResponseRoute, USwapApi } from '@tcswap/helpers/api'
 import { normalizeThorBankDenom } from '@/lib/swap-helpers'
@@ -273,6 +273,49 @@ export const getQuotes = async (json: QuoteRequest, abortController?: AbortContr
       .map(route => ({ ...route, sellAsset: requestCase(route.sellAsset, sellAsset), buyAsset: requestCase(route.buyAsset, buyAsset) }))
       .filter(route => isBridgeRoute(route, request))
   )
+}
+
+// Free-pair Manual swaps use THORChain only; the BCH bridge keeps its stricter guard above.
+type NetworkQuoteRequest = QuoteRequest & { buyAssetShortCode?: string }
+
+export const isNetworkRoute = (route: QuoteResponseRoute, request: NetworkQuoteRequest) => {
+  if (
+    route.sellAsset !== request.sellAsset || route.buyAsset !== request.buyAsset ||
+    route.providers?.length !== 1 || !BridgeConfig.providers.includes(route.providers[0])
+  ) return false
+  if (!request.destinationAddress) return true
+  const chain = request.buyAsset.split('.')[0] as Chain
+  const sameAddress = (address?: string) => {
+    if (!address) return false
+    if (chain === Chain.BitcoinCash) return sameBchScript(address, request.destinationAddress!)
+    return EVMChains.includes(chain as never)
+      ? address.toLowerCase() === request.destinationAddress!.toLowerCase()
+      : address === request.destinationAddress
+  }
+  const [operation, memoAsset, ...memo] = (route.memo ?? '').split(':')
+  const memoAddress = memo[0] === 'bitcoincash' ? `${memo[0]}:${memo[1]}` : memo[0]
+  const assets = [request.buyAsset, request.buyAssetShortCode].filter(Boolean).map(asset => asset!.toUpperCase())
+  return sameAddress(route.destinationAddress) && ['=', 'swap', 's'].includes(operation.toLowerCase()) &&
+    assets.includes(memoAsset?.toUpperCase()) && sameAddress(memoAddress)
+}
+
+export const getNetworkQuotes = async (json: NetworkQuoteRequest, abortController?: AbortController) => {
+  if (!json.sellAsset || !json.buyAsset || json.sellAsset === json.buyAsset ||
+    !json.providers?.length || json.providers.some(provider => !BridgeConfig.providers.some(allowed => allowed === provider))) {
+    throw new BridgeRouteError('Free pairs require two different assets and THORChain')
+  }
+  const { sellAsset, buyAsset, sellAmount, slippage, sourceAddress, destinationAddress, refundAddress, dry } = json
+  const request: QuoteRequest = {
+    sellAsset, buyAsset, sellAmount, slippage, providers: [ProviderName.THORCHAIN],
+    ...(sourceAddress && { sourceAddress }),
+    ...(destinationAddress && { destinationAddress }),
+    ...(refundAddress && { refundAddress }),
+    ...(dry !== undefined && { dry })
+  }
+  const response = await postQuote(request, abortController)
+  return response.routes
+    .map(route => ({ ...route, sellAsset: requestCase(route.sellAsset, sellAsset), buyAsset: requestCase(route.buyAsset, buyAsset) }))
+    .filter(route => isNetworkRoute(route, { ...request, buyAssetShortCode: json.buyAssetShortCode }))
 }
 
 // The aggregator upper-cases the asset identifiers it echoes back, which breaks case-sensitive base58 contracts: the

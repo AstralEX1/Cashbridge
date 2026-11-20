@@ -6,6 +6,7 @@ import { useQuote } from '@/hooks/use-quote'
 import { useAssetFrom, useSwap } from '@/hooks/use-swap'
 import { useConnectedAccount } from '@/hooks/use-wallets'
 import { getUSwap } from '@/lib/wallets'
+import { useSwapStore } from '@/store/swap-store'
 
 type UseSimulation = {
   approveData?: {
@@ -20,7 +21,8 @@ type UseSimulation = {
 export const useSimulation = (): UseSimulation => {
   const uSwap = getUSwap()
   const assetFrom = useAssetFrom()
-  const selected = useConnectedAccount(assetFrom?.chain)
+  const openNetworks = useSwapStore(state => state.openNetworks)
+  const selected = useConnectedAccount(assetFrom?.chain, openNetworks)
   const { valueFrom } = useSwap()
   const { quote } = useQuote()
   const { balance } = useBalance()

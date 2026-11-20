@@ -1,11 +1,13 @@
 import { useMemo } from 'react'
 import { Chain } from '@tcswap/core'
+import { ProviderName } from '@tcswap/helpers'
 import { chainLabel } from '@/components/connect-wallet/config'
 import { useMimir } from '@/hooks/use-mimir'
 import { useQuote } from '@/hooks/use-quote'
 import { useAssetFrom, useAssetTo } from '@/hooks/use-swap'
 import { isTradingHaltedError } from '@/lib/errors'
 import { assetSourceChain, isAssetHalted } from '@/lib/swap-helpers'
+import { useSwapStore } from '@/store/swap-store'
 
 type TradingHalt = {
   isHalted: boolean
@@ -23,16 +25,17 @@ export const useTradingHalt = (): TradingHalt => {
   const assetTo = useAssetTo()
   const { mimir, mayaMimir } = useMimir()
   const { error } = useQuote()
+  const openNetworks = useSwapStore(state => state.openNetworks)
 
   return useMemo(() => {
     const chains = [assetFrom, assetTo]
       .filter(asset => asset !== undefined)
-      .filter(asset => isAssetHalted(asset, mimir, mayaMimir))
+      .filter(asset => isAssetHalted(openNetworks ? { ...asset, providers: [ProviderName.THORCHAIN] } : asset, mimir, mayaMimir))
       .map(asset => chainName(assetSourceChain(asset)))
 
     return {
       isHalted: chains.length > 0 || !!(error && isTradingHaltedError(error.message)),
       chains: [...new Set(chains)]
     }
-  }, [assetFrom, assetTo, mimir, mayaMimir, error])
+  }, [assetFrom, assetTo, mimir, mayaMimir, error, openNetworks])
 }
