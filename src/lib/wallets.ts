@@ -129,7 +129,8 @@ export async function connectWallet(option: WalletOption, chains: Chain[], confi
       if (!metamask) throw new Error('MetaMask not found. Install or enable the MetaMask extension.')
       return connectEach(c => uSwap.connectEVMWallet(c, WalletOption.METAMASK, metamask))
     case WalletOption.PHANTOM:
-      return connectEach(c => uSwap.connectPhantom(c))
+      // Not on Bitcoin (see supportedChains), also for a Phantom saved on it before.
+      return connectEach(c => (c.includes(Chain.Bitcoin) ? Promise.reject(new Error('Phantom is not offered for Bitcoin')) : uSwap.connectPhantom(c)))
     case WalletOption.TRUSTWALLET_WEB:
       const trust = getEIP6963Wallets().providers.find(p => p.info.name === 'Trust Wallet')
       return connectEach(c => uSwap.connectEVMWallet(c, WalletOption.TRUSTWALLET_WEB, trust?.provider))
@@ -356,7 +357,8 @@ export const supportedChains = {
   [WalletOption.RABBY]: evmWallet.connectEVMWallet.supportedChains,
   [WalletOption.OKX]: okxWallet.connectOkx.supportedChains,
   [WalletOption.OKX_MOBILE]: evmWallet.connectEVMWallet.supportedChains,
-  [WalletOption.PHANTOM]: phantomWallet.connectPhantom.supportedChains,
+  // Its Bitcoin connector takes the first account (the ordinals one in Phantom's docs) and has no signer to send with.
+  [WalletOption.PHANTOM]: phantomWallet.connectPhantom.supportedChains.filter(chain => chain !== Chain.Bitcoin),
   [WalletOption.TREZOR]: trezorWallet.connectTrezor.supportedChains,
   [WalletOption.TRONLINK]: tronlinkWallet.connectTronLink.supportedChains,
   [WalletOption.TRUSTWALLET_WEB]: evmWallet.connectEVMWallet.supportedChains,
