@@ -44,6 +44,9 @@ test('a Router order shows source, THORChain, BCH and payout legs with chain-spe
 
   const refunded = rowFromOrder({ ...order, state: 'refunded', settlement: { kind: 'refund', txid: 'ef'.repeat(32), tokenAmount: '0', bchAmount: '99000' } })
   assert.equal(refunded.status, 'refunded')
+  assert.equal(rowFromOrder({ ...order, state: 'submitted' }).status, 'completed', 'a payout on the network is done without confirmations')
+  assert.equal(rowFromOrder({ ...order, state: 'submitted', settlement: { kind: 'refund', txid: 'ef'.repeat(32), tokenAmount: '0', bchAmount: '1' } }).status, 'refunded')
+  assert.equal(rowFromOrder({ ...order, state: 'retrying' }).status, 'pending', 'a refused payout is not done')
   assert.deepEqual([refunded.to.ticker, refunded.to.amount, refunded.legs.at(-1).label], ['BCH', '0.00099', 'BCH refund'])
 })
 
@@ -73,6 +76,7 @@ test("each bridge's own tracker is linked: NEAR Intents and ShapeShift by their 
   }
   assert.deepEqual(rowFromOrder(sale).legs.map(leg => leg.label), ['Tokens to contract', 'Sale and NEAR Intents deposit', 'NEAR Intents swap'])
   assert.ok(!rowFromOrder(sale).legs.some(leg => leg.url.includes('thorchain.net')), 'a NEAR Intents sale has no THORChain record')
+  assert.equal(rowFromOrder({ ...sale, state: 'submitted' }).status, 'pending', "a sale's deposit is not its payout")
   const thorSale = rowFromOrder({ ...sale, near: undefined, nearDeposit: undefined })
   assert.deepEqual(thorSale.legs.map(leg => leg.label), ['Tokens to contract', 'Sale and THORChain deposit', 'THORChain swap'])
 })
@@ -140,6 +144,10 @@ test("a wallet's THORChain swaps into or out of BCH become rows; other swaps and
   const [pending] = rowsFromThorchain([action('BCH.BCH', 'ETH.ETH', { status: 'pending', out: [] })])
   assert.deepEqual([pending.status, pending.from.ticker], ['pending', 'BCH'])
   assert.deepEqual(pending.legs.map(leg => leg.label), ['Bitcoin Cash deposit', 'THORChain swap'], 'no payout yet')
+  const [paying] = rowsFromThorchain([action('BCH.BCH', 'ETH.ETH', { status: 'pending' })])
+  assert.equal(paying.status, 'completed', 'a payout with its hash counts, before THORChain finishes')
+  const [unsigned] = rowsFromThorchain([action('BCH.BCH', 'ETH.ETH', { status: 'pending', out: [{ address: '0xabc', txID: '0'.repeat(64), coins: [{ asset: 'ETH.ETH', amount: '1' }] }] })])
+  assert.equal(unsigned.status, 'pending', 'an outbound without a hash is not paid yet')
 })
 
 test("a wallet's rows keep one row per transfer: the Router's order, then a listed row sharing a hash, then its own records", () => {

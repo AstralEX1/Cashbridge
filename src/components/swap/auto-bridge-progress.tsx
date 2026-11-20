@@ -120,14 +120,16 @@ export const AutomaticOrders = () => {
   if (!hydrated) return null
   // A draft is not a transfer: it stays polled, but is listed only once the user signed something for it.
   const active = references.filter(ref => (!ref.order || !isTerminal(ref.order.state)) && orderSent(ref)).slice(-3)
+  // A card closes as soon as the payout is on the network; its toast still shows the confirmations coming in.
+  const running = active.filter(ref => !ref.order || !automaticCompletion(ref.order))
   return (
     <>
       {/* Toasts stay on the bridge tab after the tracking dialog is closed. */}
       <BackgroundAutomaticToasts active={active} />
-      {(active.length > 0 || offline) && (
+      {(running.length > 0 || offline) && (
         <section className="bridge-auto-orders" aria-label={t('transfers')}>
           {offline && <p role="status" className="bridge-flow-message">{t('offline')}</p>}
-          {active.map(reference => (
+          {running.map(reference => (
             <AutomaticOrderRow key={reference.id} reference={reference} />
           ))}
         </section>
@@ -370,7 +372,8 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
           transactions: automaticTransactions(order),
           liquidityCategory: BridgeConfig.pusd.category,
           additionalReceived: receipt.change ? [{ amount: receipt.change, ticker: 'BCH', icon: <BchMark size={14} /> }] : undefined,
-          notice: ['completed', 'refunded'].includes(order.state) ? t('final') : t('confirmations', { count: order.settlement?.confirmations ?? 0 })
+          // Done once the payout is on the network: no wait for confirmations.
+          notice: t('final')
         } : undefined}
         toasts={[]}
         onDismissToast={() => {}}

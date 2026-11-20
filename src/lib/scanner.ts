@@ -182,7 +182,10 @@ export const rowFromOrder = (order: FeedOrder): ScanRow => {
       : paid?.kind === 'refund'
         ? bch(paid.bchAmount)
         : bchSide(order.category, paid?.tokenAmount)
-  return { key: order.ref, time: order.createdAt, router: true, verified: false, from, to, status: STATUS[order.state] ?? 'pending', legs }
+  // Done as soon as the payout is on the network ('submitted'), not after the Router's confirmations. A sale's
+  // deposit is not its payout: that lands on the other chain.
+  const sent = order.state === 'submitted' && paid && paid.kind !== 'deposit' ? (paid.kind === 'refund' ? 'refunded' : 'completed') : undefined
+  return { key: order.ref, time: order.createdAt, router: true, verified: false, from, to, status: sent ?? STATUS[order.state] ?? 'pending', legs }
 }
 
 const side = (text: string): ScanSide => {
@@ -307,7 +310,8 @@ export const rowsFromThorchain = (actions: MidgardAction[]): ScanRow[] =>
         verified: false,
         from: assetSide(fromAsset, units(coin?.amount)),
         to: payout ? assetSide(payout.asset, units(payout.amount)) : assetSide('BCH.BCH'),
-        status: refund ? 'refunded' : action.status === 'success' ? 'completed' : 'pending',
+        // A payout with its hash is on its way to the wallet: done, whatever THORChain still waits for.
+        status: refund ? 'refunded' : action.status === 'success' || legs.some(item => item.label === 'Payout') ? 'completed' : 'pending',
         legs
       }
     })
