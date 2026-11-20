@@ -6,7 +6,7 @@ import { AppConfig, BridgeConfig } from '@/config'
 import { isNearOnlyAsset } from '@/hooks/use-assets'
 import { useAssetFrom, useAssetTo, useCustomInterval, useCustomQuantity, useSlippage, useSwap } from '@/hooks/use-swap'
 import { getNetworkQuotes, getQuotes, QuoteTimeoutError } from '@/lib/api'
-import { BelowMinimumError, resolveQuoteError } from '@/lib/errors'
+import { BelowMinimumError, isTradingHaltedError, resolveQuoteError } from '@/lib/errors'
 import { isHoudiniProvider } from '@/lib/swap-helpers'
 import { useIsPrivateSend, useIsPrivateSwap } from '@/store/private-swap-store'
 import { useTokenSale } from '@/hooks/use-token-sale'
@@ -22,9 +22,11 @@ export interface BridgeRoutes {
   thorchain?: QuoteResponseRoute
   near?: NearRoute
   shapeshift?: ShapeShiftRoute
+  // THORChain refused the quote because it has paused trading on a chain of the pair.
+  thorchainHalted?: boolean
 }
 
-export type RouteKey = keyof BridgeRoutes
+export type RouteKey = 'thorchain' | 'near' | 'shapeshift'
 
 type UseQuote = {
   isLoading: boolean
@@ -185,7 +187,8 @@ export const useQuote = (): UseQuote => {
       const result = {
         thorchain: thor.status === 'fulfilled' ? thor.value : undefined,
         near: nearRoute.status === 'fulfilled' ? nearRoute.value : undefined,
-        shapeshift: shapeRoute.status === 'fulfilled' ? shapeRoute.value : undefined
+        shapeshift: shapeRoute.status === 'fulfilled' ? shapeRoute.value : undefined,
+        ...(thor.status === 'rejected' && isTradingHaltedError(resolveQuoteError(thor.reason).message ?? '') && { thorchainHalted: true })
       }
       if (!result.thorchain && !result.near && !result.shapeshift) throw thor.status === 'rejected' ? thor.reason : new Error('No route for this amount')
       return result

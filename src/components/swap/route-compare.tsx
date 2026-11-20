@@ -67,7 +67,7 @@ export const RouteCompare = () => {
             <Mark size={22} />
             <span className="bridge-route-name">
               <strong>{name}</strong>
-              <span>{route ? (seconds ? t('minutes', { minutes: formatMinutes(seconds) }) : '') : t('unavailable')}</span>
+              <span>{route ? (seconds ? t('minutes', { minutes: formatMinutes(seconds) }) : '') : key === 'thorchain' && routes?.thorchainHalted ? t('halted') : t('unavailable')}</span>
             </span>
             <span className="bridge-route-amount">
               {amount ?? (isLoading && !routes ? '…' : '—')}

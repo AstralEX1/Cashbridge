@@ -1009,7 +1009,8 @@
       "label": "Bridge route",
       "best": "Best",
       "minutes": "≈ {minutes} min",
-      "unavailable": "No quote for this amount"
+      "unavailable": "No quote for this amount",
+      "halted": "Paused on THORChain"
     }
   },
   "automatic": {
