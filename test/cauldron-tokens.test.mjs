@@ -45,6 +45,7 @@ test('a page link names the BCH side by ticker for pinned tokens and by category
 test('BCMR IPFS icons go through the same-origin proxy', () => {
   assert.equal(iconUrl('ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/icon.png'), '/api/ipfs/bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/icon.png')
   assert.equal(iconUrl('https://ipfs.io/ipfs/QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG/icon.png'), '/api/ipfs/QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG/icon.png')
+  assert.equal(iconUrl('https://ipfs.tapswap.cash/ipfs/QmXVcVZUdeiMgTfMvY3RM4N4dmBEWuRiV8wcF9GYkuzBeM'), '/api/ipfs/QmXVcVZUdeiMgTfMvY3RM4N4dmBEWuRiV8wcF9GYkuzBeM')
   assert.equal(iconUrl('https://example.com/icon.png'), 'https://example.com/icon.png')
   assert.equal(iconUrl('data:image/png;base64,aa'), 'data:image/png;base64,aa')
   assert.equal(iconUrl(''), undefined)

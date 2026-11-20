@@ -4,10 +4,10 @@ import { rateLimit } from '@/lib/rate-limit'
 import { isSameOrigin } from '@/lib/same-origin'
 
 // Same-origin proxy for BCMR / Cauldron token icons that live on IPFS. Browsers block
-// ipfs.io with Cross-Origin-Resource-Policy; serving the bytes from this host keeps
+// public gateways with Cross-Origin-Resource-Policy; serving the bytes from this host keeps
 // <img> loads working without relaxing CORP on a third-party gateway.
-const UPSTREAM = 'https://ipfs.io/ipfs'
-const UPSTREAM_TIMEOUT_MS = 15_000
+const UPSTREAMS = ['https://ipfs.io/ipfs', 'https://cloudflare-ipfs.com/ipfs', 'https://ipfs.tapswap.cash/ipfs', 'https://gateway.pinata.cloud/ipfs']
+const UPSTREAM_TIMEOUT_MS = 12_000
 const MAX_BYTES = 512 * 1024
 const ALLOWED_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml', 'image/avif'])
 
@@ -35,32 +35,37 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     return apiError(400, 'bad_request', 'Invalid IPFS path', 'Only CIDv0/CIDv1 icon paths are forwarded.')
   }
 
-  let upstream: Response
-  try {
-    upstream = await fetch(`${UPSTREAM}/${joined}`, {
-      cache: 'force-cache',
-      redirect: 'follow',
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-      headers: { Accept: 'image/*,*/*;q=0.8' }
-    })
-  } catch {
+  let buffer: Buffer | undefined
+  let type = ''
+  for (const base of UPSTREAMS) {
+    let upstream: Response
+    try {
+      upstream = await fetch(`${base}/${joined}`, {
+        cache: 'force-cache',
+        redirect: 'follow',
+        signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+        headers: { Accept: 'image/*,*/*;q=0.8' }
+      })
+    } catch {
+      continue
+    }
+    if (!upstream.ok) {
+      await upstream.body?.cancel().catch(() => {})
+      continue
+    }
+    const contentType = (upstream.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
+    // Some gateways omit content-type or send octet-stream; sniff later.
+    const bytes = Buffer.from(await upstream.arrayBuffer())
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_BYTES) continue
+    const sniffed = contentType && contentType !== 'application/octet-stream' ? contentType : sniffImageType(bytes)
+    if (!sniffed || !ALLOWED_TYPES.has(sniffed)) continue
+    buffer = bytes
+    type = sniffed
+    break
+  }
+
+  if (!buffer || !type) {
     return apiError(502, 'upstream_unreachable', 'IPFS gateway unreachable', 'Retry in a moment.')
-  }
-
-  if (!upstream.ok) {
-    await upstream.body?.cancel().catch(() => {})
-    return apiError(upstream.status === 404 ? 404 : 502, 'upstream_error', 'Icon not found', 'The IPFS gateway did not return this icon.')
-  }
-
-  const type = (upstream.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
-  if (!ALLOWED_TYPES.has(type)) {
-    await upstream.body?.cancel().catch(() => {})
-    return apiError(502, 'upstream_error', 'Unexpected content type', 'Only image responses are proxied.')
-  }
-
-  const buffer = Buffer.from(await upstream.arrayBuffer())
-  if (buffer.byteLength === 0 || buffer.byteLength > MAX_BYTES) {
-    return apiError(502, 'upstream_error', 'Icon too large or empty', 'Icons must be under 512 KiB.')
   }
 
   return new NextResponse(buffer, {
@@ -71,6 +76,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       'Cross-Origin-Resource-Policy': 'same-origin'
     }
   })
+}
+
+function sniffImageType(bytes: Buffer) {
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png'
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
+  if (bytes.length >= 12 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') return 'image/webp'
+  if (bytes.length >= 6 && (bytes.toString('ascii', 0, 6) === 'GIF87a' || bytes.toString('ascii', 0, 6) === 'GIF89a')) return 'image/gif'
+  const head = bytes.subarray(0, Math.min(bytes.length, 256)).toString('utf8').trimStart()
+  if (head.startsWith('<svg') || head.startsWith('<?xml')) return 'image/svg+xml'
+  return undefined
 }
 
 export const POST = methodNotAllowed(['GET'])

@@ -59,6 +59,9 @@ export const iconUrl = (uri: unknown) => {
   for (const gateway of IPFS_GATEWAYS) {
     if (uri.startsWith(gateway)) return `${IPFS_PROXY}${uri.slice(gateway.length)}`
   }
+  // Any https IPFS gateway path (e.g. ipfs.tapswap.cash) — same CORP trap as ipfs.io.
+  const gatewayPath = /^https:\/\/[^/]+\/ipfs\/(.+)$/i.exec(uri)
+  if (gatewayPath) return `${IPFS_PROXY}${gatewayPath[1]}`
   if (uri.startsWith('https://')) return uri
   return undefined
 }
