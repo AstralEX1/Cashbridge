@@ -52,9 +52,9 @@ const tradeOf = order => {
 }
 
 // One forward contract order and a BCH node that holds whatever the test puts in `raw` (mempool included).
-const setup = ({ page = false, near = false, minPusd = '200' } = {}) => {
+const setup = ({ page = false, near = false, minPusd = '200', v1 = false } = {}) => {
   const signer = new WorkerWallet(encodeHdPrivateKey({ network: 'mainnet', node: deriveHdPrivateNodeFromSeed(randomBytes(32)) }).hdPrivateKey)
-  const store = new OrderStore(':memory:', signer.xpub, limits, undefined, undefined, true, false, true, false, true)
+  const store = new OrderStore(':memory:', signer.xpub, limits, undefined, undefined, true, false, true, false, !v1)
   const pageKey = generatePrivateKey()
   const capability = randomBytes(32).toString('hex')
   const order = store.create(randomUUID(), capability, { ...intent, ...(page && { pageKey: binToHex(secp256k1.derivePublicKeyCompressed(pageKey)) }) }, minPusd, 100)
@@ -125,6 +125,7 @@ const setup = ({ page = false, near = false, minPusd = '200' } = {}) => {
     run: at =>
       processOrder(store, gateway, signer, store.get(order.id), policy, async current => (builds.push(current.funding), tradeOf({ ...current, minPusd: current.minPusd })), () => at),
     get: () => store.get(order.id),
+    coin: gateway.coin,
     attempts: () => store.attempts(order.id)
   }
 }
@@ -141,6 +142,23 @@ test('a contract order swaps the moment its THORChain BCH reaches the mempool, b
     assert.equal(attempt.kind, 'swap')
     assert.ok(decodeTx(attempt.hex).inputs.some(input => binToHex(input.outpointTransactionHash) === coin))
     assert.equal(env.get().inboundHash, inboundHash.toLowerCase(), 'the OUT memo still names the THORChain inbound for the scanner')
+  } finally {
+    env.store.close()
+  }
+})
+
+// Orders opened on the version 1 contract before the Router moved to version 2 still settle the same way.
+test('a version 1 contract order also swaps the moment its BCH lands, signed for the version 1 contract', async () => {
+  const env = setup({ v1: true })
+  try {
+    assert.equal(env.get().contract.version, undefined)
+    env.land()
+    await env.run(1000)
+    const [attempt] = env.attempts()
+    assert.deepEqual([env.get().state, attempt.kind], ['submitted', 'swap'])
+    const transaction = decodeTx(attempt.hex)
+    const sourceOutputs = await Promise.all(transaction.inputs.map(async input => (await env.coin(binToHex(input.outpointTransactionHash), input.outpointIndex)).output))
+    assert.equal(createVirtualMachineBch2026(true).verify({ transaction, sourceOutputs }), true)
   } finally {
     env.store.close()
   }
