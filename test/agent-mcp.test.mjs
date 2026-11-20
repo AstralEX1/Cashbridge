@@ -27,6 +27,9 @@ const NEAR_DEPOSIT = '0x6666666666666666666666666666666666666666'
 const NEAR_BCH_DEPOSIT = bindingFromPubkey(otherPubkey, 2).cashAddress
 let nearBchDeposit = NEAR_BCH_DEPOSIT
 let tamper = route => route
+// The last ShapeShift quote asked for, which 1Click's status of its deposit address describes.
+let shapeQuote
+const SHAPE_DEPOSIT = '0x5555555555555555555555555555555555555555'
 const aggregator = request => {
   quotes.push(request)
   const forward = request.buyAsset === 'BCH.BCH'
@@ -94,8 +97,34 @@ before(async () => {
     if (url === 'https://1click.chaindefuser.com/v0/tokens')
       return Response.json([
         { assetId: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', decimals: 6, blockchain: 'base', symbol: 'USDC', price: 1, contractAddress: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' },
-        { assetId: 'nep141:bch.omft.near', decimals: 8, blockchain: 'bch', symbol: 'BCH', price: 400, contractAddress: null }
+        { assetId: 'nep141:bch.omft.near', decimals: 8, blockchain: 'bch', symbol: 'BCH', price: 400, contractAddress: null },
+        { assetId: 'nep141:eth.omft.near', decimals: 18, blockchain: 'eth', symbol: 'ETH', price: 3000, contractAddress: null },
+        { assetId: 'nep141:btc.omft.near', decimals: 8, blockchain: 'btc', symbol: 'BTC', price: 90000, contractAddress: null }
       ])
+    if (url.startsWith('https://1click.chaindefuser.com/v0/status?depositAddress=')) {
+      const address = decodeURIComponent(url.split('=')[1])
+      if (!shapeQuote || address !== SHAPE_DEPOSIT) return new Response('{}', { status: 404 })
+      const fromBch = shapeQuote.sellAssetId.endsWith('slip44:145')
+      const usdc = 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near'
+      return Response.json({
+        status: 'PENDING_DEPOSIT',
+        correlationId: 'c-ss',
+        quoteResponse: {
+          timestamp: '2030-01-01T00:00:00.000Z',
+          signature: 'ed25519:ss',
+          quoteRequest: {
+            swapType: 'EXACT_INPUT',
+            originAsset: fromBch ? 'nep141:bch.omft.near' : usdc,
+            destinationAsset: fromBch ? usdc : 'nep141:bch.omft.near',
+            amount: shapeQuote.sellAmountCryptoBaseUnit,
+            recipient: shapeQuote.receiveAddress,
+            refundTo: shapeQuote.sendAddress,
+            deadline: new Date(Date.now() + 4 * 3600_000).toISOString()
+          },
+          quote: { depositAddress: SHAPE_DEPOSIT, amountIn: shapeQuote.sellAmountCryptoBaseUnit, amountOut: '7000000', minAmountOut: '6900000', deadline: new Date(Date.now() + 3 * 86400_000).toISOString() }
+        }
+      })
+    }
     if (url === 'https://1click.chaindefuser.com/v0/quote') {
       const body = JSON.parse(init.body)
       nearQuotes.push(body)
@@ -115,12 +144,13 @@ before(async () => {
       })
     if (url === 'https://api.shapeshift.com/v1/swap/quote') {
       const body = JSON.parse(init.body)
+      shapeQuote = body
       return Response.json({
         quoteId: 'ss-quote-1',
         swapperName: 'TestSwapper',
         sellAmountCryptoBaseUnit: body.sellAmountCryptoBaseUnit,
         buyAmountAfterFeesCryptoBaseUnit: '7000000',
-        depositAddress: '0x5555555555555555555555555555555555555555',
+        depositAddress: SHAPE_DEPOSIT,
         expiresAt: Date.parse('2030-01-01T01:00:00.000Z'),
         steps: [{ estimatedExecutionTimeMs: 120000 }]
       })
@@ -347,10 +377,57 @@ test('ShapeShift prepares a plain deposit-address transfer', async () => {
   assert.equal(status.structuredContent.status, 'pending')
 })
 
-test('an Any-network free pair quotes THORChain and ShapeShift', async () => {
+test('an Any-network free pair quotes all three routes, and NEAR prepares a plain deposit there', async () => {
   const quote = await call('get_bridge_quote', { from_asset: 'ETH.ETH', to_asset: 'BTC.BTC', amount: '1' })
   assert.equal(quote.isError, undefined, quote.content[0].text)
   assert.equal(quote.structuredContent.mode, 'any_network')
-  assert.ok(quote.structuredContent.routes.some(r => r.route === 'thorchain'))
-  assert.ok(quote.structuredContent.routes.some(r => r.route === 'shapeshift'))
+  assert.deepEqual(quote.structuredContent.routes.map(r => r.route), ['thorchain', 'near_intents', 'shapeshift'])
+
+  nearQuotes.length = 0
+  const btc = 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq'
+  const result = await call('prepare_bridge', { from_asset: 'ETH.ETH', to_asset: 'BTC.BTC', amount: '1', source_address: SOURCE, destination_address: btc, route: 'near_intents' })
+  assert.equal(result.isError, undefined, result.content[0].text)
+  const data = result.structuredContent
+  assert.equal(data.mode, 'any_network')
+  assert.equal(nearQuotes[0].originAsset, 'nep141:eth.omft.near')
+  assert.equal(nearQuotes[0].destinationAsset, 'nep141:btc.omft.near')
+  assert.equal(nearQuotes[0].recipient, btc)
+  assert.equal(nearQuotes[0].refundTo, SOURCE)
+  assert.deepEqual(data.transactions.map(t => [t.step, t.to, t.value]), [['transfer', NEAR_DEPOSIT, nearQuotes[0].amount]])
+})
+
+test('a CashToken purchase can ride ShapeShift: its NEAR Intents deposit pays the Router order', async () => {
+  routerSeen.length = 0
+  const result = await call('prepare_bridge', { from_asset: USDC, to_asset: 'PUSD', amount: '25', source_address: SOURCE, destination_address: recipient.tokenAddress, route: 'shapeshift' })
+  assert.equal(result.isError, undefined, result.content[0].text)
+  const data = result.structuredContent
+  assert.match(data.route, /ShapeShift/)
+  assert.equal(shapeQuote.receiveAddress, data.order.deposit_address, 'ShapeShift pays the order contract')
+  assert.equal(shapeQuote.sendAddress, SOURCE)
+  assert.equal(data.deposit.deposit_address, SHAPE_DEPOSIT)
+  assert.equal(data.shapeshift.quote_id, 'ss-quote-1')
+  assert.deepEqual(routerSeen.at(-1).body, { nearDepositAddress: SHAPE_DEPOSIT, shapeshiftQuoteId: 'ss-quote-1' })
+  assert.equal(data.order.shapeshift_quote_id, 'ss-quote-1')
+
+  const forged = shapeQuote
+  try {
+    // 1Click now says the address pays someone else: the order gets no deposit and nothing is handed out.
+    routerSeen.length = 0
+    const original = globalThis.fetch
+    globalThis.fetch = async (input, init) => {
+      const response = await original(input, init)
+      if (String(input).endsWith('/v1/swap/quote')) shapeQuote = { ...shapeQuote, receiveAddress: recipient.cashAddress }
+      return response
+    }
+    try {
+      const bad = await call('prepare_bridge', { from_asset: USDC, to_asset: 'PUSD', amount: '25', source_address: SOURCE, destination_address: recipient.tokenAddress, route: 'shapeshift' })
+      assert.equal(bad.isError, true)
+      assert.match(bad.content[0].text, /does not match/)
+      assert.ok(!routerSeen.some(r => r.body?.nearDepositAddress))
+    } finally {
+      globalThis.fetch = original
+    }
+  } finally {
+    shapeQuote = forged
+  }
 })

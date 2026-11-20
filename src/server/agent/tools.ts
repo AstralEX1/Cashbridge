@@ -5,7 +5,7 @@ import type { QuoteRequest, QuoteResponseRoute } from '@tcswap/helpers/api'
 import { Interface, ZeroAddress, getAddress, isAddress } from 'ethers'
 import { AppConfig, BridgeConfig } from '@/config'
 import { getInboundAddresses, getMidgardPools, getNetworkQuotes, getQuotes, getTxStatus, isBridgeRoute, type TxStatusResponse } from '@/lib/api'
-import { nearPaysBeforeRefund, type OrderIntent, type OrderState, type PublicOrder, type SaleIntent } from '@/lib/auto-bridge-contract'
+import { nearPaysBeforeRefund, type OrderIntent, type OrderState, type PublicOrder, type SaleIntent, type SaleRoute } from '@/lib/auto-bridge-contract'
 import { checkOrder } from '@/lib/auto-bridge-order'
 import { addressToLockingBytecode, bchAddressProblem, bindingFromAddress, listWalletCoins } from '@/lib/bch'
 import { formatBaseUnits, minOutputFor, secondLegSellAmount, toBaseUnits } from '@/lib/bridge'
@@ -14,9 +14,9 @@ import { FEATURED_TOKENS, fetchCauldronTokens, readTokenSlug, searchCauldronToke
 import { isDollarStable } from '@/lib/dollar-stable'
 import { resolveQuoteError } from '@/lib/errors'
 import { FORWARD_DEADLINE_MS, getNearQuote, getNearStatus, interpretNearStatus, isNearChain, nearExplorerUrl, nearSlippageBps, submitNearDeposit, type NearRoute, type NearQuoteRequest } from '@/lib/near-intents'
-import { REFUND_AFTER_SECONDS } from '@/lib/router-contract'
-import { buildTokenSend } from '@/lib/router-sale-client'
-import { getShapeShiftQuote, getShapeShiftStatus, interpretShapeShiftStatus, shapeShiftAssetId, type ShapeShiftRoute } from '@/lib/shapeshift'
+import { REFUND_AFTER_SECONDS, REFUND_FEE_CAP, SALE_FLOOR_TOLERANCE_BPS, shapeShiftSaleSats } from '@/lib/router-contract'
+import { buildTokenSend, routedDeposit } from '@/lib/router-sale-legs'
+import { getShapeShiftBridgeRoute, getShapeShiftQuote, getShapeShiftStatus, interpretShapeShiftStatus, shapeShiftAssetId, type ShapeShiftRoute } from '@/lib/shapeshift'
 import { sourceTransactionId } from '@/lib/source-transaction'
 import { DEPOSIT_FEE_RESERVE, checkDepositMemo, checkInbound, type InboundAddress } from '@/lib/thorchain-deposit'
 import { callWorker } from '@/server/auto-bridge/proxy'
@@ -47,7 +47,6 @@ const QUOTE_TIMEOUT_MS = 20_000
 const BCH_SIDE_HINT =
   'For the BCH bridge, one side must be BCH.BCH or a Cauldron token (PUSD, MUSD, a ticker from list_supported_assets, or a 64-hex category id) and the other a THORChain asset such as BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913. For Any-network free pairs, both sides are THORChain assets (ETH.ETH to BTC.BTC).'
 const ROUTE_HINT = '"route" must be thorchain, near_intents or shapeshift'
-const FLOOR_TOLERANCE_BPS = 300
 
 const text = (args: Args, key: string, required = true) => {
   const value = args[key]
@@ -313,10 +312,10 @@ const listSupportedAssets = async (args: Args) => {
       to_bch: 'Any other_side asset to BCH.BCH or to a bch_side token.',
       from_bch: 'BCH.BCH or a bch_side token to any other_side asset. Token sales prepare through the Cashbridge Router when it admits them.',
       near_intents:
-        'Between BCH.BCH and assets on ADA, ARB, AURORA, AVAX, BASE, BERA, BSC, BTC, DASH, DOGE, ETH, GNO, LTC, MONAD, NEAR, OP, POL, SOL, SUI, TON, TRON, XLAYER and ZEC, both ways, NEAR Intents is quoted too; name them the same way (CHAIN.SYMBOL-CONTRACT). Into a CashToken, NEAR can carry the first leg when the Router admits NEAR orders.',
+        'Between BCH.BCH and assets on ADA, ARB, AURORA, AVAX, BASE, BERA, BSC, BTC, DASH, DOGE, ETH, GNO, LTC, MONAD, NEAR, OP, POL, SOL, SUI, TON, TRON, XLAYER and ZEC, both ways, NEAR Intents is quoted too; name them the same way (CHAIN.SYMBOL-CONTRACT). Free pairs between two of these chains are quoted on NEAR Intents too. CashToken purchases and sales can use NEAR when the Router admits them.',
       shapeshift:
-        'Any-network free pairs (two other_side assets) quote ShapeShift beside THORChain when ShapeShift maps both (including GNO, MAYA, MEGAETH, MONAD, NEAR, SUI and TON). Plain BCH pairs are quoted the same way when both assets map.',
-      free_pairs: 'Two THORChain assets with no BCH side (for example ETH.ETH to BTC.BTC) use Any-network Manual: THORChain and ShapeShift.'
+        'Any-network free pairs (two other_side assets) quote ShapeShift beside THORChain when ShapeShift maps both (including GNO, MAYA, MEGAETH, MONAD, NEAR, SUI and TON). Plain BCH pairs, and the BCH leg of CashToken purchases and sales through the Router, are quoted the same way when the asset maps.',
+      free_pairs: 'Two THORChain assets with no BCH side (for example ETH.ETH to BTC.BTC) use Any-network Manual: THORChain, NEAR Intents and ShapeShift.'
     }
   }
 }
@@ -330,8 +329,11 @@ const getBridgeQuote = async (args: Args) => {
 
   if (matched.kind === 'network') {
     const { sellAsset, buyAsset } = matched
-    const [thor, shape] = await Promise.allSettled([
+    const [thor, near, shape] = await Promise.allSettled([
       networkThorRoute({ sellAsset, buyAsset, sellAmount: amount, slippage: percent }),
+      nearAvailable(sellAsset) && nearAvailable(buyAsset)
+        ? nearQuote({ sellAsset, buyAsset, sellAmount: amount, dry: true, slippageBps: nearSlippageBps(percent) })
+        : Promise.resolve(undefined),
       shapeShiftAvailable(sellAsset, buyAsset) ? shapeShiftQuote(sellAsset, buyAsset, amount, percent) : Promise.resolve(undefined)
     ])
     return {
@@ -345,6 +347,20 @@ const getBridgeQuote = async (args: Args) => {
           built:
             thor.status === 'fulfilled'
               ? { route: 'thorchain', expected_output: thor.value.expectedBuyAmount, estimated_seconds: thor.value.estimatedTime?.total, legs: [legOf(thor.value)] }
+              : undefined
+        },
+        {
+          status: near,
+          reasonName: 'near_intents',
+          built:
+            near.status === 'fulfilled' && near.value
+              ? {
+                  route: 'near_intents',
+                  expected_output: near.value.expectedBuyAmount,
+                  minimum_output: near.value.expectedBuyAmountMaxSlippage,
+                  estimated_seconds: near.value.estimatedTime?.total,
+                  legs: [nearLeg(near.value)]
+                }
               : undefined
         },
         {
@@ -420,12 +436,14 @@ const getBridgeQuote = async (args: Args) => {
   }
 
   if (!reverse) {
-    // CashToken purchase: THORChain (and NEAR when the Router admits it), then Cauldron through the Router.
-    const [thor, near] = await Promise.allSettled([
+    // CashToken purchase: THORChain (and NEAR or ShapeShift when the Router admits them), then Cauldron through the Router.
+    const shapeOk = BridgeConfig.routerShapeShift && shapeShiftAvailable(external, BridgeConfig.buyAsset)
+    const [thor, near, shape] = await Promise.allSettled([
       thorchainRoute({ sellAsset: external, buyAsset: BridgeConfig.buyAsset, sellAmount: amount, slippage: percent }),
       BridgeConfig.routerNear && nearAvailable(external)
         ? nearQuote({ sellAsset: external, buyAsset: BridgeConfig.buyAsset, sellAmount: amount, dry: true, slippageBps: nearSlippageBps(percent) })
-        : Promise.resolve(undefined)
+        : Promise.resolve(undefined),
+      shapeOk ? shapeShiftQuote(external, BridgeConfig.buyAsset, amount, percent) : Promise.resolve(undefined)
     ])
     const parts: Array<{ status: PromiseSettledResult<unknown>; built?: ComparedRoute; reasonName: string }> = []
     if (thor.status === 'fulfilled') {
@@ -456,6 +474,20 @@ const getBridgeQuote = async (args: Args) => {
         }
       })
     } else if (BridgeConfig.routerNear && nearAvailable(external)) parts.push({ status: near, reasonName: 'near_intents' })
+    if (shape.status === 'fulfilled' && shape.value) {
+      const second = await tokenBuyFromBch(token, shape.value.expectedBuyAmount)
+      parts.push({
+        status: shape,
+        reasonName: 'shapeshift',
+        built: {
+          route: 'shapeshift',
+          expected_output: second.output,
+          minimum_output: second.minimum,
+          estimated_seconds: shape.value.estimatedTime?.total,
+          legs: [shapeLeg(shape.value), second.leg]
+        }
+      })
+    } else if (shapeOk) parts.push({ status: shape, reasonName: 'shapeshift' })
     return {
       from: { asset: external, amount },
       to: tokenInfo(token),
@@ -464,41 +496,71 @@ const getBridgeQuote = async (args: Args) => {
     }
   }
 
-  // Token sale: Cauldron, then THORChain (Router sale when admitted).
+  // Token sale: Cauldron, then THORChain (Router sale when admitted), or NEAR Intents / ShapeShift when the Router
+  // admits routed sales. Those are quoted on the BCH the Router is sure to deposit: the floor less the fee cap
+  // (ShapeShift: less the change back too).
   const sale = await tokenQuote(token.category, 'sell', toBaseUnits(amount, token.decimals))
   if (sale.output <= DEPOSIT_FEE_RESERVE) throw new ToolError('This amount sells for too little BCH to bridge')
-  const route = await thorchainRoute({
-    sellAsset: BridgeConfig.buyAsset,
-    buyAsset: external,
-    sellAmount: formatBaseUnits(sale.output - DEPOSIT_FEE_RESERVE, 8),
-    slippage: percent
-  })
+  const floor = minOutputFor(sale.output, SALE_FLOOR_TOLERANCE_BPS)
+  const routed = BridgeConfig.routerSales && BridgeConfig.routerSaleRoutes
+  const [thor, near, shape] = await Promise.allSettled([
+    thorchainRoute({ sellAsset: BridgeConfig.buyAsset, buyAsset: external, sellAmount: formatBaseUnits(sale.output - DEPOSIT_FEE_RESERVE, 8), slippage: percent }),
+    routed && nearAvailable(external)
+      ? nearQuote({ sellAsset: BridgeConfig.buyAsset, buyAsset: external, sellAmount: formatBaseUnits(floor - REFUND_FEE_CAP, 8), dry: true, slippageBps: nearSlippageBps(percent) })
+      : Promise.resolve(undefined),
+    routed && shapeShiftSaleSats(sale.output) > 0n && shapeShiftAvailable(BridgeConfig.buyAsset, external)
+      ? shapeShiftQuote(BridgeConfig.buyAsset, external, formatBaseUnits(shapeShiftSaleSats(sale.output), 8), percent)
+      : Promise.resolve(undefined)
+  ])
+  const first = {
+    provider: BridgeConfig.routerSales ? 'Cauldron, through the Cashbridge Router sale' : 'Cauldron',
+    sell: `${formatBaseUnits(sale.sell, token.decimals)} ${token.ticker}`,
+    buy: `${formatBaseUnits(sale.output, 8)} BCH`,
+    pool_fee_sats: sale.tradeFeeSats.toString()
+  }
   return {
     from: { ...tokenInfo(token), amount },
     to: { asset: external },
-    best: 'thorchain',
-    expected_output: route.expectedBuyAmount,
-    routes: [
+    ...compareRoutes([
       {
-        route: 'thorchain',
-        expected_output: route.expectedBuyAmount,
-        estimated_seconds: route.estimatedTime?.total,
-        legs: [
-          {
-            provider: BridgeConfig.routerSales ? 'Cauldron, through the Cashbridge Router sale' : 'Cauldron',
-            sell: `${formatBaseUnits(sale.sell, token.decimals)} ${token.ticker}`,
-            buy: `${formatBaseUnits(sale.output, 8)} BCH`,
-            pool_fee_sats: sale.tradeFeeSats.toString()
-          },
-          legOf(route)
-        ]
+        status: thor,
+        reasonName: 'thorchain',
+        built:
+          thor.status === 'fulfilled'
+            ? { route: 'thorchain', expected_output: thor.value.expectedBuyAmount, estimated_seconds: thor.value.estimatedTime?.total, legs: [first, legOf(thor.value)] }
+            : undefined
+      },
+      {
+        status: near,
+        reasonName: 'near_intents',
+        built:
+          near.status === 'fulfilled' && near.value
+            ? {
+                route: 'near_intents',
+                expected_output: near.value.expectedBuyAmount,
+                minimum_output: near.value.expectedBuyAmountMaxSlippage,
+                estimated_seconds: near.value.estimatedTime?.total,
+                legs: [first, nearLeg(near.value)]
+              }
+            : undefined
+      },
+      {
+        status: shape,
+        reasonName: 'shapeshift',
+        built:
+          shape.status === 'fulfilled' && shape.value
+            ? {
+                route: 'shapeshift',
+                expected_output: shape.value.expectedBuyAmount,
+                minimum_output: shape.value.expectedBuyAmountMaxSlippage,
+                estimated_seconds: shape.value.estimatedTime?.total,
+                legs: [first, shapeLeg(shape.value)]
+              }
+            : undefined
       }
-    ],
-    unavailable: [],
-    cash_bridge_fee: '0',
-    next_step: BridgeConfig.routerSales
-      ? 'Show this to the user. If they agree, call prepare_bridge with the same assets and amount plus their BCH source_address (token-aware) and destination_address.'
-      : `Selling ${token.ticker} back through the Router is not admitted right now; send the user to ${AppConfig.baseUrl}/bridge.`
+    ]),
+    ...(routed && { note: 'On shapeshift the Router deposits an exact amount and sends the rest of the sale back to source_address as BCH.' }),
+    ...(!BridgeConfig.routerSales && { next_step: `Selling ${token.ticker} back through the Router is not admitted right now; send the user to ${AppConfig.baseUrl}/bridge.` })
   }
 }
 
@@ -644,12 +706,15 @@ const orderBrief = (order: PublicOrder, capability: string, token: CauldronToken
   minimum_output: `${formatBaseUnits(order.minPusd, token.decimals)} ${token.ticker}`,
   max_wait_seconds: order.maxWaitSeconds,
   ...(order.nearDepositAddress && { near_deposit_address: order.nearDepositAddress }),
+  ...(order.shapeshiftQuoteId && { shapeshift_quote_id: order.shapeshiftQuoteId }),
   ...(order.sale && {
     sale: {
       category: order.sale.category,
       token_amount: order.sale.tokenAmount,
       buy_asset: order.sale.buyAsset,
-      destination: order.sale.destination
+      destination: order.sale.destination,
+      ...(order.sale.route && { route: order.sale.route }),
+      ...(order.sale.depositSats && { deposit_sats: order.sale.depositSats })
     }
   })
 })
@@ -662,12 +727,13 @@ const prepareBridge = async (args: Args, context: ToolContext) => {
   const destination = text(args, 'destination_address')!
 
   if (matched.kind === 'network') {
-    const via = routeChoice(args, ['thorchain', 'shapeshift'])
+    const via = routeChoice(args, ['thorchain', 'near_intents', 'shapeshift'])
     const { sellAsset, buyAsset } = matched
     const sourceChain = sellAsset.split('.')[0].toUpperCase()
     if ((EVMChains as readonly string[]).includes(sourceChain) && !isAddress(source))
       throw new ToolError(`"source_address" must be the ${sourceChain} address that sends the funds`)
     if (via === 'shapeshift') return prepareShapeShift(sellAsset, buyAsset, amount, source, destination, percent)
+    if (via === 'near_intents') return { ...(await prepareNear(sellAsset, buyAsset, amount, source, destination, percent)), mode: 'any_network' }
     const route = await networkThorRoute({
       sellAsset,
       buyAsset,
@@ -699,8 +765,9 @@ const prepareBridge = async (args: Args, context: ToolContext) => {
 
   if (reverse) {
     if (side.token) {
-      if (via === 'near_intents' || via === 'shapeshift') throw new ToolError('CashToken sales use the Cashbridge Router on THORChain; set route to thorchain')
-      return prepareRouterSale(side.token, amount, source, destination, external, percent, context)
+      const saleRoute: SaleRoute | undefined = via === 'near_intents' ? 'near' : via === 'shapeshift' ? 'shapeshift' : undefined
+      if (saleRoute && !BridgeConfig.routerSaleRoutes) throw new ToolError('CashToken sales use the Cashbridge Router on THORChain right now; set route to thorchain')
+      return prepareRouterSale(side.token, amount, source, destination, external, percent, context, saleRoute)
     }
     const from = plainBchAddress(source, 'source_address')
     if (via === 'near_intents') return prepareNear(BridgeConfig.buyAsset, external, amount, from, destination, percent)
@@ -764,7 +831,8 @@ const prepareBridge = async (args: Args, context: ToolContext) => {
         ? '"destination_address" must be a token-aware BCH address (bitcoincash:z…) to receive CashTokens'
         : '"destination_address" must be a mainnet Bitcoin Cash address'
     )
-  if (via === 'shapeshift') throw new ToolError('CashTokens settle through the Cashbridge Router on THORChain or NEAR Intents; ShapeShift is not used')
+  if (via === 'shapeshift' && !BridgeConfig.routerShapeShift) throw new ToolError('ShapeShift is not enabled for Cashbridge Router orders; use route thorchain')
+  if (via === 'shapeshift' && !shapeShiftAvailable(external, BridgeConfig.buyAsset)) throw new ToolError('ShapeShift does not map this asset here; use route thorchain')
   if (!context.allowWrite()) throw new ToolError('Too many orders from this client; wait a few minutes')
 
   const expected =
@@ -776,8 +844,10 @@ const prepareBridge = async (args: Args, context: ToolContext) => {
           dry: true,
           slippageBps: nearSlippageBps(percent)
         })
-      : await thorchainRoute({ sellAsset: external, buyAsset: BridgeConfig.buyAsset, sellAmount: amount, slippage: percent })
-  if (!expected) throw new ToolError('NEAR Intents has no quote for this pair and amount right now')
+      : via === 'shapeshift'
+        ? await shapeShiftQuote(external, BridgeConfig.buyAsset, amount, percent)
+        : await thorchainRoute({ sellAsset: external, buyAsset: BridgeConfig.buyAsset, sellAmount: amount, slippage: percent })
+  if (!expected) throw new ToolError(`${via === 'shapeshift' ? 'ShapeShift' : 'NEAR Intents'} has no quote for this pair and amount right now`)
 
   const intent: OrderIntent = {
     recipientAddress: destination,
@@ -831,6 +901,62 @@ const prepareBridge = async (args: Args, context: ToolContext) => {
     }
   }
 
+  if (via === 'shapeshift') {
+    // ShapeShift's BCH quotes are one-use NEAR Intents addresses; 1Click confirms this one pays the order's contract.
+    const now = Date.now()
+    const shape = await getShapeShiftBridgeRoute({
+      sellAsset: external,
+      buyAsset: BridgeConfig.buyAsset,
+      sellAmount: amount,
+      sellDecimals: await assetDecimals(external),
+      buyDecimals: 8,
+      slippage: percent,
+      sourceAddress: source,
+      destinationAddress: order.depositAddress
+    }).catch(error => {
+      throw new ToolError(error instanceof Error ? error.message : 'ShapeShift gave no quote')
+    })
+    const leg = shape?.shapeshift.near
+    if (!shape || !leg?.shapeshiftQuoteId) throw new ToolError('ShapeShift gave no NEAR Intents deposit for this Router order; use route thorchain')
+    if (!new USwapNumber(shape.sellAmount).eqValue(amount)) throw new ToolError('ShapeShift quoted a different amount; nothing was sent, ask for a new quote')
+    if (!nearPaysBeforeRefund(order, now + FORWARD_DEADLINE_MS))
+      throw new ToolError('ShapeShift payout may arrive after this order can expire; use route thorchain or ask for a new quote')
+    try {
+      order = verified(
+        await routerCall('POST', `/orders/${id}`, capability, context.ip, { nearDepositAddress: leg.depositAddress, shapeshiftQuoteId: leg.shapeshiftQuoteId }),
+        id,
+        intent
+      )
+    } catch (error) {
+      if (error instanceof ToolError && /not available through the Cashbridge Router/i.test(error.message))
+        throw new ToolError('Cashbridge Router is not admitting ShapeShift orders right now; use route thorchain')
+      throw error
+    }
+    if (order.nearDepositAddress !== leg.depositAddress) throw new ToolError('Cashbridge Router did not keep the ShapeShift deposit address; nothing was sent')
+    const units = BigInt(leg.amountIn)
+    const transactions = plainTransferTxs(external, source, leg.depositAddress, units)
+    return {
+      route: 'ShapeShift (NEAR Intents), then Cauldron through the Cashbridge Router',
+      deposit: {
+        chain: sourceChain,
+        asset: external,
+        amount: shape.sellAmount,
+        amount_base_units: units.toString(),
+        deposit_address: leg.depositAddress,
+        expires_at: shape.shapeshift.expiresAt ? new Date(shape.shapeshift.expiresAt).toISOString() : shape.expiration,
+        how_to_send:
+          'Send exactly the amount to deposit_address in a plain transfer from source_address: no memo, no OP_RETURN and no approval. The address is for this one transfer only.'
+      },
+      ...(transactions && { transactions }),
+      order: orderBrief(order, capability, token),
+      expected_bch: `${shape.expectedBuyAmount} BCH`,
+      shapeshift: { quote_id: leg.shapeshiftQuoteId, swapper: shape.shapeshift.swapper },
+      explorer: nearExplorerUrl(leg.depositAddress),
+      track: 'After sending, call report_source_transaction with the order id, token and transaction hash, then poll get_bridge_status.',
+      safety: `${SAFETY} If the Router cannot buy at least minimum_output in time, it sends the BCH to refund_address.`
+    }
+  }
+
   const route = await executable(order.depositAddress)
   if (!new USwapNumber(route.sellAmount).eqValue(amount)) throw new ToolError('THORChain quoted a different amount; ask for a new quote')
   return {
@@ -868,7 +994,7 @@ const prepareNear = async (
   percent: number,
   existing?: NearRoute
 ) => {
-  const external = sellAsset === BridgeConfig.buyAsset ? buyAsset : sellAsset
+  const external = [sellAsset, buyAsset].find(asset => asset !== BridgeConfig.buyAsset && !nearAvailable(asset)) ?? (sellAsset === BridgeConfig.buyAsset ? buyAsset : sellAsset)
   if (!nearAvailable(external)) throw new ToolError(`NEAR Intents does not carry ${external.split('.')[0]} here; use route thorchain`)
   const route =
     existing ??
@@ -947,7 +1073,8 @@ const prepareShapeShift = async (sellAsset: string, buyAsset: string, amount: st
   }
 }
 
-// CashToken sale through the Router: the user sends tokens to the sale contract; the Router sells and deposits to THORChain.
+// CashToken sale through the Router: the user sends tokens to the sale contract; the Router sells and deposits to
+// THORChain, or (`saleRoute`) to a NEAR Intents or ShapeShift address the Router checks at 1Click.
 const prepareRouterSale = async (
   token: CauldronToken,
   amount: string,
@@ -955,7 +1082,8 @@ const prepareRouterSale = async (
   destination: string,
   buyAsset: string,
   percent: number,
-  context: ToolContext
+  context: ToolContext,
+  saleRoute?: SaleRoute
 ) => {
   if (!BridgeConfig.routerSales) throw new ToolError(`Selling ${token.ticker} back through the Router is not admitted right now; send the user to ${AppConfig.baseUrl}/bridge`)
   const problem = bchAddressProblem(source, true)
@@ -972,33 +1100,13 @@ const prepareRouterSale = async (
   const units = toBaseUnits(amount, token.decimals)
   const sale = await tokenQuote(token.category, 'sell', units)
   if (sale.output <= DEPOSIT_FEE_RESERVE) throw new ToolError('This amount sells for too little BCH to bridge')
-  const route = await thorchainRoute({
-    sellAsset: BridgeConfig.buyAsset,
-    buyAsset,
-    sellAmount: formatBaseUnits(sale.output - DEPOSIT_FEE_RESERVE, 8),
-    slippage: percent,
-    sourceAddress: binding.cashAddress,
-    destinationAddress: destination,
-    refundAddress: binding.cashAddress
-  })
-  if (!route.memo || !route.inboundAddress) throw new ToolError('THORChain gave no deposit for this sale; ask for a new quote')
-  if (!isBridgeRoute(route, { sellAsset: BridgeConfig.buyAsset, buyAsset, destinationAddress: destination }))
-    throw new ToolError('THORChain quoted a deposit that does not match this sale; nothing was sent')
-  try {
-    checkDepositMemo(route.memo, { buyAsset, destination })
-  } catch (error) {
-    throw new ToolError(`${error instanceof Error ? error.message : 'The deposit does not match its quote'}; ask for a new quote`)
-  }
-  const inbounds = await inboundList()
-  checkInbound(inbounds, route.inboundAddress, buyAsset.split('.')[0].toUpperCase())
-
+  const leg = saleRoute ? await routedSaleLeg(saleRoute, sale.output, binding.cashAddress, buyAsset, destination, percent) : await thorchainSaleLeg(sale.output, binding.cashAddress, buyAsset, destination, percent)
   const saleIntent: SaleIntent = {
     category: token.category,
     tokenAmount: sale.sell.toString(),
     buyAsset,
     destination,
-    memo: route.memo,
-    vaultAddress: route.inboundAddress
+    ...leg.sale
   }
   const intent: OrderIntent = {
     recipientAddress: binding.tokenAddress,
@@ -1013,7 +1121,7 @@ const prepareRouterSale = async (
   if (!order.contract || order.contract.refundAfter > Date.now() / 1000 + REFUND_AFTER_SECONDS + 600)
     throw new ToolError('The Cashbridge Router order returns the tokens later than it should; nothing was sent')
   const minSats = BigInt(order.minPusd)
-  if (minSats < minOutputFor(sale.output, FLOOR_TOLERANCE_BPS))
+  if (minSats < minOutputFor(sale.output, SALE_FLOOR_TOLERANCE_BPS))
     throw new ToolError('The Cashbridge Router offered a lower minimum than this quote; nothing was sent')
   const toScript = addressToLockingBytecode(order.depositAddress)
   if (!toScript) throw new ToolError('The Cashbridge Router order has no deposit address')
@@ -1029,7 +1137,7 @@ const prepareRouterSale = async (
   }
 
   return {
-    route: 'Cashbridge Router sale, then THORChain',
+    route: `Cashbridge Router sale, then ${leg.name}`,
     deposit: {
       chain: 'BCH',
       asset: token.ticker,
@@ -1055,19 +1163,61 @@ const prepareRouterSale = async (
     }),
     order: orderBrief(order, capability, token),
     expected_bch: `${formatBaseUnits(sale.output, 8)} BCH`,
-    expected_output: `${route.expectedBuyAmount} ${buyAsset}`,
+    expected_output: `${leg.expectedOut} ${buyAsset}`,
     destination_address: destination,
     refund_address: binding.tokenAddress,
+    ...(leg.near && { near_deposit_address: leg.near.depositAddress, explorer: nearExplorerUrl(leg.near.depositAddress) }),
+    ...(leg.near?.shapeshiftQuoteId && { shapeshift: { quote_id: leg.near.shapeshiftQuoteId } }),
+    ...(saleRoute === 'shapeshift' && { change: 'The Router deposits an exact amount; the rest of the sale comes back to the BCH address as plain BCH.' }),
     track: 'After sending, call report_source_transaction with the order id, token and BCH transaction hash, then poll get_bridge_status.',
     safety: `${SAFETY} If the Router cannot sell for at least the order minimum in time, it returns the tokens to refund_address.`
   }
 }
 
+const thorchainSaleLeg = async (bchOut: bigint, refund: string, buyAsset: string, destination: string, percent: number) => {
+  const route = await thorchainRoute({
+    sellAsset: BridgeConfig.buyAsset,
+    buyAsset,
+    sellAmount: formatBaseUnits(bchOut - DEPOSIT_FEE_RESERVE, 8),
+    slippage: percent,
+    sourceAddress: refund,
+    destinationAddress: destination,
+    refundAddress: refund
+  })
+  if (!route.memo || !route.inboundAddress) throw new ToolError('THORChain gave no deposit for this sale; ask for a new quote')
+  if (!isBridgeRoute(route, { sellAsset: BridgeConfig.buyAsset, buyAsset, destinationAddress: destination }))
+    throw new ToolError('THORChain quoted a deposit that does not match this sale; nothing was sent')
+  try {
+    checkDepositMemo(route.memo, { buyAsset, destination })
+  } catch (error) {
+    throw new ToolError(`${error instanceof Error ? error.message : 'The deposit does not match its quote'}; ask for a new quote`)
+  }
+  const inbounds = await inboundList()
+  checkInbound(inbounds, route.inboundAddress, buyAsset.split('.')[0].toUpperCase())
+  return { name: 'THORChain', sale: { memo: route.memo, vaultAddress: route.inboundAddress }, expectedOut: route.expectedBuyAmount, near: undefined }
+}
+
+const routedSaleLeg = async (route: SaleRoute, bchOut: bigint, refund: string, buyAsset: string, destination: string, percent: number) => {
+  const binding = bindingFromAddress(refund)!
+  const leg = await routedDeposit({
+    route,
+    bchOut,
+    binding,
+    buyAsset,
+    buyDecimals: route === 'shapeshift' ? await assetDecimals(buyAsset) : undefined,
+    destination,
+    slippage: percent
+  }).catch(error => {
+    throw new ToolError(`${error instanceof Error ? error.message : 'No quote'}; use route thorchain or ask again`)
+  })
+  return { name: route === 'near' ? 'NEAR Intents' : 'ShapeShift (NEAR Intents)', ...leg }
+}
+
 // --- Status ----------------------------------------------------------------------------------------
 
 const ORDER_STATES: Record<OrderState, string> = {
-  awaiting_deposit: 'Waiting for the source deposit (THORChain/NEAR into the order, or CashTokens into a sale contract).',
-  streaming: 'THORChain is still streaming the swap.',
+  awaiting_deposit: 'Waiting for the source deposit (THORChain, NEAR Intents or ShapeShift into the order, or CashTokens into a sale contract).',
+  streaming: 'The bridge (THORChain, NEAR Intents or ShapeShift) is still swapping.',
   awaiting_confirmations: 'The BCH arrived; waiting for the confirmations the order needs.',
   ready: 'Funds arrived; the Router is buying the token or depositing the sale.',
   retrying: 'The Router is retrying settlement.',
@@ -1098,6 +1248,7 @@ const orderSummary = (order: PublicOrder) => ({
   source_tx: order.sourceHash,
   thorchain_inbound: order.inboundHash,
   near_deposit_address: order.nearDepositAddress,
+  ...(order.shapeshiftQuoteId && { shapeshift_quote_id: order.shapeshiftQuoteId }),
   sale: order.sale,
   payout_txid: order.payoutTxid ?? order.settlement?.txid,
   settlement: order.settlement,
@@ -1220,7 +1371,7 @@ export const TOOLS: Tool[] = [
     name: 'get_bridge_quote',
     title: 'Quote a bridge transfer',
     description:
-      'Quotes a transfer: THORChain, NEAR Intents and ShapeShift compared where available; CashToken purchases through the Cashbridge Router (THORChain and NEAR when admitted); CashToken sales; and Any-network free pairs. Indicative only; nothing is reserved.',
+      'Quotes a transfer: THORChain, NEAR Intents and ShapeShift compared where available, for plain BCH, CashToken purchases and sales through the Cashbridge Router (when it admits them), and Any-network free pairs. Indicative only; nothing is reserved.',
     inputSchema: { type: 'object', properties: assetProps, required: ['from_asset', 'to_asset', 'amount'] },
     annotations: { readOnlyHint: true, idempotentHint: false, openWorldHint: true },
     run: getBridgeQuote
@@ -1229,7 +1380,7 @@ export const TOOLS: Tool[] = [
     name: 'prepare_bridge',
     title: 'Prepare a bridge deposit',
     description:
-      "Prepares a transfer for the user's own wallet to sign: THORChain vault+memo, NEAR Intents or ShapeShift deposit address, Cashbridge Router purchase (THORChain or NEAR first leg), or Router sale of a CashToken. Never signs or sends anything.",
+      "Prepares a transfer for the user's own wallet to sign: THORChain vault+memo, NEAR Intents or ShapeShift deposit address, Cashbridge Router purchase (THORChain, NEAR Intents or ShapeShift first leg), or Router sale of a CashToken (paid out through any of the three). Never signs or sends anything.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -1245,7 +1396,8 @@ export const TOOLS: Tool[] = [
         route: {
           type: 'string',
           enum: ['thorchain', 'near_intents', 'shapeshift'],
-          description: 'Which route to use, as get_bridge_quote compared them (default thorchain). CashToken sales use thorchain only.'
+          description:
+            'Which route to use, as get_bridge_quote compared them (default thorchain). CashToken purchases and sales use the Cashbridge Router on any of the three when it admits them.'
         }
       },
       required: ['from_asset', 'to_asset', 'amount', 'source_address', 'destination_address']

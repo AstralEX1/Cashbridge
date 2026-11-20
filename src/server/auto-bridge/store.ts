@@ -5,11 +5,11 @@ import { DatabaseSync } from 'node:sqlite'
 import { addressToLockingBytecode, decodeTx } from '@/lib/bch'
 import { binToHex, utf8ToBin } from '@bitauth/libauth'
 import { MAX_MEMO_BYTES } from '@/lib/thorchain-deposit'
-import { REFUND_AFTER_SECONDS } from '@/lib/router-contract'
+import { REFUND_AFTER_SECONDS, SALE_EXACT_RESERVE } from '@/lib/router-contract'
 import { sourceTransactionId } from '@/lib/source-transaction'
 import { PublicWallet } from '@/server/auto-bridge/wallet'
 import { OrderError, orderCategory, positiveAmount, type Attempt, type Limits, type Order, type OrderIntent, type PublicOrder } from '@/server/auto-bridge/types'
-import type { FeedOrder } from '@/lib/auto-bridge-contract'
+import { ROUTE_MEMO, type FeedOrder } from '@/lib/auto-bridge-contract'
 
 const hash = (text: string) => createHash('sha256').update(text).digest('hex')
 const capabilityHash = (capability: string) => {
@@ -19,7 +19,7 @@ const capabilityHash = (capability: string) => {
 const intentHash = (intent: OrderIntent) =>
   hash(JSON.stringify([intent.recipientAddress, intent.refundAddress, intent.expectedBchSats, ...(intent.source ? [intent.source] : []), ...(intent.category ? [{ category: intent.category }] : []),
     ...(intent.sale ? [{ sale: intent.sale }] : [])]))
-type Patch = Partial<Pick<Order, 'state' | 'inboundHash' | 'sourceHash' | 'funding' | 'receivedAt' | 'deadline' | 'payoutTxid' | 'error' | 'observedFunding' | 'lastCheckedAt' | 'observation' | 'sourceRefunds' | 'nearDepositAddress'>>
+type Patch = Partial<Pick<Order, 'state' | 'inboundHash' | 'sourceHash' | 'funding' | 'receivedAt' | 'deadline' | 'payoutTxid' | 'error' | 'observedFunding' | 'lastCheckedAt' | 'observation' | 'sourceRefunds' | 'nearDepositAddress' | 'shapeshiftQuoteId'>>
 const terminal = new Set(['completed', 'refunded', 'source_refunded', 'manual_review'])
 const coinsHeld = (order: Order) => [...new Map([
   ...(!['completed', 'refunded', 'source_refunded'].includes(order.state) ? order.funding : []),
@@ -44,7 +44,9 @@ export class OrderStore {
     // Sale orders (back from BCH through the sale contract) are admitted.
     private readonly saleOrders = false,
     // Orders may take their first leg through NEAR Intents (api.ts attachSource).
-    readonly nearOrders = false
+    readonly nearOrders = false,
+    // Sales may pay a NEAR Intents or ShapeShift deposit address instead of THORChain's vault.
+    readonly saleRoutes = false
   ) {
     this.wallet = new PublicWallet(xpub)
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
@@ -196,6 +198,18 @@ export class OrderStore {
         typeof sale.memo !== 'string' || !sale.memo || utf8ToBin(sale.memo).length > MAX_MEMO_BYTES
       )
         throw new OrderError(400, 'Invalid sale order')
+      if (sale.route !== undefined || sale.depositSats !== undefined || sale.quoteId !== undefined) {
+        if (!this.saleRoutes) throw new OrderError(400, 'Transfers back from BCH through NEAR Intents or ShapeShift are not available through the Cashbridge Router')
+        if (
+          !['near', 'shapeshift'].includes(sale.route as string) || sale.memo !== ROUTE_MEMO ||
+          (sale.route === 'shapeshift') !== (sale.depositSats !== undefined) ||
+          (sale.quoteId !== undefined && (sale.route !== 'shapeshift' || !/^[0-9A-Za-z-]{1,100}$/.test(sale.quoteId)))
+        )
+          throw new OrderError(400, 'Invalid sale order')
+        // The exact deposit leaves the miner fee and a relayable change out of the least the sale may bring.
+        if (sale.depositSats !== undefined && BigInt(positiveAmount(sale.depositSats)) + SALE_EXACT_RESERVE > BigInt(minPusd))
+          throw new OrderError(400, 'Amount is too small for the automatic bridge')
+      }
     }
     return this.write(() => {
       const existing = this.get(id)
@@ -253,7 +267,7 @@ export class OrderStore {
     const old = this.get(id)
     if (!old || old.version !== version) return false
     const allowed: Patch = {}
-    for (const name of ['state', 'inboundHash', 'sourceHash', 'funding', 'receivedAt', 'deadline', 'payoutTxid', 'error', 'observedFunding', 'lastCheckedAt', 'observation', 'sourceRefunds', 'nearDepositAddress'] as const) {
+    for (const name of ['state', 'inboundHash', 'sourceHash', 'funding', 'receivedAt', 'deadline', 'payoutTxid', 'error', 'observedFunding', 'lastCheckedAt', 'observation', 'sourceRefunds', 'nearDepositAddress', 'shapeshiftQuoteId'] as const) {
       if (Object.hasOwn(patch, name)) Object.assign(allowed, { [name]: patch[name] })
     }
     const order = { ...old, ...allowed, version: version + 1, updatedAt: now }
@@ -373,7 +387,8 @@ export class OrderStore {
           createdAt: order.createdAt,
           updatedAt: order.updatedAt,
           contract: !!order.contract,
-          ...(order.nearDepositAddress && { near: true }),
+          ...((order.nearDepositAddress || order.sale?.route) && { near: true }),
+          ...((order.shapeshiftQuoteId || order.sale?.route === 'shapeshift') && { shapeshift: true }),
           category: order.sale?.category ?? orderCategory(order),
           expectedBchSats: order.expectedBchSats,
           ...(order.source && { source: { chain: order.source.chain, asset: order.source.asset, amount: order.source.amount } }),
@@ -421,6 +436,7 @@ export class OrderStore {
       sourceHash: sourceTransactionId(order.sourceHash) ?? order.inboundHash,
       inboundHash: order.inboundHash,
       ...(order.nearDepositAddress && { nearDepositAddress: order.nearDepositAddress }),
+      ...(order.shapeshiftQuoteId && { shapeshiftQuoteId: order.shapeshiftQuoteId }),
       receivedSats: order.funding.reduce((sum, coin) => sum + BigInt(coin.value), 0n).toString(),
       receivedAt: order.receivedAt,
       deadline: order.deadline ?? (order.receivedAt === undefined ? undefined : order.receivedAt + order.maxWaitMs),

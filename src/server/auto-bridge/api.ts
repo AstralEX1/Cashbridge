@@ -7,7 +7,10 @@ import { isSameOrigin } from '@/lib/same-origin'
 import { BCH_DUST_THRESHOLD, checkInbound, type InboundAddress } from '@/lib/thorchain-deposit'
 import { REFUND_FEE_CAP } from '@/lib/router-contract'
 import { OrderError, orderCategory, positiveAmount, type OrderIntent } from '@/server/auto-bridge/types'
-import { SALE_KEYS, type SaleIntent } from '@/lib/auto-bridge-contract'
+import { SALE_KEYS, SALE_ROUTE_KEYS, type SaleIntent } from '@/lib/auto-bridge-contract'
+import { addressToLockingBytecode } from '@/lib/bch'
+import { findNearToken, getNearStatus, getNearTokens, type NearStatusResponse, type OneClickToken } from '@/lib/near-intents'
+import { SALE_ROUTE_OPEN_MS, saleRouteProblem } from '@/server/auto-bridge/sale-route'
 import type { OrderStore } from '@/server/auto-bridge/store'
 
 type Service = {
@@ -16,8 +19,12 @@ type Service = {
   quote: (amount: bigint, category: string, side?: 'buy' | 'sell') => Promise<{ output: bigint }>
   // THORNode's inbound addresses, which a sale's vault must match when given.
   inbound?: () => Promise<InboundAddress[]>
+  // 1Click's status of a deposit address and its token list, which a routed sale's quote must match.
+  near?: NearService
   admit?: () => boolean
 }
+export type NearService = { status: (depositAddress: string) => Promise<NearStatusResponse | undefined>; tokens: () => Promise<OneClickToken[]> }
+const defaultNear: NearService = { status: depositAddress => getNearStatus(depositAddress), tokens: getNearTokens }
 const headers = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }
 const reply = (body: unknown, status = 200) => NextResponse.json(body, { status, headers })
 const errorReply = (error: unknown) =>
@@ -92,9 +99,12 @@ export async function createOrder(req: NextRequest, service: Service) {
     }
     if (input.sale !== undefined) {
       const sale = input.sale as Record<string, unknown>
-      if (!sale || typeof sale !== 'object' || Array.isArray(sale) || !SALE_KEYS.every(key => typeof sale[key] === 'string' && (sale[key] as string).length > 0 && (sale[key] as string).length <= 256))
+      const text = (value: unknown) => typeof value === 'string' && value.length > 0 && value.length <= 256
+      if (!sale || typeof sale !== 'object' || Array.isArray(sale) || !SALE_KEYS.every(key => text(sale[key])))
         throw new OrderError(400, 'Invalid sale intent')
-      intent.sale = Object.fromEntries(SALE_KEYS.map(key => [key, sale[key]])) as unknown as SaleIntent
+      const route = SALE_ROUTE_KEYS.filter(key => sale[key] !== undefined)
+      if (!route.every(key => text(sale[key]))) throw new OrderError(400, 'Invalid sale intent')
+      intent.sale = Object.fromEntries([...SALE_KEYS, ...route].map(key => [key, sale[key]])) as unknown as SaleIntent
     }
     const { store, quote, admit } = service
     const old = store.get(input.id)
@@ -109,18 +119,29 @@ export async function createOrder(req: NextRequest, service: Service) {
     if (BigInt(intent.expectedBchSats) > store.limits.maxOrderSats) throw new OrderError(400, 'Amount exceeds the order limit')
     let floor: bigint
     if (intent.sale) {
-      // The contract's floor is the least BCH the sale may bring; it must still make a THORChain deposit after its fee.
-      if (service.inbound) {
+      const { sale } = intent
+      // The contract's floor is the least BCH the sale may bring; it must still make a deposit after its fee.
+      if (!sale.route && service.inbound) {
         try {
-          checkInbound(await service.inbound(), intent.sale.vaultAddress, intent.sale.buyAsset.split('.')[0].toUpperCase())
+          checkInbound(await service.inbound(), sale.vaultAddress, sale.buyAsset.split('.')[0].toUpperCase())
         } catch {
           throw new OrderError(409, 'THORChain is not taking BCH at this vault; get a fresh quote')
         }
       }
-      const output = (await quote(BigInt(positiveAmount(intent.sale.tokenAmount)), intent.sale.category, 'sell')).output
+      const output = (await quote(BigInt(positiveAmount(sale.tokenAmount)), sale.category, 'sell')).output
       if (output > store.limits.maxOrderSats) throw new OrderError(400, 'Amount exceeds the order limit')
       floor = minOutputFor(output)
       if (floor < BCH_DUST_THRESHOLD + REFUND_FEE_CAP) throw new OrderError(400, 'Amount is too small for the automatic bridge')
+      if (sale.route) {
+        if (!store.saleRoutes) throw new OrderError(400, 'Transfers back from BCH through NEAR Intents or ShapeShift are not available through the Cashbridge Router')
+        const near = service.near ?? defaultNear
+        const refundScript = addressToLockingBytecode(intent.refundAddress)
+        const [status, tokens] = await Promise.all([near.status(sale.vaultAddress), near.tokens()]).catch(() => {
+          throw new OrderError(503, 'NEAR Intents is unavailable; try again shortly')
+        })
+        const problem = saleRouteProblem(status, sale, { refundScript: refundScript ?? '', minSats: floor }, Date.now() + SALE_ROUTE_OPEN_MS, findNearToken(tokens, sale.buyAsset)?.assetId ?? '')
+        if (problem) throw new OrderError(409, `${problem}; get a fresh quote`)
+      }
     } else {
       const amount = secondLegSellAmount(BigInt(intent.expectedBchSats))
       if (amount <= 0n) throw new OrderError(400, 'Amount is too small for the automatic bridge')
@@ -160,6 +181,10 @@ export async function attachSource(req: NextRequest, id: string, service: Servic
       input = await body(req)
     const near = input.nearDepositAddress
     if (near !== undefined && (typeof near !== 'string' || !/^[0-9A-Za-z:]{20,120}$/.test(near))) throw new OrderError(400, 'Invalid NEAR Intents deposit address')
+    // ShapeShift quoted that NEAR Intents address; its id only lets the customer find the swap there.
+    const quoteId = input.shapeshiftQuoteId
+    if (quoteId !== undefined && (near === undefined || typeof quoteId !== 'string' || !/^[0-9A-Za-z-]{1,100}$/.test(quoteId)))
+      throw new OrderError(400, 'Invalid ShapeShift quote id')
     // The NEAR deposit address may come alone, before the wallet sends: the worker then finds the payout without the hash.
     const sourceHash = sourceTransactionId(input.sourceHash)
     if (!sourceHash && (input.sourceHash !== undefined || near === undefined))
@@ -176,7 +201,10 @@ export async function attachSource(req: NextRequest, id: string, service: Servic
       if (order.sourceHash && !sameSourceTransaction(order.sourceHash, sourceHash) && !sameSourceTransaction(order.inboundHash, sourceHash)) throw new OrderError(409, 'Order already has a source transaction')
       if (order.inboundHash && !sameSourceTransaction(order.inboundHash, sourceHash)) throw new OrderError(409, 'Source transaction does not match the observed order')
     }
-    if (!store.update(id, order.version, { ...(sourceHash && { sourceHash }), ...(near !== undefined && { nearDepositAddress: near }) }))
+    if (near !== undefined && near === order.nearDepositAddress && quoteId !== order.shapeshiftQuoteId && (quoteId !== undefined || order.shapeshiftQuoteId !== undefined))
+      throw new OrderError(409, 'Order already has a source route')
+    const route = near !== undefined && near !== order.nearDepositAddress ? { nearDepositAddress: near, ...(quoteId && { shapeshiftQuoteId: quoteId }) } : {}
+    if (!store.update(id, order.version, { ...(sourceHash && { sourceHash }), ...route }))
       throw new OrderError(409, 'Order changed; retry the source hint')
     return reply(store.public(id, cap))
   } catch (error) {

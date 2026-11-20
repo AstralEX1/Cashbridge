@@ -18,6 +18,7 @@ import { isHoudiniProvider, resolvePriceImpact } from '@/lib/swap-helpers'
 import { getUSwap } from '@/lib/wallets'
 import { isBridgeRoute } from '@/lib/api'
 import { isNearRoute, nearLegOf, submitNearDeposit } from '@/lib/near-intents'
+import { isShapeShiftRoute } from '@/lib/shapeshift'
 import { addressPaysScript, type BchBinding } from '@/lib/bch'
 import { toBaseUnits } from '@/lib/bridge'
 import { firstLegSeconds } from '@/lib/bridge-summary'
@@ -105,7 +106,7 @@ export const SwapDialog = ({ provider, quote: prepared, binding: destination, wa
       quotedBchSats = undefined
     }
 
-    const near = isNearRoute(quote) ? nearLegOf(quote) : undefined
+    const near = isNearRoute(quote) ? nearLegOf(quote) : isShapeShiftRoute(quote) ? quote.shapeshift.near : undefined
     const broadcast = startBridgeFirstLeg({
       binding,
       near,

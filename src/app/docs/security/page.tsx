@@ -39,7 +39,7 @@ export default function Page() {
 
       <h3 id="sale-contracts">Sale contracts (reverse)</h3>
       <p>
-        When Router sales are offered, a reverse CashToken transfer uses a sale covenant: your wallet sends the token in; the Router may sell for ≥ min BCH and deposit to THORChain with the fixed memo, or return the tokens; after <code>refundAfter</code> (same median-time rule) anyone may return them. Sales stay on THORChain. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.
+        When Router sales are offered, a reverse CashToken transfer uses a sale covenant: your wallet sends the token in; the Router may sell for ≥ min BCH and deposit to the bridge address fixed in the contract (THORChain&apos;s vault with the memo, or a NEAR Intents or ShapeShift deposit address the Router checks at 1Click first), or return the tokens; after <code>refundAfter</code> (same median-time rule) anyone may return them. The NEAR Intents and ShapeShift sale paths have been tested against simulated networks only, not yet with real funds. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.
       </p>
 
       <h3 id="legacy">Legacy P2PKH orders</h3>

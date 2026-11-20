@@ -1,7 +1,7 @@
 import { Chain, getChainConfig, ProviderName } from '@tcswap/helpers'
 import type { QuoteResponseRoute } from '@tcswap/helpers/api'
 import type { Asset } from '@/components/swap/asset'
-import { BridgeConfig, nearIntentsApiUrl } from '@/config'
+import { nearIntentsApiUrl } from '@/config'
 import { formatBaseUnits, toBaseUnits } from '@/lib/bridge'
 import type { NearLeg } from '@/store/transaction-store'
 
@@ -273,10 +273,21 @@ export type NearSwapStatus = 'KNOWN_DEPOSIT_TX' | 'PENDING_DEPOSIT' | 'INCOMPLET
 export interface NearStatusResponse {
   status: NearSwapStatus
   updatedAt?: string
+  correlationId?: string
   // The signed quote this deposit address was made for.
   quoteResponse?: {
-    quoteRequest?: { recipient?: string; refundTo?: string; originAsset?: string; destinationAsset?: string }
-    quote?: { depositAddress?: string; minAmountOut?: string }
+    timestamp?: string
+    signature?: string
+    quoteRequest?: {
+      swapType?: string
+      recipient?: string
+      refundTo?: string
+      originAsset?: string
+      destinationAsset?: string
+      amount?: string
+      deadline?: string
+    }
+    quote?: { depositAddress?: string; amountIn?: string; minAmountIn?: string; amountOut?: string; minAmountOut?: string; deadline?: string }
   }
   swapDetails?: {
     amountOut?: string
@@ -437,9 +448,9 @@ export const nearRoute = (
   }
 }
 
-// A quote between `sellAsset` and `buyAsset`, one of them native BCH; undefined when NEAR Intents lists either side.
+// A quote between `sellAsset` and `buyAsset` (native BCH on one side, or a free pair); undefined when NEAR Intents does
+// not list either side.
 export const getNearQuote = async (req: NearQuoteRequest & { sourceAddress?: string }, signal?: AbortSignal): Promise<NearRoute | undefined> => {
-  if (req.sellAsset.toUpperCase() !== BridgeConfig.buyAsset && req.buyAsset.toUpperCase() !== BridgeConfig.buyAsset) return undefined
   const list = await getNearTokens()
   const origin = findNearToken(list, req.sellAsset)
   const destination = findNearToken(list, req.buyAsset)

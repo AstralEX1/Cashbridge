@@ -74,8 +74,8 @@ test('bestRoute still prefers the higher payout and THORChain on a tie', () => {
   assert.equal(bestRoute({ near: { expectedBuyAmount: '2' } }), 'near')
 })
 
-test('Automatic prepare keeps a selected NEAR route on NEAR (no silent THOR fallback)', () => {
-  const nearBranch = prepareSource.match(/if \(provider === ProviderName\.NEAR\) \{([\s\S]*?)\n  \}\n\n  const quotes = await getQuotes/)?.[1]
+test('Automatic prepare keeps a selected NEAR or ShapeShift route on it (no silent THOR fallback)', () => {
+  const nearBranch = prepareSource.match(/if \(provider === ProviderName\.NEAR \|\| provider === SHAPESHIFT_PROVIDER\) \{([\s\S]*?)\n  \}\n\n  const quotes = await getQuotes/)?.[1]
   assert.ok(nearBranch, 'NEAR prepare must return before getQuotes')
   assert.doesNotMatch(nearBranch, /getQuotes/)
   assert.match(nearBranch, /nearPaysBeforeRefund\(current, now \+ FORWARD_DEADLINE_MS\)/)

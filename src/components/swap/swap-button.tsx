@@ -32,6 +32,8 @@ import { RouterUnavailableError } from '@/lib/auto-bridge-client'
 import { addressToLockingBytecode } from '@/lib/bch'
 import { getQuotes } from '@/lib/api'
 import { getNearQuote, isNearRoute, nearSlippageBps } from '@/lib/near-intents'
+import { getShapeShiftBridgeRoute, isShapeShiftRoute } from '@/lib/shapeshift'
+import { BridgeConfig } from '@/config'
 import { USwapError } from '@tcswap/helpers'
 
 interface SwapButtonProps {
@@ -106,6 +108,7 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
       if (automatic) {
         const prepared = await prepareAutomatic({
           source: { chain: assetFrom.chain, asset: assetFrom.identifier, amount: valueFrom.toSignificant(), address: selectedAccount.address },
+          sourceDecimals: assetFrom.decimals,
           token: bchToken!,
           recipient,
           expectedBuyAmount: quote.expectedBuyAmount,
@@ -130,6 +133,22 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
           refundTo: selectedAccount.address,
           dry: false,
           slippageBps: nearSlippageBps(slippage)
+        })
+        if (!route) throw new Error(t('button.noValidQuotes'))
+        openDialog(SwapDialog, { provider, quote: route, binding, walletName: destination.pasted ? undefined : (bchWallet.walletName ?? undefined) })
+        return
+      }
+      if (isShapeShiftRoute(quote)) {
+        // ShapeShift's BCH quote is a NEAR Intents deposit address; its 1Click swap must pay the bound wallet.
+        const route = await getShapeShiftBridgeRoute({
+          sellAsset: assetFrom.identifier,
+          buyAsset: BridgeConfig.buyAsset,
+          sellAmount: valueFrom.toSignificant(),
+          sellDecimals: assetFrom.decimals,
+          buyDecimals: 8,
+          slippage,
+          sourceAddress: selectedAccount.address,
+          destinationAddress: binding.cashAddress
         })
         if (!route) throw new Error(t('button.noValidQuotes'))
         openDialog(SwapDialog, { provider, quote: route, binding, walletName: destination.pasted ? undefined : (bchWallet.walletName ?? undefined) })
@@ -229,7 +248,9 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
         }
       }
     }
-    if (assetFrom && !selectedAccount && (!instantSwapSupported || (openNetworks && isMemolessHalted))) {
+    // The QR deposit flow is THORChain's; NEAR Intents and ShapeShift free pairs send from the connected wallet.
+    const walletOnly = !!quote && (isNearRoute(quote) || isShapeShiftRoute(quote))
+    if (assetFrom && !selectedAccount && (!instantSwapSupported || (openNetworks && (isMemolessHalted || walletOnly)))) {
       return { text: t('button.connectWallet', { chain: chainLabel(assetFrom.chain) }), spinner: false, accent: true, onClick: connectSource }
     }
     if (activeBridge) return { text: t('button.viewBridge'), spinner: false, accent: true, onClick: onShowBridge }

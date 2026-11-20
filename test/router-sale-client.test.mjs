@@ -64,3 +64,63 @@ test('a sale order is accepted only when its deposit is the sale contract of its
     globalThis.fetch = oldFetch
   }
 })
+
+// A routed sale is quoted on the BCH the Router is sure to deposit: NEAR takes a flexible amount down to the floor less
+// the fee cap; ShapeShift an exact amount, less the change back too.
+test('a routed sale quotes NEAR on the floor less the fee cap, and ShapeShift on an exact amount', async () => {
+  const { routedDeposit } = await import('../src/lib/router-sale-client.ts')
+  const { ROUTE_MEMO } = await import('../src/lib/auto-bridge-contract.ts')
+  const { REFUND_FEE_CAP, SALE_EXACT_RESERVE } = await import('../src/lib/router-contract.ts')
+  const { minOutputFor } = await import('../src/lib/bridge.ts')
+  const USDC = 'BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913'
+  const NEAR_USDC = 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near'
+  const destination = '0x1111111111111111111111111111111111111111'
+  const bchOut = 1_000_000n
+  const floor = minOutputFor(bchOut, 300)
+  let nearAsked, shapeAsked
+  const oldFetch = globalThis.fetch
+  globalThis.fetch = async (input, init) => {
+    const url = String(input)
+    if (url.endsWith('/tokens'))
+      return Response.json([
+        { assetId: NEAR_USDC, decimals: 6, blockchain: 'base', symbol: 'USDC', price: 1, contractAddress: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' },
+        { assetId: 'nep141:bch.omft.near', decimals: 8, blockchain: 'bch', symbol: 'BCH', price: 400, contractAddress: null }
+      ])
+    if (url.endsWith('/quote') && !url.includes('shapeshift')) {
+      nearAsked = JSON.parse(init.body)
+      return Response.json({ correlationId: 'c', timestamp: 't', signature: 's', quote: { depositAddress: vault.cashAddress, amountIn: nearAsked.amount, minAmountIn: nearAsked.amount, amountOut: '3900000', minAmountOut: '3800000', deadline: nearAsked.deadline } })
+    }
+    if (url.includes('/v1/swap/rates')) return Response.json({ rates: [{ swapperName: 'NEAR Intents', buyAmountCryptoBaseUnit: '3900000', supportsExternalPayment: true }] })
+    if (url.endsWith('/v1/swap/quote')) {
+      shapeAsked = JSON.parse(init.body)
+      return Response.json({ quoteId: 'q-9', swapperName: 'NEAR Intents', sellAmountCryptoBaseUnit: shapeAsked.sellAmountCryptoBaseUnit, buyAmountAfterFeesCryptoBaseUnit: '3900000', depositAddress: vault.cashAddress, expiresAt: Date.now() + 3600_000 })
+    }
+    if (url.includes('/status?depositAddress='))
+      return Response.json({
+        status: 'PENDING_DEPOSIT',
+        correlationId: 'c-9',
+        quoteResponse: {
+          timestamp: 't',
+          signature: 's',
+          quoteRequest: { swapType: 'EXACT_INPUT', originAsset: 'nep141:bch.omft.near', destinationAsset: NEAR_USDC, amount: shapeAsked.sellAmountCryptoBaseUnit, recipient: shapeAsked.receiveAddress, refundTo: shapeAsked.sendAddress, deadline: '2030-01-01T04:00:00.000Z' },
+          quote: { depositAddress: vault.cashAddress, amountIn: shapeAsked.sellAmountCryptoBaseUnit, amountOut: '3900000', minAmountOut: '3800000' }
+        }
+      })
+    throw new Error(`Unexpected fetch ${url}`)
+  }
+  try {
+    const near = await routedDeposit({ route: 'near', bchOut, binding: customer, buyAsset: USDC, destination, slippage: 1 })
+    assert.equal(nearAsked.swapType, 'FLEX_INPUT')
+    assert.equal(nearAsked.amount, (floor - REFUND_FEE_CAP).toString())
+    assert.equal(nearAsked.recipient, destination)
+    assert.equal(nearAsked.refundTo, customer.cashAddress)
+    assert.deepEqual(near.sale, { memo: ROUTE_MEMO, vaultAddress: vault.cashAddress, route: 'near' })
+
+    const shape = await routedDeposit({ route: 'shapeshift', bchOut, binding: customer, buyAsset: USDC, buyDecimals: 6, destination, slippage: 1 })
+    assert.equal(shapeAsked.sellAmountCryptoBaseUnit, (floor - SALE_EXACT_RESERVE).toString())
+    assert.deepEqual(shape.sale, { memo: ROUTE_MEMO, vaultAddress: vault.cashAddress, route: 'shapeshift', depositSats: (floor - SALE_EXACT_RESERVE).toString(), quoteId: 'q-9' })
+    assert.equal(shape.near.shapeshiftQuoteId, 'q-9')
+  } finally {
+    globalThis.fetch = oldFetch
+  }
+})

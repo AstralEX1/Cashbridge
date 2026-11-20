@@ -1,13 +1,15 @@
 import { EVMChains, USwapNumber, type EVMChain } from '@tcswap/core'
 import type { QuoteResponseRoute } from '@tcswap/helpers/api'
-import { getTxStatus, isNetworkRoute, type TxStatusResponse } from '@/lib/api'
+import { ProviderName } from '@tcswap/helpers'
+import { getNetworkQuotes, getTxStatus, isNetworkRoute, type TxStatusResponse } from '@/lib/api'
 import { BridgeBlocked, FirstLegRejected, withLock } from '@/lib/bridge-first-leg'
 import { isUserRejection } from '@/lib/errors'
 import { generateId } from '@/lib/utils'
 import { toBaseUnits } from '@/lib/bridge'
 import { sameAddress } from '@/lib/payout-chains'
 import { sameSourceTransaction, sourceTransactionId } from '@/lib/source-transaction'
-import { getShapeShiftStatus, isShapeShiftRoute } from '@/lib/shapeshift'
+import { getNearQuote, getNearStatus, isNearRoute, nearSlippageBps, submitNearDeposit } from '@/lib/near-intents'
+import { getShapeShiftQuote, getShapeShiftStatus, isShapeShiftRoute, SHAPESHIFT_PROVIDER } from '@/lib/shapeshift'
 import { type SwapTransaction, transactionStore } from '@/store/transaction-store'
 
 // Save before opening the wallet: a lost answer or closed tab must never look like an unsent swap.
@@ -18,10 +20,12 @@ export const startNetworkSwap = async ({ base, route, execute }: {
 }) => {
   const sameSource = (address?: string) => !!address && !!base.addressFrom &&
     (EVMChains.includes(base.assetFrom.chain as EVMChain) ? address.toLowerCase() === base.addressFrom.toLowerCase() : address === base.addressFrom)
-  // A ShapeShift route is a plain deposit to the address it quoted, for the pair and destination asked for.
+  // A ShapeShift or NEAR Intents route is a plain deposit to the address it quoted, for the pair and destination asked for.
   const shapeshift = isShapeShiftRoute(route) ? route.shapeshift : undefined
-  const matches = shapeshift
-    ? !!shapeshift.quoteId && !!shapeshift.depositAddress && route.inboundAddress === shapeshift.depositAddress &&
+  const near = isNearRoute(route) ? route.near : undefined
+  const depositAddress = shapeshift?.depositAddress ?? near?.quote.depositAddress
+  const matches = shapeshift || near
+    ? (!shapeshift || !!shapeshift.quoteId) && !!depositAddress && route.inboundAddress === depositAddress &&
       route.sellAsset === base.assetFrom.identifier && route.buyAsset === base.assetTo.identifier &&
       !!base.addressTo && !!route.destinationAddress && sameAddress(route.destinationAddress, base.addressTo)
     : isNetworkRoute(route, { sellAsset: base.assetFrom.identifier, buyAsset: base.assetTo.identifier, buyAssetShortCode: base.assetTo.shortCode, sellAmount: base.amountFrom, destinationAddress: base.addressTo })
@@ -40,7 +44,17 @@ export const startNetworkSwap = async ({ base, route, execute }: {
     const { setTransaction, removeTransaction } = transactionStore.getState()
     const minOutput = toBaseUnits(route.expectedBuyAmountMaxSlippage ?? route.expectedBuyAmount, base.assetTo.decimals).toString()
     if (BigInt(minOutput) <= 0n) throw new Error('The quote has no positive minimum payout')
-    setTransaction({ ...base, uid, status: 'unknown', networkSwap: { minOutput, memo: route.memo, ...(shapeshift && { shapeshift: { quoteId: shapeshift.quoteId!, depositAddress: shapeshift.depositAddress! } }) } })
+    setTransaction({
+      ...base,
+      uid,
+      status: 'unknown',
+      networkSwap: {
+        minOutput,
+        memo: route.memo,
+        ...(shapeshift && { shapeshift: { quoteId: shapeshift.quoteId!, depositAddress: shapeshift.depositAddress! } }),
+        ...(near && { near: { depositAddress: depositAddress! } })
+      }
+    })
     let hash: string
     try {
       hash = await execute()
@@ -61,7 +75,40 @@ export const startNetworkSwap = async ({ base, route, execute }: {
     return hash
   })
   if (result === undefined) throw new BridgeBlocked('Another tab is submitting a swap')
+  if (near) void submitNearDeposit(depositAddress!, result)
   return result
+}
+
+// The executable free-pair quote from the route the form chose: THORChain through the aggregator, or a deposit address
+// from NEAR Intents' 1Click or ShapeShift (refunds go to the source wallet).
+export const getNetworkRoutes = async (
+  provider: string,
+  json: Parameters<typeof getNetworkQuotes>[0] & { sellDecimals: number; buyDecimals: number; percentSlippage?: number },
+  abortController?: AbortController
+): Promise<QuoteResponseRoute[]> => {
+  const { sellAsset, buyAsset, sellAmount, sourceAddress, destinationAddress, refundAddress } = json
+  if (provider === ProviderName.NEAR) {
+    const route = await getNearQuote({
+      sellAsset,
+      buyAsset: buyAsset!,
+      sellAmount,
+      sourceAddress,
+      recipient: destinationAddress,
+      refundTo: refundAddress ?? sourceAddress,
+      dry: false,
+      slippageBps: nearSlippageBps(json.percentSlippage)
+    })
+    return route ? [route] : []
+  }
+  if (provider === SHAPESHIFT_PROVIDER) {
+    if (!sourceAddress || !destinationAddress) return []
+    const route = await getShapeShiftQuote(
+      { sellAsset, buyAsset: buyAsset!, sellAmount, sellDecimals: json.sellDecimals, buyDecimals: json.buyDecimals, slippage: json.percentSlippage, sourceAddress, destinationAddress },
+      abortController?.signal
+    )
+    return route ? [route] : []
+  }
+  return getNetworkQuotes(json, abortController)
 }
 
 export const networkIntentMatches = (tx: SwapTransaction, deposit: TxStatusResponse['tx']) => {
@@ -75,6 +122,15 @@ export const networkIntentMatches = (tx: SwapTransaction, deposit: TxStatusRespo
 
 export const resumeNetworkSwap = async (tx: SwapTransaction, hash: string) => {
   if (!sourceTransactionId(hash)) throw new Error('Enter the source transaction hash from your wallet')
+  const nearAddress = tx.networkSwap?.near?.depositAddress
+  if (nearAddress) {
+    // 1Click lists the deposits it has seen at the address: the hash entered must be one of them.
+    const seen = await getNearStatus(nearAddress)
+    if (!(seen.swapDetails?.originChainTxHashes ?? []).some(t => sameSourceTransaction(t.hash, hash)))
+      throw new Error('NEAR Intents has not seen this transaction for the saved transfer. Check the hash and retry later.')
+    transactionStore.setState(state => ({ transactions: state.transactions.map(current => current.uid === tx.uid && current.status === 'unknown' && !current.hash ? { ...current, hash: hash.trim(), status: 'pending' } : current) }))
+    return
+  }
   const quoteId = tx.networkSwap?.shapeshift?.quoteId
   if (quoteId) {
     // ShapeShift fills in the deposit's hash once it sees it: it must be the one entered.

@@ -44,7 +44,14 @@ export interface SwapTransaction extends BaseTransaction {
   bridge?: BridgeOperation
   // Free pairs settle only after source success and a chain-verified payout meeting this floor.
   // `shapeshift`: a deposit-address swap tracked by ShapeShift's quote id instead of a THORChain memo.
-  networkSwap?: { minOutput: string; memo?: string; shapeshift?: { quoteId: string; depositAddress: string }; payout?: { hash: string; amount: string } }
+  // `near`: a NEAR Intents one-use deposit address, tracked by 1Click's status of it.
+  networkSwap?: {
+    minOutput: string
+    memo?: string
+    shapeshift?: { quoteId: string; depositAddress: string }
+    near?: { depositAddress: string }
+    payout?: { hash: string; amount: string }
+  }
 }
 
 // --- Bridge operation (two legs) -----------------------------------------------------------------
@@ -171,9 +178,9 @@ export interface ReverseDetails {
   // The bound wallet's own inputs of the first transaction, and when it went to the wallet: an answer that never came
   // back is settled by whether they get spent.
   signing?: { inputs: { txid: string; vout: number }[]; sentAt: number }
-  // Set when NEAR Intents carries the BCH out instead of THORChain (chosen on the form); the deposit's quote is then
-  // the operation's `near`.
-  route?: 'near'
+  // Set when NEAR Intents carries the BCH out instead of THORChain (chosen on the form), directly or through a
+  // ShapeShift quote; the deposit's quote is then the operation's `near`.
+  route?: 'near' | 'shapeshift'
 }
 
 // A leg carried by NEAR Intents instead of THORChain: the one-use deposit address its status is read by, and the
@@ -188,6 +195,8 @@ export interface NearLeg {
   amountOut: string
   minAmountOut: string
   status?: string
+  // ShapeShift quoted this NEAR Intents deposit address; its quote id finds the swap on ShapeShift.
+  shapeshiftQuoteId?: string
 }
 
 export interface BridgeOperation {

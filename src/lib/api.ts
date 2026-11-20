@@ -8,6 +8,7 @@ import { aggregatorApiUrl, BridgeConfig } from '@/config'
 import { addressToLockingBytecode } from '@/lib/bch'
 import { swapMemoPays } from '@/lib/bridge'
 import { isNearRoute } from '@/lib/near-intents'
+import { isShapeShiftRoute } from '@/lib/shapeshift'
 import { BelowMinimumError, minimumFromProviderErrors } from '@/lib/errors'
 import { sourceTransactionId } from '@/lib/source-transaction'
 
@@ -179,7 +180,7 @@ export const assertBridgeQuoteRequest = (json: Pick<QuoteRequest, 'buyAsset' | '
 }
 
 // A returned route is only usable if it is still the bridge's: THORChain (or a NEAR Intents route this app built
-// itself, see near-intents.ts), trading exactly the asked
+// itself, see near-intents.ts, or a ShapeShift one whose 1Click swap was checked), trading exactly the asked
 // pair and (for an executable quote) paying the destination that was asked for.
 export const isBridgeRoute = (route: QuoteResponseRoute, request: Pick<QuoteRequest, 'sellAsset' | 'destinationAddress'> & { buyAsset?: string }) => {
   const reverse = isReverseBridgeRequest(request)
@@ -189,7 +190,7 @@ export const isBridgeRoute = (route: QuoteResponseRoute, request: Pick<QuoteRequ
     route.buyAsset?.toUpperCase() === buyAsset.toUpperCase() &&
     route.sellAsset?.toUpperCase() === request.sellAsset.toUpperCase() &&
     route.providers?.length === 1 &&
-    (BridgeConfig.providers.includes(route.providers[0]) || isNearRoute(route)) &&
+    (BridgeConfig.providers.includes(route.providers[0]) || isNearRoute(route) || (isShapeShiftRoute(route) && !!route.shapeshift.near)) &&
     (!request.destinationAddress ||
       (reverse
         ? route.destinationAddress?.toLowerCase() === request.destinationAddress.toLowerCase()
@@ -275,7 +276,7 @@ export const getQuotes = async (json: QuoteRequest, abortController?: AbortContr
   )
 }
 
-// Free-pair Manual swaps use THORChain only; the BCH bridge keeps its stricter guard above.
+// THORChain's free-pair quotes (NEAR Intents and ShapeShift ones come from getNetworkRoutes); the BCH bridge keeps its stricter guard above.
 type NetworkQuoteRequest = QuoteRequest & { buyAssetShortCode?: string }
 
 export const isNetworkRoute = (route: QuoteResponseRoute, request: NetworkQuoteRequest) => {

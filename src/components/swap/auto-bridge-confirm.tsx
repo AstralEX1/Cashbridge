@@ -25,7 +25,8 @@ import { toBaseUnits } from '@/lib/bridge'
 import { firstLegSeconds } from '@/lib/bridge-summary'
 import { getQuotes, isBridgeRoute } from '@/lib/api'
 import { assertAutomaticSaved, createAutomaticOrder, orderRequest, RouterUnavailableError, startAutomaticSource } from '@/lib/auto-bridge-client'
-import { FORWARD_DEADLINE_MS, getNearQuote, isNearRoute, nearSlippageBps, submitNearDeposit } from '@/lib/near-intents'
+import { FORWARD_DEADLINE_MS, getNearQuote, isNearRoute, nearLegOf, nearSlippageBps, submitNearDeposit } from '@/lib/near-intents'
+import { getShapeShiftBridgeRoute, isShapeShiftRoute, SHAPESHIFT_PROVIDER } from '@/lib/shapeshift'
 import { getUSwap } from '@/lib/wallets'
 import { resolvePriceImpact } from '@/lib/swap-helpers'
 import { autoBridgeStore, type SavedAutoOrder } from '@/store/auto-bridge-store'
@@ -46,6 +47,7 @@ const sameIntent = (a: OrderIntent | undefined, b: OrderIntent) =>
 // never swapped for a THORChain quote behind the scenes.
 export const prepareAutomatic = async ({
   source,
+  sourceDecimals,
   token,
   recipient,
   expectedBuyAmount,
@@ -54,6 +56,8 @@ export const prepareAutomatic = async ({
   messages
 }: {
   source: AutomaticSource
+  // The source asset's decimals, which ShapeShift's quote is asked in.
+  sourceDecimals: number
   // The Cauldron token the Router buys.
   token: CauldronToken
   recipient: string
@@ -87,35 +91,52 @@ export const prepareAutomatic = async ({
     isBridgeRoute(candidate, { sellAsset: source.asset, destinationAddress: depositAddress }) &&
     new USwapNumber(candidate.sellAmount).eqValue(source.amount)
 
-  if (provider === ProviderName.NEAR) {
+  if (provider === ProviderName.NEAR || provider === SHAPESHIFT_PROVIDER) {
+    // A one-use NEAR Intents deposit address paying the order's contract and refunding the source wallet: 1Click's own
+    // quote, or ShapeShift's (its BCH quotes are NEAR Intents addresses, checked against 1Click).
+    const quoteFor = async (depositAddress: string, now: number): Promise<QuoteResponseRoute | undefined> =>
+      provider === ProviderName.NEAR
+        ? getNearQuote({
+            sellAsset: source.asset,
+            buyAsset: BridgeConfig.buyAsset,
+            sellAmount: source.amount,
+            sourceAddress: source.address,
+            recipient: depositAddress,
+            refundTo: source.address,
+            dry: false,
+            slippageBps: nearSlippageBps(slippage),
+            now
+          })
+        : getShapeShiftBridgeRoute({
+            sellAsset: source.asset,
+            buyAsset: BridgeConfig.buyAsset,
+            sellAmount: source.amount,
+            sellDecimals: sourceDecimals,
+            buyDecimals: 8,
+            slippage,
+            sourceAddress: source.address,
+            destinationAddress: depositAddress
+          })
     const attachNear = async (reference: SavedAutoOrder, current: typeof order) => {
       const now = Date.now()
-      const near = await getNearQuote({
-        sellAsset: source.asset,
-        buyAsset: BridgeConfig.buyAsset,
-        sellAmount: source.amount,
-        sourceAddress: source.address,
-        recipient: current.depositAddress,
-        refundTo: source.address,
-        dry: false,
-        slippageBps: nearSlippageBps(slippage),
-        now
-      })
-      if (!near?.near.quote.depositAddress || !validFor(current.depositAddress, near)) return { status: 'unavailable' as const }
-      // 1Click answers `quote.deadline` as when the deposit address goes inactive (days later); the swap itself
-      // refunds at the deadline we asked for.
-      // A reused draft may be too close to refund for NEAR's window; caller opens a fresh order.
+      const route = await quoteFor(current.depositAddress, now)
+      const leg = route && (isNearRoute(route) ? nearLegOf(route) : isShapeShiftRoute(route) ? route.shapeshift.near : undefined)
+      if (!route || !leg || !validFor(current.depositAddress, route)) return { status: 'unavailable' as const }
+      // NEAR's swap refunds at the deadline we asked for (1Click's `quote.deadline` is when the address goes inactive,
+      // days later). ShapeShift fixes a longer one; its swap is expected to fill in the same window, and a payout after
+      // the refund time can only go back to the recipient as BCH.
+      // A reused draft may be too close to refund for that window; caller opens a fresh order.
       if (!nearPaysBeforeRefund(current, now + FORWARD_DEADLINE_MS)) return { status: 'deadline' as const }
-      const depositAddress = near.near.quote.depositAddress
+      const depositAddress = leg.depositAddress
       // The Router learns the deposit address before Confirm, so it finds the payout even if this tab closes.
-      const noted = await orderRequest(reference, 'POST', { nearDepositAddress: depositAddress })
+      const noted = await orderRequest(reference, 'POST', { nearDepositAddress: depositAddress, ...(leg.shapeshiftQuoteId && { shapeshiftQuoteId: leg.shapeshiftQuoteId }) })
       if (noted.nearDepositAddress !== depositAddress) throw new Error(messages.noRoute)
       autoBridgeStore.getState().patch(reference.id, { order: noted })
-      return { status: 'ok' as const, order: noted, route: near }
+      return { status: 'ok' as const, order: noted, route }
     }
 
     let result = await attachNear(ref, order)
-    // Stale unpaid draft: open a new Router order so NEAR still fits before refundAfter.
+    // Stale unpaid draft: open a new Router order so the swap still fits before refundAfter.
     if (result.status === 'deadline') {
       ;({ reference: ref, order } = await openOrder())
       result = await attachNear(ref, order)
@@ -185,7 +206,7 @@ export const AutoBridgeDialog = ({ prepared, isOpen, onOpenChange }: Props) => {
       if (latest.apiVersion !== 2 || latest.recoveryRequired) throw new Error(t('serviceUpdate'))
       if (latest.minPusd !== order.minPusd || latest.depositAddress !== order.depositAddress) throw new Error(t('changed'))
       autoBridgeStore.getState().patch(reference.id, { order: latest, estimatedSeconds: firstLegSeconds(route.estimatedTime) })
-      const near = isNearRoute(route) ? route.near.quote.depositAddress : undefined
+      const near = isNearRoute(route) ? route.near.quote.depositAddress : isShapeShiftRoute(route) ? route.shapeshift.near?.depositAddress : undefined
       if (near && latest.nearDepositAddress !== near) throw new Error(t('changed'))
       const executable = from?.chain === Chain.Tron && route.expiration ? { ...route, expiration: undefined } : route
       const hash = await startAutomaticSource(

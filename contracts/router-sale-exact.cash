@@ -1,0 +1,76 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) Cash Bridge
+
+pragma cashscript ^0.14.0;
+
+// Escrow for one Cashbridge Router sale whose bridge takes an exact BCH amount (a ShapeShift quote).
+//
+// The customer sends the tokens here. Nobody, the Router included, can move them anywhere but to the bridge's deposit
+// address (exactly the quoted amount, with the rest back to the customer) or back to the customer.
+contract RouterSaleExact(
+    // The Router's public key for this order.
+    pubkey router,
+    // Locking bytecode of the bridge's one-use deposit address when the order was made.
+    bytes vaultLock,
+    // The OP_RETURN output the deposit carries.
+    bytes memoLock,
+    // Locking bytecode of the customer's address: whatever is not deposited goes back there.
+    bytes fallbackLock,
+    // The exact BCH the deposit address was quoted for.
+    int depositSats,
+    // The least BCH the sale must bring: the deposit, the miner fee and the change back to the customer.
+    int minSats,
+    // Unix time after which anyone may send the coins back (compared with the chain's median time).
+    int refundTime
+) {
+    // Step 1: the Router sells all the coin's tokens on Cauldron, and the BCH comes back to this contract.
+    function sell(sig routerSig) {
+        require(checkSig(routerSig, router));
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == tx.inputs[i].lockingBytecode);
+        require(tx.outputs[i].tokenCategory == 0x);
+        require(tx.outputs[i].value >= minSats);
+    }
+
+    // Step 2: exactly the quoted BCH goes to the deposit address with the memo, the rest to the customer, alone in its
+    // transaction.
+    function deposit(sig routerSig) {
+        require(checkSig(routerSig, router));
+        require(this.activeInputIndex == 0);
+        require(tx.inputs.length == 1);
+        require(tx.outputs.length == 3);
+        require(tx.inputs[0].tokenCategory == 0x);
+        require(tx.inputs[0].value >= minSats);
+        require(tx.outputs[0].lockingBytecode == vaultLock);
+        require(tx.outputs[0].tokenCategory == 0x);
+        require(tx.outputs[0].value == depositSats);
+        require(tx.outputs[1].lockingBytecode == memoLock);
+        require(tx.outputs[2].lockingBytecode == fallbackLock);
+        require(tx.outputs[2].tokenCategory == 0x);
+        require(tx.outputs[0].value + tx.outputs[2].value + 2000 >= tx.inputs[0].value);
+    }
+
+    // The Router gives up and returns the coin as it came (tokens, or BCH from a sale or a bridge refund),
+    // keeping at most 2,000 sats for the miner.
+    function giveBack(sig routerSig) {
+        require(checkSig(routerSig, router));
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == fallbackLock);
+        require(tx.outputs[i].tokenCategory == tx.inputs[i].tokenCategory);
+        require(tx.outputs[i].tokenAmount == tx.inputs[i].tokenAmount);
+        require(tx.outputs[i].nftCommitment == tx.inputs[i].nftCommitment);
+        require(tx.outputs[i].value + 2000 >= tx.inputs[i].value);
+    }
+
+    // Once the refund time has passed, anyone can return the coin on the same terms, so a stopped Router
+    // cannot strand it.
+    function expire() {
+        require(tx.time >= refundTime);
+        int i = this.activeInputIndex;
+        require(tx.outputs[i].lockingBytecode == fallbackLock);
+        require(tx.outputs[i].tokenCategory == tx.inputs[i].tokenCategory);
+        require(tx.outputs[i].tokenAmount == tx.inputs[i].tokenAmount);
+        require(tx.outputs[i].nftCommitment == tx.inputs[i].nftCommitment);
+        require(tx.outputs[i].value + 2000 >= tx.inputs[i].value);
+    }
+}

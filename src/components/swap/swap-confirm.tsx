@@ -26,8 +26,9 @@ import type { CauldronToken } from '@/lib/cauldron-tokens'
 import { formatBaseUnits, minOutputFor } from '@/lib/bridge'
 import { bridgeSummary, firstLegSeconds, formatAmount, formatMinutes, formatPercent, formatUsd, PUSD_LEG_SECONDS } from '@/lib/bridge-summary'
 import type { Asset } from '@/components/swap/asset'
-import { BchMark, CauldronMark, HoverCard, NearMark, ThorchainMark, TokenMark as CauldronTokenMark } from '@/components/swap/bridge-marks'
+import { BchMark, CauldronMark, HoverCard, NearMark, ShapeShiftMark, ThorchainMark, TokenMark as CauldronTokenMark } from '@/components/swap/bridge-marks'
 import { isNearRoute } from '@/lib/near-intents'
+import { isShapeShiftRoute } from '@/lib/shapeshift'
 
 const THORCHAIN_FEES_URL = 'https://docs.thorchain.org/technical-documentation/technical-deep-dive/fees'
 const NEAR_FEES_URL = 'https://docs.near-intents.org/resources/fees'
@@ -56,9 +57,11 @@ export const BridgeConfirm = ({ quote, token, bchAddress, automatic }: BridgeCon
   const assetFrom = useAssetFrom()
   const [open, setOpen] = useState(false)
   const pusd = !!token
-  // NEAR Intents prices its fee into the rate; THORChain lists its fees.
-  const near = isNearRoute(quote)
-  const BridgeMark = near ? NearMark : ThorchainMark
+  // NEAR Intents prices its fee into the rate; THORChain lists its fees. ShapeShift's BCH quotes are NEAR Intents swaps
+  // with ShapeShift's fee in the rate too.
+  const shapeshift = isShapeShiftRoute(quote)
+  const near = isNearRoute(quote) || shapeshift
+  const BridgeMark = shapeshift ? ShapeShiftMark : near ? NearMark : ThorchainMark
   const pusdQuote = useTokenQuoteFor(token ? quote.expectedBuyAmount : undefined, token)
 
   const identifiers = useMemo(() => quote.fees.map(f => f.asset).sort(), [quote.fees])

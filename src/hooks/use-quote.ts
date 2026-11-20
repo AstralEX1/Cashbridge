@@ -13,6 +13,8 @@ import { useTokenSale } from '@/hooks/use-token-sale'
 import { useSwapStore } from '@/store/swap-store'
 import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
 import { getNearQuote, nearSlippageBps, type NearRoute } from '@/lib/near-intents'
+import { formatBaseUnits } from '@/lib/bridge'
+import { shapeShiftSaleSats } from '@/lib/router-contract'
 import { getShapeShiftQuote, type ShapeShiftRoute } from '@/lib/shapeshift'
 
 // The routes' quotes for the same transfer; any may be missing. ShapeShift is quoted on open-network pairs only.
@@ -71,15 +73,19 @@ export const useQuote = (): UseQuote => {
         : BridgeConfig.buyAsset
   const sellAmount =
     !openNetworks && reverse && bchToken ? sale.bridgeAmount : valueFrom.eqValue(0) ? undefined : valueFrom.toSignificant()
-  // NEAR Intents carries manual transfers both ways, and the Cashbridge Router's forward ones when switched on.
   const { automatic } = useAutomaticBridge()
-  const nearAllowed =
-    BridgeConfig.nearIntents &&
-    !openNetworks &&
-    !isPrivateSwap &&
-    (!automatic || (BridgeConfig.routerNear && !reverse))
-  // ShapeShift carries free pairs: a deposit-address route that signs in the source wallet, like THORChain there.
-  const shapeshiftAllowed = BridgeConfig.shapeshift && openNetworks && !isPrivateSwap
+  // A Router sale through ShapeShift deposits an exact amount under its floor; the rest comes back as BCH.
+  const exactSale = !openNetworks && reverse && bchToken && automatic && sale.quote ? shapeShiftSaleSats(sale.quote.output) : undefined
+  const shapeshiftAmount = exactSale === undefined ? sellAmount : exactSale > 0n ? formatBaseUnits(exactSale, 8) : undefined
+  // NEAR Intents and ShapeShift carry manual transfers both ways and free pairs, and the Cashbridge Router's transfers
+  // when it takes them (forward: a NEAR Intents deposit address it follows; back: a sale that pays one).
+  const routerTakes = (forward: boolean) => (reverse ? BridgeConfig.routerSaleRoutes : forward)
+  const nearAllowed = BridgeConfig.nearIntents && !isPrivateSwap && (openNetworks || !automatic || routerTakes(BridgeConfig.routerNear))
+  const shapeshiftAllowed = BridgeConfig.shapeshift && !isPrivateSwap && (openNetworks || !automatic || routerTakes(BridgeConfig.routerShapeShift))
+  // ShapeShift wants both sides' decimals; on the bridge form one side is native BCH.
+  const shapeshiftDecimals = openNetworks
+    ? assetFrom && assetTo && { sellDecimals: assetFrom.decimals, buyDecimals: assetTo.decimals }
+    : assetFrom && (reverse ? { sellDecimals: 8, buyDecimals: assetFrom.decimals } : { sellDecimals: assetFrom.decimals, buyDecimals: 8 })
   // On the bridge form `assetFrom` is the non-BCH side; NEAR-only rows must never ask THORChain for a deposit.
   const nearOnly = !openNetworks && isNearOnlyAsset(assetFrom)
   const choice = useSwapStore(state => state.routeChoice)
@@ -99,6 +105,7 @@ export const useQuote = (): UseQuote => {
     isPrivateSwap,
     nearAllowed,
     shapeshiftAllowed,
+    shapeshiftAmount,
     nearOnly
   ]
 
@@ -138,9 +145,9 @@ export const useQuote = (): UseQuote => {
           })
         : undefined
       const shapeshift =
-        shapeshiftAllowed && assetFrom && assetTo
+        shapeshiftAllowed && shapeshiftDecimals && shapeshiftAmount
           ? getShapeShiftQuote(
-              { sellAsset, buyAsset, sellAmount, sellDecimals: assetFrom.decimals, buyDecimals: assetTo.decimals, slippage },
+              { sellAsset, buyAsset: openNetworks || reverse ? buyAsset : BridgeConfig.buyAsset, sellAmount: shapeshiftAmount, ...shapeshiftDecimals, slippage },
               signal
             ).catch(error => {
               if (!signal?.aborted) console.warn('ShapeShift quote failed', error)

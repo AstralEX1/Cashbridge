@@ -196,6 +196,17 @@ test('a NEAR Intents deposit address is noted once, before the source hash, only
     assert.equal((await attachSource(request(on.cap, { nearDepositAddress: near, sourceHash: 'ab'.repeat(32) }), on.id, on.service)).status, 200)
     assert.equal(on.store.get(on.id).sourceHash, 'ab'.repeat(32))
     assert.equal(on.store.get(on.id).nearDepositAddress, near)
+    assert.equal((await attachSource(request(on.cap, { nearDepositAddress: near, shapeshiftQuoteId: 'late' }), on.id, on.service)).status, 409, 'the route is set once')
+
+    const shapeshift = open(true)
+    assert.equal((await attachSource(request(shapeshift.cap, { shapeshiftQuoteId: 'q-1' }), shapeshift.id, shapeshift.service)).status, 400, 'a quote id needs its address')
+    assert.equal((await attachSource(request(shapeshift.cap, { nearDepositAddress: near, shapeshiftQuoteId: 'bad id!' }), shapeshift.id, shapeshift.service)).status, 400)
+    const quoted = await attachSource(request(shapeshift.cap, { nearDepositAddress: near, shapeshiftQuoteId: 'q-1' }), shapeshift.id, shapeshift.service)
+    assert.equal(quoted.status, 200)
+    assert.equal((await quoted.json()).shapeshiftQuoteId, 'q-1')
+    assert.equal((await attachSource(request(shapeshift.cap, { nearDepositAddress: near, shapeshiftQuoteId: 'q-1' }), shapeshift.id, shapeshift.service)).status, 200, 'the same hint again')
+    assert.equal(shapeshift.store.feed().length, 0)
+    shapeshift.store.close()
   } finally {
     off.store.close()
     contract.store.close()

@@ -23,7 +23,8 @@ export const checkOrder = (order: PublicOrder | undefined, id: string, intent?: 
       memo: order.sale.memo,
       refundScript: addressToLockingBytecode(order.refundAddress) ?? '',
       minSats: order.minPusd,
-      refundAfter: order.contract?.refundAfter ?? 0
+      refundAfter: order.contract?.refundAfter ?? 0,
+      ...(order.sale.depositSats !== undefined && { depositSats: order.sale.depositSats })
     }
     if (!order.contract || saleBinding(terms, 0).cashAddress !== order.depositAddress) throw new Error('The automatic order address is not its contract')
   } else if (order.contract) {

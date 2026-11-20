@@ -52,7 +52,8 @@ export const saleTermsOf = (order: SaleOrder, routerKey: string): SaleTerms => (
   memo: order.sale!.memo,
   refundScript: order.refundScript,
   minSats: order.minPusd,
-  refundAfter: order.contract!.refundAfter
+  refundAfter: order.contract!.refundAfter,
+  ...(order.sale!.depositSats !== undefined && { depositSats: order.sale!.depositSats })
 })
 
 // The bytes a signed contract input adds to the transaction (its unlocking script and the script's 3-byte length), for the fee.
@@ -259,7 +260,8 @@ export class WorkerWallet extends PublicWallet {
     return { ...this.#sign(order, transaction, sourcesOf(reviewed), reviewed.ownIndexes, 'sell'), kind: 'swap', pusdOut: back.valueSatoshis.toString(), status: 'signed' }
   }
 
-  // Step 2: the sale's BCH, alone, to THORChain's vault with the order memo; the miner fee at `feeRate` sats per byte.
+  // Step 2: the sale's BCH, alone, to the bridge's deposit address with the order memo; the miner fee at `feeRate` sats
+  // per byte. An exact deposit (ShapeShift) pays the quoted amount and returns the rest to the customer.
   signDeposit(order: Order, sale: Attempt, feeRate = 1n): Attempt {
     if (!order.sale || sale.kind !== 'swap') throw new Error('Invalid sale intent')
     const sold = decodeTx(sale.hex)
@@ -267,20 +269,23 @@ export class WorkerWallet extends PublicWallet {
     if (vout < 0) throw new Error('The sale pays nothing back to the contract')
     const value = sold.outputs[vout].valueSatoshis
     const terms = saleTermsOf(order, order.binding.pubkey)
+    const exact = terms.depositSats === undefined ? undefined : BigInt(terms.depositSats)
     const tx: Transaction = {
       version: 2,
       locktime: 0,
       inputs: [{ outpointTransactionHash: hexToBin(sale.txid), outpointIndex: vout, sequenceNumber: 0xffffffff, unlockingBytecode: new Uint8Array() }],
       outputs: [
-        { lockingBytecode: hexToBin(terms.vaultScript), valueSatoshis: value },
-        { lockingBytecode: memoScript(terms.memo), valueSatoshis: 0n }
+        { lockingBytecode: hexToBin(terms.vaultScript), valueSatoshis: exact ?? value },
+        { lockingBytecode: memoScript(terms.memo), valueSatoshis: 0n },
+        ...(exact === undefined ? [] : [{ lockingBytecode: hexToBin(order.refundScript), valueSatoshis: value - exact }])
       ]
     }
     const size = BigInt(encodeTransaction(tx).length + saleUnlock(terms, 'deposit', new Uint8Array(65)).length + 2)
     const fee = size * (feeRate < 1n ? 1n : feeRate) > REFUND_FEE_CAP ? REFUND_FEE_CAP : size * (feeRate < 1n ? 1n : feeRate)
     if (fee < size) throw new Error('The deposit cannot pay its fee')
-    tx.outputs[0].valueSatoshis -= fee
-    if (tx.outputs[0].valueSatoshis < BCH_DUST_THRESHOLD) throw new Error('The deposit is below THORChain’s BCH minimum')
+    tx.outputs[exact === undefined ? 0 : 2].valueSatoshis -= fee
+    if (tx.outputs[0].valueSatoshis < BCH_DUST_THRESHOLD) throw new Error('The deposit is below the bridge’s BCH minimum')
+    if (exact !== undefined && tx.outputs[2].valueSatoshis < 546n) throw new Error('The change back to the customer would be dust')
     const coin = { txid: sale.txid, vout, value: value.toString(), confirmations: 0, unspent: true }
     const sources = [{ lockingBytecode: hexToBin(order.binding.lockingBytecode), valueSatoshis: value }]
     return { ...this.#sign(order, tx, sources, [0], 'deposit', [coin]), kind: 'deposit', parent: sale.txid, pusdOut: tx.outputs[0].valueSatoshis.toString(), status: 'signed' }

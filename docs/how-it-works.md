@@ -3,7 +3,7 @@
 ## Manual (Cashbridge Router off, the default)
 
 Forward: source wallet → THORChain → BCH in the user's BCH wallet → optional Cauldron CashToken trade signed through WizardConnect. Native BCH skips the token trade. Reverse: BCH wallet sells the chosen token when needed, then signs the THORChain BCH deposit; the target chain proves payout. Existing manual 0-conf behavior and wallet sessions remain unchanged.
-NEAR Intents (1Click) quotes beside THORChain both ways; the form takes the better route. Its leg is a plain transfer to a one-use deposit address, and its payout is found on the paying chain like THORChain's. On **Any network** Manual pairs, [ShapeShift](https://shapeshift.com) also quotes as a deposit-address route beside THORChain.
+NEAR Intents (1Click) and [ShapeShift](https://shapeshift.com) quote beside THORChain both ways, for plain BCH and for the BCH leg of a CashToken transfer, and on **Any network** free pairs; the form takes the best route. Their leg is a plain transfer to a one-use deposit address, and its payout is found on the paying chain like THORChain's. ShapeShift's BCH quotes are NEAR Intents swaps: before one is used, the page reads 1Click's status of its deposit address and requires that exact swap (an exact amount in, paying the chosen recipient, refunding the sending wallet), then follows it like a NEAR Intents one. On Any network, NEAR Intents and ShapeShift need the source wallet connected; the QR deposit there is THORChain's.
 
 ## Automatic (Cashbridge Router on, forward to a Cauldron token)
 
@@ -39,20 +39,24 @@ If someone expires a coin before the Router acts, the order stops for review. `n
 `contracts/router-order.json`; `src/lib/router-contract.ts` holds its bytecode, and `test/router-contract.test.mjs` runs it
 in the BCH VM on a real Cauldron trade.
 
-## NEAR Intents orders (Cashbridge Router forward)
+## NEAR Intents and ShapeShift orders (Cashbridge Router forward)
 
-With `AUTO_BRIDGE_NEAR_ORDERS=true` on the Router (the site offers it unless `NEXT_PUBLIC_ROUTER_NEAR=false`), a forward
-Router transfer can take its first leg through NEAR Intents when that quotes better. The page asks 1Click for a quote that
+With `AUTO_BRIDGE_NEAR_ORDERS=true` on the Router (the site offers it unless `NEXT_PUBLIC_ROUTER_NEAR=false`, and ShapeShift
+unless `NEXT_PUBLIC_ROUTER_SHAPESHIFT=false`), a forward Router transfer can take its first leg through NEAR Intents or
+ShapeShift when that quotes better. The page asks 1Click for a quote that
 pays the order's own BCH address and refunds the source wallet, and gives the Router the quote's deposit address before
 Confirm, so the Router can follow the order even if the tab closes. A Router without the setting refuses the address, and
 the page quotes THORChain instead. 1Click pays q… and p… addresses, so contract orders take it
-too; sale orders stay on THORChain. The address is set once, before anything is paid, and a reused contract order takes
+too. A ShapeShift quote is the same kind of 1Click address; the page sends its quote id with the address, the Router keeps
+both, and the order is followed exactly like a NEAR one. The address is set once, before anything is paid, and a reused contract order takes
 NEAR only if its payout deadline and the Router's wait both end before the contract's refund time.
 
 The Router reads 1Click's status for that deposit address as a pointer only: the signed quote in it must pay native BCH to
 the order's address, each BCH payout it names is read from the Router's own node, and together they must pay at least the
 quote's minimum. Then the order goes on as above (depth, Cauldron trade or BCH fallback). A quote paying elsewhere, a
 short payout or a failed swap stops the order for review; a 1Click refund ends it as refunded at the source.
+ShapeShift's swaps refund about four hours after the quote, later than NEAR's one hour; the Router still expects the payout
+within the hour, and BCH that lands after the order's refund time can only go back to the BCH fallback.
 
 ## Sale orders (Cashbridge Router back from BCH)
 
@@ -82,5 +86,27 @@ deadline, or the contract gets anything but one coin of the order's token, the c
 comes back to the contract goes on to the user; one paid to the memo's refund address ends the order as it is. The page
 follows the order for the sale and deposit, then finds the payout on the destination chain as for a manual deposit.
 
-`test/router-sale.test.mjs` runs the contract in the BCH VM on a real Cauldron sale, and
-`test/auto-bridge-sale.test.mjs` runs the Router's side against a fake network that VM-checks every broadcast.
+### Sales paid out through NEAR Intents or ShapeShift
+
+With `AUTO_BRIDGE_SALE_ROUTES` left on (the site offers it unless `NEXT_PUBLIC_ROUTER_SALE_ROUTES=false`), the sale's BCH
+can go to a NEAR Intents or ShapeShift deposit address instead of THORChain's vault. The order names the route, and the memo
+is the fixed `cashbridge` marker, an OP_RETURN with no instructions (that 1Click credits such a deposit is untested with real funds). Before taking the order, the Router reads 1Click's status of the
+address: it must be waiting for a deposit of native BCH, pay the order's destination, refund the user's BCH address, and stay
+open past the Router's own window. Otherwise the order is refused ("get a fresh quote"). The same check runs again before the
+deposit; once the deposit is sent, the order follows 1Click's status to paid, refunded (to the user's BCH address) or review.
+
+- **NEAR Intents** uses the same `router-sale.cash` contract. Its quote is flexible: it takes any amount down to the minimum
+  BCH less the 2,000-sat fee cap, so the whole sale goes in.
+- **ShapeShift** quotes an exact amount, so it uses [`contracts/router-sale-exact.cash`](../contracts/router-sale-exact.cash).
+  Its deposit pays exactly that amount to the address, the memo, and the rest of the coin back to the user's BCH address as
+  plain BCH, with the same fee cap. The page quotes it 3% under its own sale quote, less 2,546 sats (fee cap and dust), so the
+  Router's minimum always covers it.
+
+`test/router-sale.test.mjs` and `test/router-sale-exact.test.mjs` run the contracts in the BCH VM on a real Cauldron sale,
+and `test/auto-bridge-sale.test.mjs` runs the Router's side against a fake network that VM-checks every broadcast. The
+NEAR Intents and ShapeShift sale paths are tested this way only; no mainnet run has been made through them yet, so their
+behaviour with real funds is a hypothesis until one is.
+
+Deploy order: a Router without this support refuses routed sales (409), and the page would show that error to a user who
+picks NEAR Intents or ShapeShift for a Router sale. Update the Router before or with the site, or set
+`NEXT_PUBLIC_ROUTER_SALE_ROUTES=false` until it is.

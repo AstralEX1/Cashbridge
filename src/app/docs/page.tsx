@@ -14,7 +14,7 @@ export default function Page() {
     <DocsArticle
       href="/docs"
       title="Cash Bridge docs"
-      lead="Move value between Bitcoin Cash (and Cauldron CashTokens) and the rest of crypto. THORChain and NEAR Intents carry the BCH path; ShapeShift quotes Any network Manual pairs; two modes decide who signs: Manual or the Cashbridge Router."
+      lead="Move value between Bitcoin Cash (and Cauldron CashTokens) and the rest of crypto. THORChain, NEAR Intents and ShapeShift carry the BCH path and Any network pairs; two modes decide who signs: Manual or the Cashbridge Router."
     >
       <Shot name="form-forward" alt="The Cash Bridge form: 25 USDC on Ethereum to about 24.63 PUSD on Bitcoin Cash" caption="The bridge form. Pick what to send, what to receive and an amount; when several routes quote, the form compares them." />
 
@@ -53,7 +53,7 @@ export default function Page() {
           <strong>Bridge back.</strong> Sell BCH or a CashToken and receive an asset on another chain.
         </li>
         <li>
-          <strong>Compare routes.</strong> When THORChain and NEAR Intents both quote the BCH path, or ShapeShift quotes beside THORChain on Any network, the form shows the outputs and takes the better one unless you pick the other.
+          <strong>Compare routes.</strong> When more than one of THORChain, NEAR Intents and ShapeShift quotes a transfer, the form shows the outputs and takes the best one unless you pick another.
         </li>
         <li>
           <strong>Sign once, if you prefer.</strong> The Cashbridge Router lets you approve a single source transaction while a per-order contract (or, for older proof rows, a legacy address) settles the Cauldron leg.
@@ -77,11 +77,11 @@ export default function Page() {
               <a href="https://docs.near-intents.org" target="_blank" rel="noopener noreferrer">
                 NEAR Intents
               </a>{' '}
-              (1Click) for the BCH path, and{' '}
+              (1Click) and{' '}
               <a href="https://shapeshift.com" target="_blank" rel="noopener noreferrer">
                 ShapeShift
               </a>{' '}
-              on Any network Manual pairs. Availability depends on each network&apos;s listings and liquidity.
+              for the BCH path both ways (Manual and the Cashbridge Router) and Any network pairs. Availability depends on each network&apos;s listings and liquidity.
             </td>
           </tr>
           <tr>

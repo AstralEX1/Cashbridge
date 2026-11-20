@@ -28,6 +28,8 @@ export interface Order extends OrderIntent {
   sourceHash?: string
   // The 1Click deposit address of a NEAR Intents first leg, set once before the source is sent.
   nearDepositAddress?: string
+  // Set when ShapeShift quoted that deposit address.
+  shapeshiftQuoteId?: string
   funding: VerifiedOutput[]
   receivedAt?: number
   deadline?: number

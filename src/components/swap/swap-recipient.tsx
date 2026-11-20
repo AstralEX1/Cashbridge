@@ -24,6 +24,7 @@ import { useAssetFrom, useAssetTo, useCustomInterval, useCustomQuantity, useSlip
 import { useAccounts, useConnectedAccount, useSelectedAccount } from '@/hooks/use-wallets'
 import { useSwapStore } from '@/store/swap-store'
 import { getNetworkQuotes, getQuotes } from '@/lib/api'
+import { getNetworkRoutes } from '@/lib/network-swap'
 import { resolveQuoteError } from '@/lib/errors'
 import { prepareQuoteForLimitSwap } from '@/lib/memo-helpers'
 import {
@@ -150,7 +151,10 @@ const RecipientForm = ({
     const isThorchain = provider === 'THORCHAIN' || provider === 'THORCHAIN_STREAMING'
     const supportsStreaming = isThorchain || isMayachain
 
-    ;(openNetworks ? getNetworkQuotes : getQuotes)({
+    ;(openNetworks
+      ? (request: Parameters<typeof getNetworkQuotes>[0]) =>
+          getNetworkRoutes(provider, { ...request, sellDecimals: assetFrom.decimals, buyDecimals: assetTo.decimals, percentSlippage: slippage })
+      : getQuotes)({
       ...(openNetworks && { buyAssetShortCode: assetTo.shortCode }),
       buyAsset: assetTo.identifier,
       sellAsset: assetFrom.identifier,

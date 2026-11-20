@@ -7,8 +7,14 @@ export interface AutomaticSource {
   amount: string
   address: string
 }
+// How a sale's BCH crosses: THORChain's vault with its swap memo (no route), a one-use NEAR Intents deposit address that
+// takes any amount ('near'), or one quoted by ShapeShift for exactly `depositSats` ('shapeshift').
+export type SaleRoute = 'near' | 'shapeshift'
+// The memo a NEAR Intents or ShapeShift deposit carries; the deposit address alone says where the BCH goes.
+export const ROUTE_MEMO = 'cashbridge'
 // A transfer back from BCH: the customer sends `tokenAmount` of the token to the order's sale contract, and the
-// Router sells it and pays the BCH to THORChain's vault with `memo`, which swaps it to `buyAsset` for `destination`.
+// Router sells it and pays the BCH to the bridge's deposit address (`vaultAddress`) with `memo`, which swaps it to
+// `buyAsset` for `destination`.
 export interface SaleIntent {
   category: string
   tokenAmount: string
@@ -16,9 +22,15 @@ export interface SaleIntent {
   destination: string
   memo: string
   vaultAddress: string
+  route?: SaleRoute
+  depositSats?: string
+  // ShapeShift's quote id, so the customer can look the swap up there.
+  quoteId?: string
 }
 export const SALE_KEYS = ['category', 'tokenAmount', 'buyAsset', 'destination', 'memo', 'vaultAddress'] as const
-export const sameSale = (a?: SaleIntent, b?: SaleIntent) => (!a && !b) || (!!a && !!b && SALE_KEYS.every(key => a[key] === b[key]))
+export const SALE_ROUTE_KEYS = ['route', 'depositSats', 'quoteId'] as const
+export const sameSale = (a?: SaleIntent, b?: SaleIntent) =>
+  (!a && !b) || (!!a && !!b && [...SALE_KEYS, ...SALE_ROUTE_KEYS].every(key => a[key] === b[key]))
 
 export interface OrderIntent {
   // The customer's BCH address. For a sale it is also where unsold tokens or returned BCH go, equal to the refund address.
@@ -64,6 +76,8 @@ export interface PublicOrder extends OrderIntent {
   inboundHash?: string
   // Set when the first leg goes through NEAR Intents: the source deposits here, and 1Click pays the order address.
   nearDepositAddress?: string
+  // Set when ShapeShift quoted that NEAR Intents deposit address.
+  shapeshiftQuoteId?: string
   receivedSats: string
   receivedAt?: number
   bchReceipts?: { txid: string; amountSats: string; confirmations: number }[]
@@ -85,8 +99,9 @@ export interface FeedOrder {
   createdAt: number
   updatedAt: number
   contract: boolean
-  // The first leg went through NEAR Intents rather than THORChain.
+  // The BCH leg went through NEAR Intents rather than THORChain, and ShapeShift quoted it when `shapeshift` is set.
   near?: boolean
+  shapeshift?: boolean
   // The token bought (forward) or sold (sale).
   category: string
   expectedBchSats: string
@@ -125,6 +140,7 @@ export const isFeedOrder = (value: unknown): value is FeedOrder => {
     o.bchReceipts.every(r => HEX64.test(r?.txid) && /^\d+$/.test(r.amountSats)) &&
     (o.sourceHash === undefined || /^[0-9a-zA-Z-]{64,88}$/.test(o.sourceHash)) &&
     (o.near === undefined || typeof o.near === 'boolean') &&
+    (o.shapeshift === undefined || typeof o.shapeshift === 'boolean') &&
     (o.settlement === undefined ||
       (HEX64.test(o.settlement.txid) && /^\d+$/.test(o.settlement.tokenAmount) && /^\d+$/.test(o.settlement.bchAmount))) &&
     (o.source === undefined || ['chain', 'asset', 'amount'].every(key => typeof o.source![key as 'chain'] === 'string')) &&

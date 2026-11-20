@@ -14,6 +14,7 @@ import type { CauldronToken } from '@/lib/cauldron-tokens'
 import { buildDeposit, type BuiltDeposit, checkDepositMemo, checkInbound, DepositError, type InboundAddress, matchPayout, pickBchFunding, TRANSFER_OUT_TOPIC } from '@/lib/thorchain-deposit'
 import { cosmosPayout, type ChainPayout, evmTransferPayout, type PayoutExpectation, solanaPayout, thorchainPayout, tronPayout, utxoPayout, xrpPayout } from '@/lib/payout-check'
 import { getNearQuote, getNearStatus, interpretNearStatus, nearLegOf, nearSlippageBps } from '@/lib/near-intents'
+import { getShapeShiftBridgeRoute } from '@/lib/shapeshift'
 import { isEvmChain } from '@/lib/payout-chains'
 import { BLOCKCHAIR_CHAINS } from '@/lib/blockchair'
 import { postJson, rpcBase, XRPL_RPC_URL } from '@/lib/transfer-status'
@@ -296,6 +297,58 @@ export const prepareNearDeposit = async ({
   if (!vaultScript || vaultScript === binding.lockingBytecode) throw new DepositError('The NEAR Intents deposit address is not a BCH address')
   const built = buildDeposit({ funding, lockingBytecode: binding.lockingBytecode, vaultScript, amountSats: amount, feeRate })
   return { built, route, near }
+}
+
+// A deposit through ShapeShift. Its BCH quotes are NEAR Intents addresses that take exactly the quoted amount, so the
+// quote is made for exactly the BCH being sent, its 1Click swap checked (paying `destination`, refunds to the bound
+// address), and the transfer pays that amount. `payAll` and `amountSats` work as in prepareDeposit.
+export const prepareShapeShiftDeposit = async ({
+  funding,
+  payAll,
+  amountSats,
+  binding,
+  buyAsset,
+  buyDecimals,
+  destination,
+  slippage
+}: {
+  funding: { txid: string; vout: number; value: string }[]
+  payAll: boolean
+  amountSats?: bigint
+  binding: BchBinding
+  buyAsset: string
+  buyDecimals: number
+  destination: string
+  slippage: number
+}): Promise<PreparedDeposit> => {
+  const feeRate = NEAR_DEPOSIT_FEE_RATE
+  const sizingScript = binding.lockingBytecode
+  if (!payAll) funding = pickBchFunding(funding, amountSats ?? 0n, binding.lockingBytecode, sizingScript, feeRate)
+  const amount = buildDeposit({ funding, lockingBytecode: binding.lockingBytecode, vaultScript: sizingScript, payAll, amountSats, feeRate }).amountSats
+  const route = await getShapeShiftBridgeRoute({
+    sellAsset: BridgeConfig.buyAsset,
+    buyAsset,
+    sellAmount: formatBaseUnits(amount, 8),
+    sellDecimals: 8,
+    buyDecimals,
+    slippage,
+    sourceAddress: binding.cashAddress,
+    destinationAddress: destination
+  })
+  const near = route?.shapeshift.near
+  if (!route || !near) throw new DepositError('ShapeShift does not carry this asset')
+  if (BigInt(near.amountIn) !== amount) throw new DepositError('ShapeShift quoted another amount')
+  const vaultScript = addressToLockingBytecode(near.depositAddress)
+  if (!vaultScript || vaultScript === binding.lockingBytecode) throw new DepositError('The ShapeShift deposit address is not a BCH address')
+  const built = buildDeposit({ funding, lockingBytecode: binding.lockingBytecode, vaultScript, amountSats: amount, feeRate })
+  return { built, route, near }
+}
+
+// A plain BCH deposit through ShapeShift of `amountSats` from the bound address, quoted and built, ready to sign.
+export const prepareShapeShiftBchDeposit = async (args: { amountSats: bigint; binding: BchBinding; buyAsset: string; buyDecimals: number; destination: string; slippage: number }) => {
+  const { utxos } = await listWalletCoins(args.binding.lockingBytecode)
+  const funding = utxos.filter(u => !u.hasToken).map(u => ({ txid: u.txid, vout: u.vout, value: u.value.toString() }))
+  return prepareShapeShiftDeposit({ ...args, funding, payAll: false })
 }
 
 // A plain BCH deposit through NEAR Intents of `amountSats` from the bound address, quoted and built, ready to sign.

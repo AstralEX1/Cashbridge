@@ -14,7 +14,7 @@ export default function Page() {
     <DocsArticle
       href="/docs/how-it-works"
       title="How it works"
-      lead="A transfer is a short chain of ordinary transactions. Cash Bridge quotes THORChain, NEAR Intents and (on Any network) ShapeShift when available, plans the steps, and follows them — in Manual mode with your wallets, or through the Cashbridge Router with per-order contracts."
+      lead="A transfer is a short chain of ordinary transactions. Cash Bridge quotes THORChain, NEAR Intents and ShapeShift when available, plans the steps, and follows them — in Manual mode with your wallets, or through the Cashbridge Router with per-order contracts."
     >
       <DocsDemoFlow />
 
@@ -76,12 +76,12 @@ export default function Page() {
         nodes={[
           { title: 'BCH wallet', note: 'Sends CashToken', kind: 'wallet' },
           { title: 'Sale contract', note: 'sell / return / expire', kind: 'contract' },
-          { title: 'Router service', note: 'Sell ≥ min BCH + THOR memo', kind: 'service' },
-          { title: 'THORChain', note: 'Cross-chain payout', kind: 'onchain' }
+          { title: 'Router service', note: 'Sell ≥ min BCH + bridge deposit', kind: 'service' },
+          { title: 'THORChain · NEAR · ShapeShift', note: 'Cross-chain payout', kind: 'onchain' }
         ]}
       />
       <p>
-        Sales stay on THORChain. After <code>refundAfter</code> (three hours from order creation), anyone may return the tokens on the same terms. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.
+        The sale&apos;s BCH goes to THORChain&apos;s vault with the destination memo, or to a NEAR Intents or ShapeShift deposit address the Router checks at 1Click before it takes the order. ShapeShift takes an exact amount, so its sale contract sends the rest back to your BCH address as plain BCH. After <code>refundAfter</code> (three hours from order creation), anyone may return the tokens on the same terms. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.
       </p>
 
       <h2 id="building-blocks">The building blocks</h2>
@@ -101,18 +101,18 @@ export default function Page() {
         <a href="https://docs.near-intents.org" target="_blank" rel="noopener noreferrer">
           NEAR Intents
         </a>{' '}
-        is the second bridge for the BCH path. Its 1Click service gives each transfer a one-use deposit address on the source chain. You send a plain transfer — no memo — and market makers pay native BCH to the destination. There is no Cashbridge contract on the NEAR leg. When both bridges quote, the form shows both outputs and takes the better one; you can pick the other.
+        is the second bridge for the BCH path. Its 1Click service gives each transfer a one-use deposit address on the source chain. You send a plain transfer — no memo — and market makers pay the asset asked for to the destination. There is no Cashbridge contract on the NEAR leg. When several bridges quote, the form shows their outputs and takes the best one; you can pick another.
       </p>
       <DocsDemoQuotes />
       <p>
-        NEAR Intents carries Manual transfers both ways. For the Cashbridge Router, it can carry the <strong>forward</strong> first leg when the service admits NEAR orders: 1Click still uses a plain deposit address, and its BCH payout targets the Router order address. Router <strong>sales</strong> stay on THORChain.
+        NEAR Intents carries Manual transfers both ways and Any network pairs. For the Cashbridge Router, it can carry the <strong>forward</strong> first leg when the service admits NEAR orders: 1Click still uses a plain deposit address, and its BCH payout targets the Router order address. Router <strong>sales</strong> can pay out through it too, when the service admits routed sales.
       </p>
       <h3>ShapeShift</h3>
       <p>
         <a href="https://shapeshift.com" target="_blank" rel="noopener noreferrer">
           ShapeShift
         </a>
-        &apos;s public swap API quotes <strong>Any network</strong> Manual pairs (turn it on from the Bitcoin Cash asset picker). Cash Bridge keeps deposit-address swappers so you sign a plain transfer in the source wallet — the same style of send as NEAR Intents. ShapeShift sits beside THORChain on those pairs; it is not used for CashToken Router settlement.
+        &apos;s public swap API quotes the BCH path both ways and <strong>Any network</strong> pairs. Cash Bridge keeps deposit-address swappers so you sign a plain transfer in the source wallet — the same style of send as NEAR Intents. Its BCH quotes are NEAR Intents swaps, so before one is used Cash Bridge reads that swap from 1Click and requires it to pay your recipient and refund your wallet. That is what lets the Cashbridge Router follow it: a ShapeShift first leg into a CashToken, or a sale paid out through ShapeShift.
       </p>
       <h3>Cauldron</h3>
       <p>

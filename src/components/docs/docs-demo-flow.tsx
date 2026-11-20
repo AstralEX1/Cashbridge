@@ -99,8 +99,8 @@ const SCENES: Scene[] = [
     bridge: 'THORChain',
     direction: 'Back from BCH',
     title: 'Router · sale contract · reverse',
-    blurb: 'One BCH-wallet send into a sale covenant. The Router may sell for ≥ min BCH and deposit to THORChain with the fixed memo, or return the tokens. Sales stay on THORChain.',
-    custody: 'apiVersion=2 sale covenant · THORChain only.',
+    blurb: 'One BCH-wallet send into a sale covenant. The Router may sell for ≥ min BCH and deposit to THORChain, NEAR Intents or ShapeShift as the terms fix, or return the tokens.',
+    custody: 'apiVersion=2 sale covenant · bridge fixed in its terms.',
     nodes: [
       { title: 'BCH wallet', note: 'Sends token to sale', kind: 'wallet' },
       { title: 'Sale contract', note: 'sell / return / expire', kind: 'onchain' },

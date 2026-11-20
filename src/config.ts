@@ -60,13 +60,19 @@ export const BridgeConfig = {
   // Transfers back from BCH through the Cashbridge Router's sale contract, which the Router admits with
   // AUTO_BRIDGE_SALE_ORDERS. On by default; NEXT_PUBLIC_ROUTER_SALES=false hides the option.
   routerSales: process.env.NEXT_PUBLIC_ROUTER_SALES !== 'false',
-  // NEAR Intents (1Click) quoted beside THORChain on manual forward transfers; 'false' leaves THORChain alone.
+  // NEAR Intents (1Click) quoted beside THORChain on manual transfers and open-network pairs; 'false' leaves THORChain alone.
   nearIntents: process.env.NEXT_PUBLIC_NEAR_INTENTS !== 'false',
-  // ShapeShift's swap API quoted beside THORChain on open-network pairs; 'false' leaves THORChain alone.
+  // ShapeShift's swap API quoted beside THORChain on manual transfers and open-network pairs; 'false' leaves THORChain alone.
   shapeshift: process.env.NEXT_PUBLIC_SHAPESHIFT !== 'false',
   // NEAR Intents for the Cashbridge Router's forward transfers too, which the Router admits with AUTO_BRIDGE_NEAR_ORDERS.
   // On by default; NEXT_PUBLIC_ROUTER_NEAR=false hides NEAR on Automatic so only THORChain is offered there.
   routerNear: process.env.NEXT_PUBLIC_ROUTER_NEAR !== 'false',
+  // ShapeShift for the Router's forward transfers: its BCH quotes are NEAR Intents deposit addresses, which the Router
+  // follows like its own (AUTO_BRIDGE_NEAR_ORDERS). NEXT_PUBLIC_ROUTER_SHAPESHIFT=false hides it on Automatic.
+  routerShapeShift: process.env.NEXT_PUBLIC_ROUTER_SHAPESHIFT !== 'false',
+  // NEAR Intents and ShapeShift for the Router's sales, which the Router admits with AUTO_BRIDGE_SALE_ROUTES.
+  // NEXT_PUBLIC_ROUTER_SALE_ROUTES=false keeps Automatic sales on THORChain.
+  routerSaleRoutes: process.env.NEXT_PUBLIC_ROUTER_SALE_ROUTES !== 'false',
   cauldronBroadcastUrl: process.env.NEXT_PUBLIC_CAULDRON_BROADCAST_URL || 'https://broadcast.cauldron.quest/broadcast',
   // Cauldron's public pool indexer: the PUSD pools the second leg trades against. Each pool a trade
   // picks is checked unspent on a Fulcrum server first, since the list can lag the chain.

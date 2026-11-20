@@ -4,6 +4,7 @@ import { HoudiniPlugin } from '@tcswap/plugins/houdini'
 import { SolanaPlugin } from '@tcswap/plugins/solana'
 import { MayachainPlugin, ThorchainPlugin } from '@tcswap/plugins/thorchain'
 import { NearPlugin } from '@tcswap/plugins/near'
+import { ShapeShiftPlugin } from '@/lib/shapeshift-plugin'
 import { braveWallet, getBraveEVMProvider, getBraveSolanaProvider, watchBraveAccounts } from '@tcswap/wallets/brave'
 import { evmWallet } from '@tcswap/wallets/evm-extensions'
 import { exodusWallet } from '@tcswap/wallets/exodus'
@@ -27,7 +28,8 @@ const defaultPlugins = {
   ...ThorchainPlugin,
   ...SolanaPlugin,
   // A NEAR Intents route's deposit: a plain transfer to the quote's one-use address (src/lib/near-intents.ts).
-  ...NearPlugin
+  ...NearPlugin,
+  ...ShapeShiftPlugin
 }
 
 const defaultWallets = {

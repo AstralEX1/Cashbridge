@@ -65,7 +65,7 @@ export default function Page() {
       <h2 id="flow">A transfer, step by step</h2>
       <Steps>
         <Step title="Quote">
-          <code>get_bridge_quote</code> returns what the user would receive. To or from plain BCH it compares THORChain, NEAR Intents and ShapeShift when available. Into a CashToken it prices Router settlement (THORChain and NEAR when admitted). Any-network free pairs compare THORChain with ShapeShift. CashToken sales are priced too.
+          <code>get_bridge_quote</code> returns what the user would receive. To or from plain BCH it compares THORChain, NEAR Intents and ShapeShift when available. Into a CashToken and back out of one, it prices Cashbridge Router settlement on the same three when the Router admits them. Any-network free pairs compare all three too.
         </Step>
         <Step title="Ask the user">Show amounts, route and destination; continue only when the user agrees.</Step>
         <Step title="Prepare">
@@ -99,10 +99,10 @@ export default function Page() {
           <strong>CashToken sales</strong> prepare through the Cashbridge Router when it admits sale orders (<code>route: thorchain</code>). The response may include an unsigned BCH token-send when UTXOs are visible, otherwise deposit instructions.
         </li>
         <li>
-          <strong>NEAR → CashToken:</strong> use <code>route: near_intents</code> when the Router admits NEAR orders; 1Click still pays the order address in plain BCH, then the Router buys the token. Otherwise use <code>route: thorchain</code>.
+          <strong>NEAR or ShapeShift → CashToken:</strong> use <code>route: near_intents</code> or <code>route: shapeshift</code> when the Router admits them; the deposit address still pays the order address in plain BCH, then the Router buys the token. Otherwise use <code>route: thorchain</code>.
         </li>
         <li>
-          <strong>ShapeShift</strong> is available on plain BCH pairs when both assets map, and on Any-network free pairs beside THORChain. Track with <code>shapeshift_quote_id</code>.
+          <strong>ShapeShift</strong> is available on plain BCH pairs and Any-network free pairs when both assets map, and for CashToken purchases and sales through the Router. Track a plain transfer with <code>shapeshift_quote_id</code>, a Router order with its order id. A CashToken sale can also pay out through <code>near_intents</code> or <code>shapeshift</code>; on ShapeShift the rest of the sale comes back as BCH.
         </li>
         <li>
           Cash Bridge charges no fee of its own. Networks, THORChain, NEAR Intents, ShapeShift and Cauldron still charge — <Link href="/docs/fees">Fees and limits</Link>.

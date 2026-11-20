@@ -1,6 +1,10 @@
 import { ProviderName } from '@tcswap/helpers'
 import type { QuoteResponseRoute } from '@tcswap/helpers/api'
+import { addressToLockingBytecode } from '@/lib/bch'
 import { formatBaseUnits, toBaseUnits } from '@/lib/bridge'
+import { findNearToken, getNearStatus, getNearTokens, NEAR_BCH } from '@/lib/near-intents'
+import { sameAddress } from '@/lib/payout-chains'
+import type { NearLeg } from '@/store/transaction-store'
 
 // ShapeShift's public swap API (api.shapeshift.com, OpenAPI at /docs): the third route beside THORChain and NEAR
 // Intents. Rates list every swapper; we keep those that can be paid by a plain transfer to a deposit address
@@ -104,6 +108,8 @@ export interface ShapeShiftLeg {
   depositAddress?: string
   // Epoch ms.
   expiresAt?: number
+  // A BCH leg: the NEAR Intents swap behind the deposit address, checked against 1Click (shapeShiftNearLeg).
+  near?: NearLeg
 }
 
 export type ShapeShiftRoute = QuoteResponseRoute & { shapeshift: ShapeShiftLeg }
@@ -239,6 +245,71 @@ export const getShapeShiftQuote = async (req: ShapeShiftRateRequest & Partial<Pi
   }
   if (failure) throw failure
   return undefined
+}
+
+// ShapeShift moves native BCH only through NEAR Intents, so a BCH quote's deposit address is a 1Click one. Its 1Click
+// status carries the signed quote, and the leg is checked there rather than trusted from ShapeShift: the payout goes
+// to `recipient`, a refund to `refundTo`, for exactly the quoted amount between the route's two assets. The result is
+// tracked like any NEAR Intents leg.
+export const shapeShiftNearLeg = async (route: ShapeShiftRoute, expect: { recipient: string; refundTo: string }): Promise<NearLeg> => {
+  const depositAddress = route.shapeshift.depositAddress
+  if (!depositAddress) throw new Error('ShapeShift returned no deposit address')
+  const [status, tokens] = await Promise.all([
+    getNearStatus(depositAddress).catch(() => {
+      throw new Error('ShapeShift’s deposit address is not a NEAR Intents one the bridge can follow')
+    }),
+    getNearTokens()
+  ])
+  const request = status.quoteResponse?.quoteRequest
+  const quote = status.quoteResponse?.quote
+  const origin = findNearToken(tokens, route.sellAsset)
+  const destination = findNearToken(tokens, route.buyAsset)
+  const same = (address: string | undefined, wanted: string) =>
+    !!address && (addressToLockingBytecode(wanted) ? addressToLockingBytecode(address) === addressToLockingBytecode(wanted) : sameAddress(address, wanted))
+  const ok =
+    status.status === 'PENDING_DEPOSIT' &&
+    !!request &&
+    !!quote?.amountIn &&
+    !!quote.amountOut &&
+    !!quote.minAmountOut &&
+    !!status.correlationId &&
+    !!status.quoteResponse?.signature &&
+    !!status.quoteResponse.timestamp &&
+    quote.depositAddress === depositAddress &&
+    request.swapType === 'EXACT_INPUT' &&
+    !!origin &&
+    !!destination &&
+    request.originAsset === origin.assetId &&
+    request.destinationAsset === destination.assetId &&
+    (request.originAsset === NEAR_BCH || request.destinationAsset === NEAR_BCH) &&
+    same(request.recipient, expect.recipient) &&
+    same(request.refundTo, expect.refundTo) &&
+    quote.amountIn === toBaseUnits(route.sellAmount, origin.decimals).toString()
+  if (!ok) throw new Error('ShapeShift’s quote does not match this transfer')
+  return {
+    depositAddress,
+    correlationId: status.correlationId!,
+    signature: status.quoteResponse!.signature!,
+    quotedAt: status.quoteResponse!.timestamp!,
+    // The swap refunds at the requested deadline; `quote.deadline` is only when the address goes inactive (days later).
+    deadline: request!.deadline ?? quote!.deadline,
+    amountIn: quote!.amountIn!,
+    amountOut: quote!.amountOut!,
+    minAmountOut: quote!.minAmountOut!,
+    shapeshiftQuoteId: route.shapeshift.quoteId
+  }
+}
+
+// An executable ShapeShift quote for a BCH leg, with its 1Click swap checked: paying `destinationAddress` and refunding
+// `sourceAddress`, the wallet that sends.
+export const getShapeShiftBridgeRoute = async (
+  req: ShapeShiftRateRequest & { sourceAddress: string; destinationAddress: string },
+  signal?: AbortSignal
+): Promise<ShapeShiftRoute | undefined> => {
+  const route = await getShapeShiftQuote(req, signal)
+  if (!route) return undefined
+  const near = await shapeShiftNearLeg(route, { recipient: req.destinationAddress, refundTo: req.sourceAddress })
+  return { ...route, shapeshift: { ...route.shapeshift, near } }
 }
 
 export type ShapeShiftSwapStatus = 'pending' | 'submitted' | 'confirmed' | 'failed'

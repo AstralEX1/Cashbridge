@@ -32,3 +32,86 @@ describe('shapeShiftAssetId', () => {
     assert.equal(SHAPESHIFT_PROVIDER, 'SHAPESHIFT')
   })
 })
+
+// A ShapeShift quote touching BCH is followed as the NEAR Intents swap behind it: 1Click's status of the deposit address
+// must describe this exact transfer, or the route is refused.
+describe('getShapeShiftBridgeRoute', async () => {
+  const { bindingFromPubkey } = await import('../src/lib/bch.ts')
+  const { pubkey, otherPubkey } = await import('./fixtures/bridge-fixtures.mjs')
+  const { getShapeShiftBridgeRoute } = await import('../src/lib/shapeshift.ts')
+  const USDC = 'BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913'
+  const NEAR_USDC = 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near'
+  const SOURCE = '0x3333333333333333333333333333333333333333'
+  const DEPOSIT = '0x5555555555555555555555555555555555555555'
+  const to = bindingFromPubkey(pubkey, 0)
+  const other = bindingFromPubkey(otherPubkey, 3)
+  let edit = s => s
+  let asked
+
+  const fake = async (input, init) => {
+    const url = String(input)
+    if (url.includes('/v1/swap/rates'))
+      return Response.json({ rates: [{ swapperName: 'NEAR Intents', buyAmountCryptoBaseUnit: '6000000', sellAmountCryptoBaseUnit: '25000000', supportsExternalPayment: true }] })
+    if (url.endsWith('/v1/swap/quote')) {
+      asked = JSON.parse(init.body)
+      return Response.json({ quoteId: 'q-1', swapperName: 'NEAR Intents', sellAmountCryptoBaseUnit: asked.sellAmountCryptoBaseUnit, buyAmountAfterFeesCryptoBaseUnit: '6000000', depositAddress: DEPOSIT, expiresAt: Date.now() + 3600_000 })
+    }
+    if (url.endsWith('/v0/tokens'))
+      return Response.json([
+        { assetId: NEAR_USDC, decimals: 6, blockchain: 'base', symbol: 'USDC', price: 1, contractAddress: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' },
+        { assetId: 'nep141:bch.omft.near', decimals: 8, blockchain: 'bch', symbol: 'BCH', price: 400, contractAddress: null }
+      ])
+    if (url.includes('/v0/status?depositAddress='))
+      return Response.json(
+        edit({
+          status: 'PENDING_DEPOSIT',
+          correlationId: 'c-1',
+          quoteResponse: {
+            timestamp: '2030-01-01T00:00:00.000Z',
+            signature: 'ed25519:s',
+            quoteRequest: { swapType: 'EXACT_INPUT', originAsset: NEAR_USDC, destinationAsset: 'nep141:bch.omft.near', amount: asked.sellAmountCryptoBaseUnit, recipient: asked.receiveAddress, refundTo: asked.sendAddress, deadline: '2030-01-01T04:00:00.000Z' },
+            quote: { depositAddress: DEPOSIT, amountIn: asked.sellAmountCryptoBaseUnit, amountOut: '6000000', minAmountOut: '5900000', deadline: '2030-01-04T00:00:00.000Z' }
+          }
+        })
+      )
+    throw new Error(`Unexpected fetch ${url}`)
+  }
+  const request = { sellAsset: USDC, buyAsset: 'BCH.BCH', sellAmount: '25', sellDecimals: 6, buyDecimals: 8, sourceAddress: SOURCE, destinationAddress: to.cashAddress }
+  const withFetch = async run => {
+    const original = globalThis.fetch
+    globalThis.fetch = fake
+    try {
+      return await run()
+    } finally {
+      globalThis.fetch = original
+      edit = s => s
+    }
+  }
+
+  it('returns the NEAR leg with the swap deadline and the quote id', async () => {
+    const route = await withFetch(() => getShapeShiftBridgeRoute(request))
+    assert.equal(route.shapeshift.near.depositAddress, DEPOSIT)
+    assert.equal(route.shapeshift.near.amountIn, '25000000')
+    assert.equal(route.shapeshift.near.deadline, '2030-01-01T04:00:00.000Z', 'the refund deadline, not when the address goes inactive')
+    assert.equal(route.shapeshift.near.shapeshiftQuoteId, 'q-1')
+  })
+
+  it('refuses a swap that pays or refunds someone else, takes another amount, or is not an exact one', async () => {
+    const cases = [
+      s => ({ ...s, quoteResponse: { ...s.quoteResponse, quoteRequest: { ...s.quoteResponse.quoteRequest, recipient: other.cashAddress } } }),
+      s => ({ ...s, quoteResponse: { ...s.quoteResponse, quoteRequest: { ...s.quoteResponse.quoteRequest, refundTo: DEPOSIT } } }),
+      s => ({ ...s, quoteResponse: { ...s.quoteResponse, quoteRequest: { ...s.quoteResponse.quoteRequest, swapType: 'FLEX_INPUT' } } }),
+      s => ({ ...s, quoteResponse: { ...s.quoteResponse, quote: { ...s.quoteResponse.quote, amountIn: '1' } } }),
+      s => ({ ...s, status: 'PROCESSING' })
+    ]
+    for (const change of cases) {
+      await assert.rejects(
+        withFetch(() => {
+          edit = change
+          return getShapeShiftBridgeRoute(request)
+        }),
+        /does not match/
+      )
+    }
+  })
+})

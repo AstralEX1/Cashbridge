@@ -47,7 +47,7 @@ export default function Page() {
           </tr>
           <tr>
             <td>ShapeShift fee</td>
-            <td>ShapeShift swappers — embedded in the quoted output on Any network Manual pairs</td>
+            <td>ShapeShift and its swappers (NEAR Intents on BCH pairs) — embedded in the quoted output when that route is chosen</td>
             <td>
               The route compare card and Confirm, when ShapeShift quotes beside THORChain
             </td>

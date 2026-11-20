@@ -5,6 +5,7 @@ import { inboundMatchesBinding, interpretTxStatus } from '@/lib/bridge'
 import { BroadcastRejected, buildTokenTrade, type BuildIntent, type BuildResult } from '@/lib/cauldron'
 import { checkInbound, type InboundAddress } from '@/lib/thorchain-deposit'
 import { interpretNearStatus, NEAR_BCH, type NearStatusResponse } from '@/lib/near-intents'
+import { SALE_ROUTE_DEPOSIT_MS, saleRouteProblem } from '@/server/auto-bridge/sale-route'
 import { OrderStore } from '@/server/auto-bridge/store'
 import { isTerminal, orderCategory, type Attempt, type Order, type SaleCoin } from '@/server/auto-bridge/types'
 import { orderUnlockBytes, WorkerWallet } from '@/server/auto-bridge/wallet'
@@ -541,8 +542,13 @@ async function contractCoins(gateway: Gateway, order: Order): Promise<SaleCoin[]
   return coins
 }
 
-// The fee rate for the deposit while THORChain takes BCH at the order's vault and pays the asked chain; else undefined.
-async function depositFeeRate(gateway: Gateway, order: Order) {
+// The fee rate for the deposit while THORChain takes BCH at the order's vault and pays the asked chain, or while a
+// routed sale's NEAR Intents address still waits for it with time to count it; else undefined.
+async function depositFeeRate(gateway: Gateway, order: Order, now: number) {
+  if (order.sale!.route) {
+    const status = await gateway.nearStatus?.(order.sale!.vaultAddress).catch(() => undefined)
+    return saleRouteProblem(status, order.sale!, { refundScript: order.refundScript, minSats: BigInt(order.minPusd) }, now + SALE_ROUTE_DEPOSIT_MS) ? undefined : 1n
+  }
   try {
     const inbounds = await gateway.inbound?.()
     return inbounds ? checkInbound(inbounds, order.sale!.vaultAddress, order.sale!.buyAsset.split('.')[0].toUpperCase()).feeRate : undefined
@@ -594,6 +600,18 @@ export async function processSale(
   if (deposit) {
     // THORChain has the BCH; what comes back to the contract is its refund.
     set({ payoutTxid: deposit.txid, observation: { txid: deposit.txid, ...seen.get(deposit.txid)! } })
+    if (order.sale.route) {
+      // NEAR Intents refunds straight to the customer, so anything at the contract now is a stray coin.
+      if (coins.length) return giveBack('Returning a coin sent to the contract after the deposit.')
+      // shortcut: 1Click's status only decides when the order stops; the page proves the payout on the destination chain.
+      const status = await gateway.nearStatus?.(order.sale.vaultAddress).catch(() => undefined)
+      const view = status && interpretNearStatus(status)
+      if (view?.kind === 'paid') progress({ state: 'completed', error: undefined })
+      else if (view?.kind === 'refunded') progress({ state: 'refunded', error: undefined })
+      else if (view?.kind === 'failed') progress({ state: 'manual_review', error: view.reason })
+      else progress({ state: 'streaming', error: undefined })
+      return
+    }
     if (coins.length) return giveBack('THORChain returned the BCH; sending it back to the customer.')
     // shortcut: THORNode's status only decides when the order stops; the page proves the payout on the destination chain.
     const status = await gateway.thorStatus(deposit.txid).catch(() => undefined)
@@ -614,8 +632,8 @@ export async function processSale(
   const child = sale && attempts.find(attempt => attempt.kind === 'deposit' && attempt.parent === sale.txid)
   if (sale && seen.has(sale.txid)) {
     // Sold: deposit that BCH while THORChain still takes it at the order's vault, else give it back.
-    const feeRate = terminal ? undefined : await depositFeeRate(gateway, order)
-    if (feeRate === undefined) return coins.length ? giveBack('THORChain is not taking the deposit; returning the BCH.') : undefined
+    const feeRate = terminal ? undefined : await depositFeeRate(gateway, order, clock())
+    if (feeRate === undefined) return coins.length ? giveBack('The bridge is not taking the deposit; returning the BCH.') : undefined
     let next = child
     if (!next) {
       // Signed with the sale, unless the worker stopped between saving the two.
@@ -651,8 +669,8 @@ export async function processSale(
   set({ funding: coins })
   const [coin] = coins
   const sellable = coins.length === 1 && coin.token?.category === order.sale.category && !coin.token.nft && BigInt(coin.token.amount) >= BigInt(order.sale.tokenAmount)
-  const feeRate = sellable && now < order.deadline! ? await depositFeeRate(gateway, order) : undefined
-  if (feeRate === undefined) return giveBack(sellable && now < order.deadline! ? 'THORChain is not taking BCH at this vault; returning the tokens.' : undefined)
+  const feeRate = sellable && now < order.deadline! ? await depositFeeRate(gateway, order, now) : undefined
+  if (feeRate === undefined) return giveBack(sellable && now < order.deadline! ? 'The bridge is not taking BCH at this deposit address; returning the tokens.' : undefined)
   try {
     const trade = await build(order)
     const { reviewBuild, sourcesOf } = await import('@/lib/cauldron')

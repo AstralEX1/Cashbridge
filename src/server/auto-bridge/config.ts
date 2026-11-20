@@ -48,6 +48,8 @@ export function loadConfig() {
     // On by default (production worker already sets these true). Set …=false to fall back to legacy P2PKH.
     contractOrders: process.env.AUTO_BRIDGE_CONTRACT_ORDERS !== 'false',
     saleOrders: process.env.AUTO_BRIDGE_SALE_ORDERS !== 'false',
-    nearOrders: process.env.AUTO_BRIDGE_NEAR_ORDERS !== 'false'
+    nearOrders: process.env.AUTO_BRIDGE_NEAR_ORDERS !== 'false',
+    // Sales through a NEAR Intents or ShapeShift deposit address (router-sale-exact.cash for ShapeShift's exact amount).
+    saleRoutes: process.env.AUTO_BRIDGE_SALE_ROUTES !== 'false'
   }
 }

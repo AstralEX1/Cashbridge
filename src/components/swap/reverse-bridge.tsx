@@ -18,7 +18,7 @@ import { BridgeHop } from '@/components/bridge-hop/bridge-hop'
 import { useDialog } from '@/components/global-dialog'
 import { TransactionHistoryDialog } from '@/components/header/transaction-history-dialog'
 import type { Asset } from '@/components/swap/asset'
-import { BchMark, CauldronMark, HoverCard, NearMark, ThorchainMark, TokenMark } from '@/components/swap/bridge-marks'
+import { BchMark, CauldronMark, HoverCard, NearMark, ShapeShiftMark, ThorchainMark, TokenMark } from '@/components/swap/bridge-marks'
 import { shortBridgeAddress } from '@/components/swap/bridge-wallet-badge'
 import { BridgeFlow, chainTxUrl, type FlowBar, type FlowStage, type FlowToast, type FlowToken, thorchainTxUrl } from '@/components/swap/pusd-swap'
 import { useBchSideBalance } from '@/components/swap/reverse-inputs'
@@ -66,6 +66,8 @@ import {
   prepareDeposit,
   prepareNearBchDeposit,
   prepareNearDeposit,
+  prepareShapeShiftBchDeposit,
+  prepareShapeShiftDeposit,
   prepareSale,
   OPEN_REQUEST_MS,
   type PreparedDeposit,
@@ -78,6 +80,7 @@ import {
 } from '@/lib/reverse-bridge'
 import { DEPOSIT_FEE_RESERVE } from '@/lib/thorchain-deposit'
 import { isNearRoute, nearExplorerUrl, submitNearDeposit } from '@/lib/near-intents'
+import { isShapeShiftRoute, SHAPESHIFT_PROVIDER } from '@/lib/shapeshift'
 import { resolveFees } from '@/lib/swap-helpers'
 import { isEvmChain } from '@/lib/payout-chains'
 import { generateId } from '@/lib/utils'
@@ -154,7 +157,7 @@ const sendDeposit = async (uid: string, prepared: PreparedDeposit, update: Updat
     wallet.signer,
     op.binding,
     built,
-    `Send ${formatBch(built.amountSats)} BCH to ${near ? 'NEAR Intents' : 'THORChain'} for at least ${route.expectedBuyAmountMaxSlippage ?? route.expectedBuyAmount} ${asset}`,
+    `Send ${formatBch(built.amountSats)} BCH to ${near ? (near.shapeshiftQuoteId ? 'ShapeShift (NEAR Intents)' : 'NEAR Intents') : 'THORChain'} for at least ${route.expectedBuyAmountMaxSlippage ?? route.expectedBuyAmount} ${asset}`,
     { signal }
   )
   let accepted = false
@@ -475,11 +478,11 @@ export const SignHint = ({
   ) : null
 }
 
-const RouteSteps = ({ token, asset, thorMinutes, total, near }: { token: CauldronToken | null; asset: Asset; thorMinutes?: number; total: string; near?: boolean }) => {
+const RouteSteps = ({ token, asset, thorMinutes, total, near, shapeshift }: { token: CauldronToken | null; asset: Asset; thorMinutes?: number; total: string; near?: boolean; shapeshift?: boolean }) => {
   const t = useTranslations('bridge.reverse')
   const tConfirm = useTranslations('bridge.confirm')
   const chain = chainLabel(asset.chain)
-  const BridgeMark = near ? NearMark : ThorchainMark
+  const BridgeMark = shapeshift ? ShapeShiftMark : near ? NearMark : ThorchainMark
   return (
     <HoverCard
       label={
@@ -566,17 +569,22 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
   }, [amount, token])
   // The transaction is prepared while the dialog is open and kept fresh, so Confirm goes straight
   // to the wallet. Nothing is refreshed while a request is out.
-  // NEAR Intents carries the BCH out when the form's chosen route is its quote; the Cashbridge Router uses THORChain.
-  const viaNear = !viaRouter && isNearRoute(quote)
+  // The BCH goes out by the form's chosen route: NEAR Intents, ShapeShift (a NEAR Intents address it quotes) or
+  // THORChain, whether the wallet deposits it or the Cashbridge Router does.
+  const via = isNearRoute(quote) ? ('near' as const) : isShapeShiftRoute(quote) ? ('shapeshift' as const) : undefined
+  const viaNear = !!via
   const prepared = useQuery({
-    queryKey: ['reverse-prepared', token?.category ?? 'BCH', units?.toString(), asset?.identifier, destination, binding?.pubkey, viaNear],
+    queryKey: ['reverse-prepared', token?.category ?? 'BCH', units?.toString(), asset?.identifier, destination, binding?.pubkey, via],
     queryFn: async (): Promise<Prepared> =>
       token
         ? { sale: await prepareSale(token, units!, binding!) }
         : {
-            deposit: viaNear
-              ? await prepareNearBchDeposit({ amountSats: units!, binding: binding!, buyAsset: asset!.identifier, destination: destination!, slippage: slippage ?? 1 })
-              : await prepareBchDeposit({ amountSats: units!, binding: binding!, buyAsset: asset!.identifier, shortCode: asset!.shortCode, destination: destination!, slippage: slippage ?? 1 })
+            deposit:
+              via === 'near'
+                ? await prepareNearBchDeposit({ amountSats: units!, binding: binding!, buyAsset: asset!.identifier, destination: destination!, slippage: slippage ?? 1 })
+                : via === 'shapeshift'
+                  ? await prepareShapeShiftBchDeposit({ amountSats: units!, binding: binding!, buyAsset: asset!.identifier, buyDecimals: asset!.decimals, destination: destination!, slippage: slippage ?? 1 })
+                  : await prepareBchDeposit({ amountSats: units!, binding: binding!, buyAsset: asset!.identifier, shortCode: asset!.shortCode, destination: destination!, slippage: slippage ?? 1 })
           },
     // A Router order is opened only on Confirm, so the background refresh never leaves unused orders behind.
     enabled: isOpen && !submitting && !viaRouter && !!binding && !!destination && !!asset && !!units && units > 0n,
@@ -642,7 +650,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
       const ready: Prepared = viaRouter ? {} : fresh ? prepared.data! : (await prepared.refetch({ throwOnError: true })).data!
       if (controller.signal.aborted) throw new SignCancelled('Cancelled')
       const record = {
-        provider: viaNear ? ProviderName.NEAR : ProviderName.THORCHAIN,
+        provider: via === 'near' ? ProviderName.NEAR : via === 'shapeshift' ? SHAPESHIFT_PROVIDER : ProviderName.THORCHAIN,
         chainId: getChainConfig(Chain.BitcoinCash).chainId,
         timestamp: new Date(),
         estimatedTime: thorSeconds,
@@ -653,9 +661,9 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
         addressFrom: binding.cashAddress,
         addressTo: destination
       }
-      const reverse = { buyAsset: asset.identifier, destination, ...(viaNear ? { route: 'near' as const } : {}) }
+      const reverse = { buyAsset: asset.identifier, destination, ...(via ? { route: via } : {}) }
       if (viaRouter && token) {
-        const routed = await prepareRouterSale({ token, units, binding, buyAsset: asset.identifier, shortCode: asset.shortCode, destination, slippage: slippage ?? 1 })
+        const routed = await prepareRouterSale({ token, units, binding, buyAsset: asset.identifier, shortCode: asset.shortCode, buyDecimals: asset.decimals, destination, slippage: slippage ?? 1, route: via })
         if (controller.signal.aborted) throw new SignCancelled('Cancelled')
         const { id, capability, order } = routed.reference
         uid = await startReverseOperation(
@@ -666,6 +674,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
             token,
             binding,
             walletName: wallet.walletName ?? undefined,
+            ...(routed.near && { near: routed.near }),
             reverse: {
               ...reverse,
               signing: signingInputs(routed.send),
@@ -842,7 +851,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
                       {t('route')}
                     </dt>
                     <dd>
-                      <RouteSteps token={token} asset={asset} thorMinutes={thorSeconds ? formatMinutes(thorSeconds) : undefined} total={minutes} near={viaNear} />
+                      <RouteSteps token={token} asset={asset} thorMinutes={thorSeconds ? formatMinutes(thorSeconds) : undefined} total={minutes} near={viaNear} shapeshift={via === 'shapeshift'} />
                     </dd>
                   </div>
                   <div>
@@ -972,7 +981,11 @@ const useDepositStep = (tx: BridgeTx) => {
     queryKey: ['reverse-deposit', tx.uid, fundingKey],
     queryFn: () => {
       const args = { funding: outputs, payAll: true, binding: op.binding, buyAsset: op.reverse!.buyAsset, destination: op.reverse!.destination, slippage: slippage ?? 1 }
-      return op.reverse!.route === 'near' ? prepareNearDeposit(args) : prepareDeposit({ ...args, shortCode: tx.assetTo.shortCode })
+      return op.reverse!.route === 'near'
+        ? prepareNearDeposit(args)
+        : op.reverse!.route === 'shapeshift'
+          ? prepareShapeShiftDeposit({ ...args, buyDecimals: tx.assetTo.decimals })
+          : prepareDeposit({ ...args, shortCode: tx.assetTo.shortCode })
     },
     enabled: op.stage === 'bch_ready' && outputs.length > 0 && !!op.reverse && phase === 'idle',
     refetchInterval: PREPARED_TTL_MS,

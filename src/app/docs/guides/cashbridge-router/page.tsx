@@ -28,11 +28,11 @@ export default function Page() {
           Forward transfers cover <strong>any Cauldron token</strong> (such as PUSD) and <strong>plain BCH</strong>. For plain BCH you can paste a receiving address instead of connecting a BCH wallet.
         </li>
         <li>
-          The first leg may be <strong>THORChain</strong> or <strong>NEAR Intents</strong> when both quote and the Router admits NEAR orders. NEAR still uses a plain deposit address; its BCH payout targets the order address. There is no Cashbridge covenant on the NEAR leg.
+          The first leg may be <strong>THORChain</strong>, <strong>NEAR Intents</strong> or <strong>ShapeShift</strong> when they quote and the Router admits NEAR orders (ShapeShift&apos;s BCH quotes are NEAR Intents swaps). NEAR and ShapeShift use a plain deposit address; their BCH payout targets the order address. There is no Cashbridge covenant on that leg. ShapeShift&apos;s swap refunds later than NEAR&apos;s (about four hours); BCH that reaches the order after its refund time goes to your BCH fallback.
         </li>
         {BridgeConfig.routerSales ? (
           <li>
-            Bridging a Cauldron token <strong>back from Bitcoin Cash</strong> can use a <strong>sale covenant</strong> when the service offers it: your BCH wallet sends the token to a P2SH sale contract. The Router may sell for at least the quoted minimum BCH and deposit to THORChain with the fixed destination memo, or return the tokens. After <code>refundAfter</code> (same median-time rule as purchase orders) anyone may return them. Sales stay on THORChain.
+            Bridging a Cauldron token <strong>back from Bitcoin Cash</strong> can use a <strong>sale covenant</strong> when the service offers it: your BCH wallet sends the token to a P2SH sale contract. The Router may sell for at least the quoted minimum BCH and deposit it to the chosen bridge (THORChain&apos;s vault with the fixed destination memo, or a NEAR Intents or ShapeShift deposit address), or return the tokens. On ShapeShift the deposit is an exact amount and the rest comes back to your BCH address as plain BCH. After <code>refundAfter</code> (same median-time rule as purchase orders) anyone may return them.
           </li>
         ) : (
           <li>Bridging back from Bitcoin Cash stays Manual when Router sales are not offered; the Cashbridge Router option is greyed out for those routes.</li>
@@ -41,7 +41,7 @@ export default function Page() {
 
       <h2 id="sale-schema">Sale covenant schema</h2>
       <p>
-        When Router sales are offered, reverse CashToken transfers use an <code>apiVersion=2</code> sale covenant (THORChain only). Your wallet sends the token in; the Router may sell for ≥ min BCH and deposit with the fixed memo, or return the tokens; after three hours anyone can return them. Legacy P2PKH order addresses are a different model — temporary service custody, not this script.
+        When Router sales are offered, reverse CashToken transfers use an <code>apiVersion=2</code> sale covenant. Your wallet sends the token in; the Router may sell for ≥ min BCH and deposit to the bridge address in the terms (with the fixed memo; on ShapeShift an exact amount, the rest back to you), or return the tokens; after three hours anyone can return them. Legacy P2PKH order addresses are a different model — temporary service custody, not this script.
       </p>
 
       <h2 id="custody-boundary">Custody boundary</h2>
