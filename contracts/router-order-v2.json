@@ -1,0 +1,63 @@
+{
+  "contractName": "RouterOrderV2",
+  "constructorInputs": [
+    { "name": "router", "type": "pubkey" },
+    { "name": "page", "type": "pubkey" },
+    { "name": "payoutLock", "type": "bytes" },
+    { "name": "fallbackLock", "type": "bytes" },
+    { "name": "token", "type": "bytes32" },
+    { "name": "minTokens", "type": "int" },
+    { "name": "quotedSats", "type": "int" },
+    { "name": "refundTime", "type": "int" }
+  ],
+  "abi": [
+    {
+      "name": "convert",
+      "inputs": [
+        { "name": "signature", "type": "sig" },
+        { "name": "key", "type": "pubkey" }
+      ]
+    },
+    {
+      "name": "giveBack",
+      "inputs": [
+        { "name": "signature", "type": "sig" },
+        { "name": "key", "type": "pubkey" }
+      ]
+    },
+    { "name": "expire", "inputs": [] }
+  ],
+  "bytecode": "OP_8 OP_PICK OP_0 OP_NUMEQUAL OP_IF OP_10 OP_PICK OP_EQUAL OP_10 OP_PICK OP_ROT OP_EQUAL OP_BOOLOR OP_VERIFY OP_7 OP_ROLL OP_8 OP_ROLL OP_CHECKSIGVERIFY OP_INPUTINDEX OP_DUP OP_UTXOVALUE OP_5 OP_PICK OP_MUL OP_6 OP_ROLL OP_DIV OP_DUP OP_6 OP_PICK OP_GREATERTHAN OP_IF OP_5 OP_PICK OP_NIP OP_ENDIF OP_OVER OP_OUTPUTBYTECODE OP_3 OP_ROLL OP_EQUALVERIFY OP_OVER OP_OUTPUTTOKENCATEGORY OP_4 OP_ROLL OP_EQUALVERIFY OP_SWAP OP_OUTPUTTOKENAMOUNT OP_LESSTHANOREQUAL OP_VERIFY OP_2DROP OP_2DROP OP_1 OP_ELSE OP_8 OP_PICK OP_1 OP_NUMEQUAL OP_IF OP_10 OP_PICK OP_EQUAL OP_10 OP_PICK OP_ROT OP_EQUAL OP_BOOLOR OP_VERIFY OP_7 OP_ROLL OP_8 OP_ROLL OP_CHECKSIGVERIFY OP_INPUTINDEX OP_DUP OP_OUTPUTBYTECODE OP_3 OP_ROLL OP_EQUALVERIFY OP_DUP OP_OUTPUTTOKENCATEGORY OP_0 OP_EQUALVERIFY OP_DUP OP_OUTPUTVALUE d007 OP_ADD OP_SWAP OP_UTXOVALUE OP_GREATERTHANOREQUAL OP_VERIFY OP_2DROP OP_2DROP OP_2DROP OP_1 OP_ELSE OP_8 OP_ROLL OP_2 OP_NUMEQUALVERIFY OP_7 OP_ROLL OP_CHECKLOCKTIMEVERIFY OP_DROP OP_INPUTINDEX OP_DUP OP_OUTPUTBYTECODE OP_5 OP_ROLL OP_EQUALVERIFY OP_DUP OP_OUTPUTTOKENCATEGORY OP_0 OP_EQUALVERIFY OP_DUP OP_OUTPUTVALUE d007 OP_ADD OP_SWAP OP_UTXOVALUE OP_GREATERTHANOREQUAL OP_VERIFY OP_2DROP OP_2DROP OP_2DROP OP_1 OP_ENDIF OP_ENDIF",
+  "source": "// SPDX-License-Identifier: MIT\n// Copyright (c) Cash Bridge\n\npragma cashscript ^0.14.0;\n\n// Escrow for one Cashbridge Router order, second version.\n//\n// The order's bridge (THORChain, NEAR Intents or ShapeShift) pays its BCH here. Two keys can settle it: the Router's\n// and a one-use key the customer's page made for this order, so the page can buy the token the moment the BCH lands\n// and the Router finishes when the page is closed. Neither key can move a coin anywhere but to the customer: as the\n// ordered CashToken (at least the coin's share of the quoted minimum) or back as BCH. Each check looks at the output\n// with the same index as the coin being spent, so one output can never settle two coins.\ncontract RouterOrderV2(\n    // The Router's public key for this order.\n    pubkey router,\n    // The page's one-use public key for this order (the Router's key again when the order has no page).\n    pubkey page,\n    // Locking bytecode of the customer's token address.\n    bytes payoutLock,\n    // Locking bytecode of the customer's BCH fallback address.\n    bytes fallbackLock,\n    // The ordered token's category, in the byte order the VM uses (explorers show it reversed).\n    bytes32 token,\n    // The quoted minimum for `quotedSats` of BCH, in the token's base units.\n    int minTokens,\n    // The BCH the bridge was quoted to pay. A smaller coin must still buy its share of the minimum, so a bridge that\n    // pays a little less does not send the order back as BCH.\n    int quotedSats,\n    // Unix time after which anyone may send the BCH back (compared with the chain's median time).\n    int refundTime\n) {\n    // Buys the token with the coin on Cauldron; the trade must pay the customer at least the coin's share of the minimum.\n    function convert(sig signature, pubkey key) {\n        require(key == router || key == page);\n        require(checkSig(signature, key));\n        int i = this.activeInputIndex;\n        int floor = tx.inputs[i].value * minTokens / quotedSats;\n        if (floor > minTokens) {\n            floor = minTokens;\n        }\n        require(tx.outputs[i].lockingBytecode == payoutLock);\n        require(tx.outputs[i].tokenCategory == token);\n        require(tx.outputs[i].tokenAmount >= floor);\n    }\n\n    // Gives up on converting and returns the BCH, keeping at most 2,000 sats for the miner.\n    function giveBack(sig signature, pubkey key) {\n        require(key == router || key == page);\n        require(checkSig(signature, key));\n        int i = this.activeInputIndex;\n        require(tx.outputs[i].lockingBytecode == fallbackLock);\n        require(tx.outputs[i].tokenCategory == 0x);\n        require(tx.outputs[i].value + 2000 >= tx.inputs[i].value);\n    }\n\n    // Once the refund time has passed, anyone can return the BCH on the same terms, so a stopped Router and a closed\n    // page cannot strand it.\n    function expire() {\n        require(tx.time >= refundTime);\n        int i = this.activeInputIndex;\n        require(tx.outputs[i].lockingBytecode == fallbackLock);\n        require(tx.outputs[i].tokenCategory == 0x);\n        require(tx.outputs[i].value + 2000 >= tx.inputs[i].value);\n    }\n}\n",
+  "fingerprint": "e76539f1be9e936fbc80ddfa87bf414ac73a2f181429c135d82e4c4a0909480f",
+  "debug": {
+    "bytecode": "5879009c635a79875a797b879b69577a587aadc076c6557995567a96765679a0635579776878cd537a8878d1547a887cd3a1696d6d51675879519c635a79875a797b879b69577a587aadc076cd537a8876d1008876cc02d007937cc6a2696d6d6d5167587a529d577ab175c076cd557a8876d1008876cc02d007937cc6a2696d6d6d516868",
+    "sourceMap": "33:4:44:5;;;;;34:16:34:19;;:::29:1;:33::36:0;;:40::44;:33:::1;:16;:8::46;35:25:35:34:0;;:36::39;;:8::42:1;36:16:36:37:0;37:30:37:31;:20::38:1;:41::50:0;;:20:::1;:53::63:0;;:20:::1;38:12:38:17:0;:20::29;;:12:::1;:31:40:9:0;39:20:39:29;;:12::30:1;38:31:40:9;41:27:41:28:0;:16::45:1;:49::59:0;;:8::61:1;42:27:42:28:0;:16::43:1;:47::52:0;;:8::54:1;43:27:43:28:0;:16::41:1;:::50;:8::52;33:48:44:5;;;:4;47::54::0;;;;;48:16:48:19;;:::29:1;:33::36:0;;:40::44;:33:::1;:16;:8::46;49:25:49:34:0;;:36::39;;:8::42:1;50:16:50:37:0;51:27:51:28;:16::45:1;:49::61:0;;:8::63:1;52:27:52:28:0;:16::43:1;:47::49:0;:8::51:1;53:27:53:28:0;:16::35:1;:38::42:0;:16:::1;:56::57:0;:46::64:1;:16;:8::66;47:49:54:5;;;;:4;58::64::0;;;;59:27:59:37;;:8::39:1;;60:16:60:37:0;61:27:61:28;:16::45:1;:49::61:0;;:8::63:1;62:27:62:28:0;:16::43:1;:47::49:0;:8::51:1;63:27:63:28:0;:16::35:1;:38::42:0;:16:::1;:56::57:0;:46::64:1;:16;:8::66;58:22:64:5;;;;13:0:65:1;",
+    "logs": [],
+    "requires": [
+      { "ip": 21, "line": 34 },
+      { "ip": 26, "line": 35 },
+      { "ip": 49, "line": 41 },
+      { "ip": 54, "line": 42 },
+      { "ip": 58, "line": 43 },
+      { "ip": 76, "line": 48 },
+      { "ip": 81, "line": 49 },
+      { "ip": 87, "line": 51 },
+      { "ip": 91, "line": 52 },
+      { "ip": 99, "line": 53 },
+      { "ip": 111, "line": 59 },
+      { "ip": 118, "line": 61 },
+      { "ip": 122, "line": 62 },
+      { "ip": 130, "line": 63 }
+    ]
+  },
+  "compiler": {
+    "name": "cashc",
+    "version": "0.14.0",
+    "options": {
+      "enforceFunctionParameterTypes": true,
+      "enforceLocktimeGuard": true
+    }
+  },
+  "updatedAt": "2026-11-20T08:27:40.480Z"
+}

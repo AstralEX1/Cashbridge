@@ -11,6 +11,12 @@ const CONTRACT_BYTECODE = hexToBin(
   '5679009c63577a7cadc076cd7b8876d1537a88d37ba2777777675679519c63577a7cadc076cd537a8876d1008876cc02d007937cc6a2696d6d755167567a529d557ab175c076cd547a8876d1008876cc02d007937cc6a2696d6d516868'
 )
 
+// contracts/router-order-v2.json `debug.bytecode`, compiled by cashc 0.14.0: the page's one-use key may settle the order
+// too, and a coin smaller than quoted must buy its share of the minimum.
+const CONTRACT_V2_BYTECODE = hexToBin(
+  '5879009c635a79875a797b879b69577a587aadc076c6557995567a96765679a0635579776878cd537a8878d1547a887cd3a1696d6d51675879519c635a79875a797b879b69577a587aadc076cd537a8876d1008876cc02d007937cc6a2696d6d6d5167587a529d577ab175c076cd557a8876d1008876cc02d007937cc6a2696d6d6d516868'
+)
+
 // What giveBack and expire may leave to the miner per coin; written out in the contract.
 export const REFUND_FEE_CAP = 2000n
 // How long after the order is created anyone may send its BCH back (the chain's median time runs about an hour behind).
@@ -32,6 +38,11 @@ export interface OrderTerms {
   minPusd: string
   // Unix time after which anyone may send the BCH to the fallback.
   refundAfter: number
+  // Version 2 (contracts/router-order-v2.cash) adds the page's key and the BCH the minimum was quoted for.
+  version?: 2
+  // The page's one-use public key (hex); the Router's key when the order has none.
+  pageKey?: string
+  quotedSats?: string
 }
 
 const FUNCTIONS = { convert: 0n, giveBack: 1n, expire: 2n } as const
@@ -43,13 +54,15 @@ const pushInt = (value: bigint) => encodeDataPush(bigIntToVmNumber(value))
 export const orderRedeemScript = (terms: OrderTerms) =>
   Uint8Array.from([
     ...pushInt(BigInt(terms.refundAfter)),
+    ...(terms.version === 2 ? pushInt(BigInt(terms.quotedSats ?? '0')) : []),
     ...pushInt(BigInt(terms.minPusd)),
     // The VM reads a token category in transaction byte order, reversed from how explorers show it.
     ...encodeDataPush(hexToBin(terms.category).reverse()),
     ...encodeDataPush(hexToBin(terms.refundScript)),
     ...encodeDataPush(hexToBin(terms.recipientScript)),
+    ...(terms.version === 2 ? encodeDataPush(hexToBin(terms.pageKey ?? terms.routerKey)) : []),
     ...encodeDataPush(hexToBin(terms.routerKey)),
-    ...CONTRACT_BYTECODE
+    ...(terms.version === 2 ? CONTRACT_V2_BYTECODE : CONTRACT_BYTECODE)
   ])
 
 // P2SH20, because THORChain pays out only to 20-byte script hashes (a P2SH32 destination fails its address check).
@@ -67,8 +80,23 @@ const p2sh20Binding = (redeemScript: Uint8Array, routerKey: string, addressIndex
 
 export const orderBinding = (terms: OrderTerms, addressIndex: number): BchBinding => p2sh20Binding(orderRedeemScript(terms), terms.routerKey, addressIndex)
 
-export const orderUnlock = (terms: OrderTerms, fn: ContractFunction, signature?: Uint8Array) =>
-  Uint8Array.from([...(signature ? encodeDataPush(signature) : []), ...pushInt(FUNCTIONS[fn]), ...encodeDataPush(orderRedeemScript(terms))])
+// <signature> <function> <redeem script>; version 2 pushes the signing key first (CashScript pushes arguments last one
+// first), the Router's unless `key` names the page's.
+export const orderUnlock = (terms: OrderTerms, fn: ContractFunction, signature?: Uint8Array, key = terms.routerKey) =>
+  Uint8Array.from([
+    ...(signature && terms.version === 2 ? encodeDataPush(hexToBin(key)) : []),
+    ...(signature ? encodeDataPush(signature) : []),
+    ...pushInt(FUNCTIONS[fn]),
+    ...encodeDataPush(orderRedeemScript(terms))
+  ])
+
+// The least of the token a coin of `value` sats must buy: version 2 takes the coin's share of the minimum, capped at it.
+export const coinFloor = (terms: Pick<OrderTerms, 'version' | 'minPusd' | 'quotedSats'>, value: bigint) => {
+  const min = BigInt(terms.minPusd)
+  if (terms.version !== 2) return min
+  const share = (value * min) / BigInt(terms.quotedSats ?? '1')
+  return share < min ? share : min
+}
 
 // A Router-signed unlock: <signature> <function> <redeem script>, exactly as `unlock` writes it for one of `names`.
 const parseUnlock = <F extends string>(routerKey: string, names: readonly F[], unlock: (fn: F, signature: Uint8Array) => Uint8Array) => (bytecode: Uint8Array) => {
@@ -79,7 +107,20 @@ const parseUnlock = <F extends string>(routerKey: string, names: readonly F[], u
   return fn ? { hashType: signature[signature.length - 1], pubkey: hexToBin(routerKey) } : undefined
 }
 
-export const parseOrderUnlock = (terms: OrderTerms) => parseUnlock(terms.routerKey, ['convert', 'giveBack'] as const, (fn, sig) => orderUnlock(terms, fn, sig))
+export const parseOrderUnlock = (terms: OrderTerms) => {
+  if (terms.version !== 2) return parseUnlock(terms.routerKey, ['convert', 'giveBack'] as const, (fn, sig) => orderUnlock(terms, fn, sig))
+  // Version 2: <key> <signature> <function> <redeem script>, the key being the Router's or the page's.
+  return (bytecode: Uint8Array) => {
+    if (bytecode[0] !== 33) return undefined
+    const key = binToHex(bytecode.slice(1, 34))
+    if (key !== terms.routerKey && key !== (terms.pageKey ?? terms.routerKey)) return undefined
+    const sigLength = bytecode[34]
+    if (!sigLength || sigLength > 0x4b) return undefined
+    const signature = bytecode.slice(35, 35 + sigLength)
+    const fn = (['convert', 'giveBack'] as const).find(name => binToHex(orderUnlock(terms, name, signature, key)) === binToHex(bytecode))
+    return fn ? { hashType: signature[signature.length - 1], pubkey: hexToBin(key) } : undefined
+  }
+}
 
 // --- Sales (contracts/router-sale.cash) ---------------------------------------------------------------
 // The reverse direction: the customer sends CashTokens to the sale contract, and the Router can only sell them on
