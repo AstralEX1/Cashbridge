@@ -89,3 +89,15 @@ test('restoration never opens a wallet prompt; other chains are refused', async 
   await assert.rejects(connect([Chain.Ethereum], { tonWallet: 'tonkeeper' }), /only supports TON/)
   assert.deepEqual(ui.opened, [])
 })
+
+
+test('the manifest matches the site origin, including www and preview deployments', async () => {
+  const { GET } = await import('../src/app/tonconnect-manifest.json/route.ts')
+  for (const origin of ['https://www.cashbridge.space', 'https://cashbridge.space', 'https://cashbridge-preview.vercel.app']) {
+    const response = GET(new Request(`${origin}/tonconnect-manifest.json`))
+    const manifest = await response.json()
+    assert.equal(manifest.url, origin)
+    assert.equal(manifest.iconUrl, `${origin}/tonconnect-icon.png`)
+    assert.equal(response.headers.get('Access-Control-Allow-Origin'), '*')
+  }
+})
