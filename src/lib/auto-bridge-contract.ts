@@ -114,6 +114,8 @@ export interface FeedOrder {
   // The BCH leg went through NEAR Intents rather than THORChain, and ShapeShift quoted it when `shapeshift` is set.
   near?: boolean
   shapeshift?: boolean
+  // The NEAR Intents deposit address of that leg (a 1Click service address), for its explorer.
+  nearDeposit?: string
   // The token bought (forward) or sold (sale).
   category: string
   expectedBchSats: string
@@ -153,6 +155,7 @@ export const isFeedOrder = (value: unknown): value is FeedOrder => {
     (o.sourceHash === undefined || /^[0-9a-zA-Z-]{64,88}$/.test(o.sourceHash)) &&
     (o.near === undefined || typeof o.near === 'boolean') &&
     (o.shapeshift === undefined || typeof o.shapeshift === 'boolean') &&
+    (o.nearDeposit === undefined || (typeof o.nearDeposit === 'string' && /^[0-9a-zA-Z:._-]{20,128}$/.test(o.nearDeposit))) &&
     (o.settlement === undefined ||
       (HEX64.test(o.settlement.txid) && /^\d+$/.test(o.settlement.tokenAmount) && /^\d+$/.test(o.settlement.bchAmount))) &&
     (o.source === undefined || ['chain', 'asset', 'amount'].every(key => typeof o.source![key as 'chain'] === 'string')) &&

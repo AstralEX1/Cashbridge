@@ -4,6 +4,7 @@ import { formatBaseUnits } from '@/lib/bridge'
 import { FEATURED_TOKENS } from '@/lib/cauldron-tokens'
 import type { Run } from '@/lib/mainnet-runs'
 import { isEvmChain } from '@/lib/payout-chains'
+import { nearExplorerUrl } from '@/lib/near-intents'
 
 // The scanner's view of one transfer, from a Cashbridge Router order or from a run verified by hand.
 export type ScanStatus = 'completed' | 'pending' | 'refunded' | 'review'
@@ -36,7 +37,7 @@ export interface ScanRow {
 }
 
 // Chains with a logo in public/networks.
-const CHAIN_ICONS = new Set(['arb', 'avax', 'base', 'bch', 'bsc', 'btc', 'doge', 'eth', 'gaia', 'ltc', 'op', 'pol', 'sol', 'thor', 'tron', 'xrp', 'zec'])
+const CHAIN_ICONS = new Set(['arb', 'avax', 'base', 'bch', 'bsc', 'btc', 'doge', 'eth', 'gaia', 'ltc', 'near', 'op', 'pol', 'sol', 'thor', 'tron', 'xrp', 'zec'])
 export const chainIcon = (chain: string) => (CHAIN_ICONS.has(chain.toLowerCase()) ? `/networks/${chain.toLowerCase()}.svg` : undefined)
 
 const CHAIN_NAMES: Record<string, string> = {
@@ -77,6 +78,7 @@ const mark = (ticker: string, chain: string, icon?: string): Pick<ScanSide, 'ico
 // Explorers by address, for the chain mark on each step's link.
 const EXPLORERS: [RegExp, string][] = [
   [/thorchain\.net|runescan/, 'thor'],
+  [/near-intents/, 'near'],
   [/bitcoin-cash|bch\.|cashscript|salemkode/, 'bch'],
   [/bscscan/, 'bsc'],
   [/snowscan|snowtrace|avascan/, 'avax'],
@@ -98,8 +100,8 @@ export const explorerIcon = (url: string) => {
   const found = EXPLORERS.find(([pattern]) => pattern.test(url))
   return found && chainIcon(found[1])
 }
-const leg = (label: string, url: string, hash: string): ScanLeg => {
-  const icon = explorerIcon(url)
+const leg = (label: string, url: string, hash: string, mark?: string): ScanLeg => {
+  const icon = mark ?? explorerIcon(url)
   return { label, url, hash, ...(icon && { icon }) }
 }
 
@@ -133,23 +135,32 @@ const STATUS: Partial<Record<OrderState, ScanStatus>> = {
   manual_review: 'review'
 }
 
+// The bridge that carried the order's BCH leg, and its own tracker for that leg.
+const bridgeOf = (order: FeedOrder) => (order.shapeshift ? 'ShapeShift' : order.near ? 'NEAR Intents' : 'THORChain')
+const bridgeLeg = (order: FeedOrder, thorchainHash: string) =>
+  !order.near
+    ? leg('THORChain swap', thorchainTxUrl(thorchainHash), thorchainHash)
+    : order.nearDeposit
+      ? leg(`${bridgeOf(order)} swap`, nearExplorerUrl(order.nearDeposit), order.nearDeposit, order.shapeshift ? '/providers/shapeshift.svg' : undefined)
+      : undefined
+
 export const rowFromOrder = (order: FeedOrder): ScanRow => {
   const legs: ScanLeg[] = []
+  const add = (step?: ScanLeg) => step && legs.push(step)
   const paid = order.settlement
   if (order.kind === 'forward') {
     if (order.sourceHash && order.source) {
-      legs.push(leg(`${chainName(order.source.chain)} deposit`, sourceTxUrl(order.source.chain, order.sourceHash), order.sourceHash))
-      // A NEAR Intents first leg leaves no THORChain record to link.
-      if (!order.near) legs.push(leg('THORChain swap', thorchainTxUrl(order.sourceHash), order.sourceHash))
-    }
-    for (const receipt of order.bchReceipts) legs.push(leg('BCH to order', bchTxUrl(receipt.txid), receipt.txid))
-    if (paid) legs.push(leg(paid.kind === 'refund' ? 'BCH refund' : `${bchSide(order.category).ticker} payout`, bchTxUrl(paid.txid), paid.txid))
+      add(leg(`${chainName(order.source.chain)} deposit`, sourceTxUrl(order.source.chain, order.sourceHash), order.sourceHash))
+      add(bridgeLeg(order, order.sourceHash))
+    } else if (order.near) add(bridgeLeg(order, ''))
+    for (const receipt of order.bchReceipts) add(leg('BCH to order', bchTxUrl(receipt.txid), receipt.txid))
+    if (paid) add(leg(paid.kind === 'refund' ? 'BCH refund' : `${bchSide(order.category).ticker} payout`, bchTxUrl(paid.txid), paid.txid))
   } else {
-    for (const receipt of order.bchReceipts) legs.push(leg('Tokens to contract', bchTxUrl(receipt.txid), receipt.txid))
+    for (const receipt of order.bchReceipts) add(leg('Tokens to contract', bchTxUrl(receipt.txid), receipt.txid))
     if (paid?.kind === 'deposit') {
-      legs.push(leg('Sale and THORChain deposit', bchTxUrl(paid.txid), paid.txid))
-      legs.push(leg('THORChain swap', thorchainTxUrl(paid.txid), paid.txid))
-    } else if (paid) legs.push(leg('Refund', bchTxUrl(paid.txid), paid.txid))
+      add(leg(`Sale and ${bridgeOf(order)} deposit`, bchTxUrl(paid.txid), paid.txid))
+      add(bridgeLeg(order, paid.txid))
+    } else if (paid) add(leg('Refund', bchTxUrl(paid.txid), paid.txid))
   }
   const bch = (sats: string): ScanSide => ({ ticker: 'BCH', chain: 'BCH', ...mark('BCH', 'BCH'), amount: formatBaseUnits(sats, 8) })
   // An order saved without its source starts at the BCH that reached the Router.

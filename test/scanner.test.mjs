@@ -55,6 +55,28 @@ test('a Router order whose first leg went through NEAR Intents links no THORChai
   )
 })
 
+test("each bridge's own tracker is linked: NEAR Intents and ShapeShift by their deposit address, on both directions", () => {
+  const nearDeposit = `0x${'12'.repeat(20)}`
+  const near = rowFromOrder({ ...order, near: true, nearDeposit })
+  assert.deepEqual(near.legs.map(leg => leg.label), ['Base deposit', 'NEAR Intents swap', 'BCH to order', 'PUSD payout'])
+  assert.equal(near.legs[1].url, `https://explorer.near-intents.org/transactions/${nearDeposit}`)
+  assert.equal(near.legs[1].icon, '/networks/near.svg')
+  const shapeshift = rowFromOrder({ ...order, near: true, shapeshift: true, nearDeposit })
+  assert.deepEqual([shapeshift.legs[1].label, shapeshift.legs[1].icon], ['ShapeShift swap', '/providers/shapeshift.svg'])
+  const sale = {
+    ...order,
+    kind: 'sale',
+    near: true,
+    nearDeposit: `bitcoincash:qq${'0'.repeat(40)}`,
+    sale: { tokenAmount: '339', buyAsset: 'BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913' },
+    settlement: { kind: 'deposit', txid: 'ef'.repeat(32), tokenAmount: '0', bchAmount: '990000' }
+  }
+  assert.deepEqual(rowFromOrder(sale).legs.map(leg => leg.label), ['Tokens to contract', 'Sale and NEAR Intents deposit', 'NEAR Intents swap'])
+  assert.ok(!rowFromOrder(sale).legs.some(leg => leg.url.includes('thorchain.net')), 'a NEAR Intents sale has no THORChain record')
+  const thorSale = rowFromOrder({ ...sale, near: undefined, nearDeposit: undefined })
+  assert.deepEqual(thorSale.legs.map(leg => leg.label), ['Tokens to contract', 'Sale and THORChain deposit', 'THORChain swap'])
+})
+
 test('each end shows its coin with the chain mark only where the coin does not name the chain, and each step its explorer chain', () => {
   const row = rowFromOrder(order)
   assert.deepEqual([row.from.icon, row.from.badge], ['/tokens/usdc.svg', '/networks/base.svg'])

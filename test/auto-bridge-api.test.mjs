@@ -150,8 +150,11 @@ test('the public scanner feed lists paid orders from the worker without addresse
     assert.equal(orders.length, 1, 'an order nobody paid into stays out of the feed')
     assert.equal(orders[0].sourceHash, 'ab'.repeat(32))
     assert.deepEqual(orders[0].bchReceipts, [{ txid: 'cd'.repeat(32), amountSats: '1000000' }])
-    assert.equal(orders[0].near, true, 'a NEAR Intents first leg is flagged, without its deposit address')
-    for (const secret of [address, address.split(':')[1], paid.id, capability, paid.binding.cashAddress, nearDeposit]) assert.equal(text.includes(secret), false)
+    assert.equal(orders[0].near, true, 'a NEAR Intents first leg is flagged')
+    // 1Click's one-use deposit address is where the public source transaction already pays, so it may link its explorer.
+    assert.equal(orders[0].nearDeposit, nearDeposit)
+    for (const secret of [address, address.split(':')[1], paid.id, capability, paid.binding.cashAddress]) assert.equal(text.includes(secret), false)
+    assert.equal(isFeedOrder({ ...orders[0], nearDeposit: 'javascript:alert(1)' }), false)
     assert.equal(isFeedOrder({ ...orders[0], sourceHash: 'javascript:alert(1)' }), false)
     assert.equal(isFeedOrder({ ...orders[0], near: 'yes' }), false)
     assert.equal(isFeedOrder({ ...orders[0], bchReceipts: [{ txid: 'zz', amountSats: '1' }] }), false)

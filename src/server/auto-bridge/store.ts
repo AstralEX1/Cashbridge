@@ -411,6 +411,7 @@ export class OrderStore {
           contract: !!order.contract,
           ...((order.nearDepositAddress || order.sale?.route) && { near: true }),
           ...((order.shapeshiftQuoteId || order.sale?.route === 'shapeshift') && { shapeshift: true }),
+          ...((order.nearDepositAddress || order.sale?.route) && { nearDeposit: order.nearDepositAddress ?? order.sale!.vaultAddress }),
           category: order.sale?.category ?? orderCategory(order),
           expectedBchSats: order.expectedBchSats,
           ...(order.source && { source: { chain: order.source.chain, asset: order.source.asset, amount: order.source.amount } }),
