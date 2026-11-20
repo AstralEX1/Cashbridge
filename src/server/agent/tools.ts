@@ -497,16 +497,15 @@ const getBridgeQuote = async (args: Args) => {
   }
 
   // Token sale: Cauldron, then THORChain (Router sale when admitted), or NEAR Intents / ShapeShift when the Router
-  // admits routed sales. Those are quoted on the BCH the Router is sure to deposit: the floor less the fee cap
-  // (ShapeShift: less the change back too).
+  // admits routed sales. NEAR's FLEX_INPUT converts the whole sale the Router deposits, so it is quoted like THORChain on
+  // the whole sale less the fee cap, as the form does; ShapeShift on the exact amount it takes (the rest comes back as BCH).
   const sale = await tokenQuote(token.category, 'sell', toBaseUnits(amount, token.decimals))
   if (sale.output <= DEPOSIT_FEE_RESERVE) throw new ToolError('This amount sells for too little BCH to bridge')
-  const floor = minOutputFor(sale.output, SALE_FLOOR_TOLERANCE_BPS)
   const routed = BridgeConfig.routerSales && BridgeConfig.routerSaleRoutes
   const [thor, near, shape] = await Promise.allSettled([
     thorchainRoute({ sellAsset: BridgeConfig.buyAsset, buyAsset: external, sellAmount: formatBaseUnits(sale.output - DEPOSIT_FEE_RESERVE, 8), slippage: percent }),
     routed && nearAvailable(external)
-      ? nearQuote({ sellAsset: BridgeConfig.buyAsset, buyAsset: external, sellAmount: formatBaseUnits(floor - REFUND_FEE_CAP, 8), dry: true, slippageBps: nearSlippageBps(percent) })
+      ? nearQuote({ sellAsset: BridgeConfig.buyAsset, buyAsset: external, sellAmount: formatBaseUnits(sale.output - REFUND_FEE_CAP, 8), dry: true, slippageBps: nearSlippageBps(percent) })
       : Promise.resolve(undefined),
     routed && shapeShiftSaleSats(sale.output) > 0n && shapeShiftAvailable(BridgeConfig.buyAsset, external)
       ? shapeShiftQuote(BridgeConfig.buyAsset, external, formatBaseUnits(shapeShiftSaleSats(sale.output), 8), percent)
