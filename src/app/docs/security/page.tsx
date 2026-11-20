@@ -23,8 +23,8 @@ export default function Page() {
       </ul>
 
       <h2 id="router">Cashbridge Router: contract orders</h2>
-      <Callout kind="warning" title="The Router decides when your BCH moves, not where">
-        For <code>apiVersion=2</code> purchase orders, the bridge pays BCH to a P2SH20 contract built from your order terms. Only the Router key for that order can spend early, and only to pay you at least the quoted minimum of your token (<code>convert</code>) or to send BCH to your fallback (<code>giveBack</code>, ≤ 2,000 sats miner fee). After <code>refundAfter</code> — set about three hours from order creation; Bitcoin Cash median time runs about an hour behind wall clock — anyone may <code>expire</code> on the same refund terms.
+      <Callout kind="warning" title="The contract guarantees your minimum, not the best price">
+        For <code>apiVersion=2</code> purchase orders, the bridge pays BCH to a P2SH20 contract built from your order terms. Only the Router key for that order (and, on orders your page can settle itself, a one-use key the page made) can spend early, and only to pay you at least the quoted minimum of your token (<code>convert</code>) or to send BCH to your fallback (<code>giveBack</code>, ≤ 2,000 sats miner fee). The contract checks that one payout: BCH the trade does not need goes where the signing key sends it, so above your minimum you trust the Router. After <code>refundAfter</code> — set about three hours from order creation; Bitcoin Cash median time runs about an hour behind wall clock — anyone may <code>expire</code> on the same refund terms.
       </Callout>
 
       <p>What the service does, and what the contract prevents:</p>
