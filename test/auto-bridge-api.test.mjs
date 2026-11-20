@@ -10,7 +10,7 @@ import { WorkerWallet } from '../src/server/auto-bridge/wallet.ts'
 import { OrderStore } from '../src/server/auto-bridge/store.ts'
 import { createOrder, getOrder, attachSource } from '../src/server/auto-bridge/api.ts'
 import { bindingFromPubkey } from '../src/lib/bch.ts'
-import { pubkey } from './fixtures/bridge-fixtures.mjs'
+import { otherPubkey, pubkey } from './fixtures/bridge-fixtures.mjs'
 import { startOrderServer } from '../src/server/auto-bridge/http.ts'
 import { POST as publicCreate } from '../src/app/api/auto-bridge/orders/route.ts'
 import { GET as publicStatus } from '../src/app/api/auto-bridge/orders/[id]/route.ts'
@@ -143,7 +143,7 @@ test('the public scanner feed lists paid orders from the worker without addresse
         { txid: 'cd'.repeat(32), vout: 1, value: '400000', confirmations: 1, unspent: true }
       ]
     })
-    const response = await scannerFeed()
+    const response = await scannerFeed(new NextRequest('https://bridge.example/api/scanner'))
     assert.equal(response.status, 200)
     const text = await response.text()
     const { orders } = JSON.parse(text)
@@ -158,6 +158,29 @@ test('the public scanner feed lists paid orders from the worker without addresse
     assert.equal(isFeedOrder({ ...orders[0], sourceHash: 'javascript:alert(1)' }), false)
     assert.equal(isFeedOrder({ ...orders[0], near: 'yes' }), false)
     assert.equal(isFeedOrder({ ...orders[0], bchReceipts: [{ txid: 'zz', amountSats: '1' }] }), false)
+
+    // The wallet search: one wallet's orders only, by either BCH form of its script or its source address.
+    const other = bindingFromPubkey(otherPubkey, 0)
+    const evm = `0x${'aB'.repeat(20)}`
+    const theirs = store.create(randomUUID(), randomBytes(32).toString('hex'), {
+      recipientAddress: other.tokenAddress,
+      refundAddress: other.cashAddress,
+      expectedBchSats: '1000000',
+      source: { chain: 'BASE', asset: 'BASE.ETH', amount: '0.01', address: evm }
+    }, '980')
+    store.update(theirs.id, theirs.version, { sourceHash: 'ef'.repeat(32) })
+    const search = async wallet => {
+      const found = await scannerFeed(new NextRequest(`https://bridge.example/api/scanner?address=${encodeURIComponent(wallet)}`, { headers: { 'cf-connecting-ip': 'scanner-test' } }))
+      assert.equal(found.status, 200)
+      return (await found.json()).orders.map(order => order.sourceHash)
+    }
+    assert.deepEqual(await search(address), ['ab'.repeat(32)])
+    assert.deepEqual(await search(bindingFromPubkey(pubkey, 0).tokenAddress.split(':')[1]), ['ab'.repeat(32)], 'the token-aware form, without prefix')
+    assert.deepEqual(await search(other.cashAddress), ['ef'.repeat(32)])
+    assert.deepEqual(await search(evm.toLowerCase()), ['ef'.repeat(32)], 'an EVM source in any case')
+    assert.deepEqual(await search(`0x${'99'.repeat(20)}`), [])
+    assert.equal((await scannerFeed(new NextRequest('https://bridge.example/api/scanner?address=bad'))).status, 400)
+    assert.equal((await scannerFeed(new NextRequest(`https://bridge.example/api/scanner?address=${'ab'.repeat(32)}`))).status, 400, 'a hash is not a wallet')
   } finally {
     await new Promise(resolve => server.close(resolve))
     store.close()

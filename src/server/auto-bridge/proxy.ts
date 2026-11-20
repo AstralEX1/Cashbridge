@@ -57,13 +57,16 @@ export async function callWorker(method: string, path: string, headers: Record<s
   const serviceToken = process.env.AUTO_BRIDGE_SERVICE_TOKEN
   if ((upstream && !serviceToken) || (serviceToken && !/^[A-Za-z0-9_-]{32,128}$/.test(serviceToken))) return undefined
   const upstreamHeaders = { ...headers, ...(serviceToken ? { 'x-cashbridge-service-auth': serviceToken } : {}) }
+  // The query rides outside the pathname, which would percent-encode its `?`.
+  const queryAt = path.indexOf('?')
+  const search = queryAt < 0 ? '' : path.slice(queryAt)
   if (upstream) {
-    upstream.pathname = upstream.pathname.replace(/\/$/, '') + path
+    upstream.pathname = upstream.pathname.replace(/\/$/, '') + (queryAt < 0 ? path : path.slice(0, queryAt))
   }
   return new Promise<{ status: number; body: Buffer }>((resolve, reject) => {
     const options = {
       ...(upstream
-        ? { protocol: upstream.protocol, hostname: upstream.hostname, port: upstream.port || undefined, path: upstream.pathname }
+        ? { protocol: upstream.protocol, hostname: upstream.hostname, port: upstream.port || undefined, path: upstream.pathname + search }
         : {
             socketPath: process.env.AUTO_BRIDGE_SOCKET ?? '/run/cashbridge/worker.sock',
             path
@@ -89,12 +92,15 @@ export async function callWorker(method: string, path: string, headers: Record<s
   })
 }
 
-// The Router's newest orders for the public scanner, or undefined when the worker cannot be read (or predates the feed).
-export async function readOrderFeed(): Promise<FeedOrder[] | undefined> {
+// The Router's newest orders for the public scanner, or with `address` that wallet's orders; undefined when the
+// worker cannot be read, predates the feed, or (for an address) did not apply the filter.
+export async function readOrderFeed(address?: string): Promise<FeedOrder[] | undefined> {
   try {
-    const response = await callWorker('GET', '/orders', { 'sec-fetch-site': 'same-origin' })
+    const response = await callWorker('GET', address ? `/orders?address=${encodeURIComponent(address)}` : '/orders', { 'sec-fetch-site': 'same-origin' })
     if (response?.status !== 200) return undefined
-    const orders: unknown = JSON.parse(response.body.toString('utf8'))?.orders
+    const body = JSON.parse(response.body.toString('utf8'))
+    if (address && body?.address !== address) return undefined
+    const orders: unknown = body?.orders
     return Array.isArray(orders) ? orders.filter(isFeedOrder) : undefined
   } catch {
     return undefined

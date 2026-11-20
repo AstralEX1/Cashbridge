@@ -52,8 +52,10 @@ export async function startOrderServer(
       }
       const method = incoming.method,
         path = incoming.url ?? ''
-      const match = path.match(/^\/orders(?:\/([a-f0-9-]{36}))?$/)
-      if (!match || !['GET', 'POST'].includes(method ?? '')) {
+      // A query string only on the list read (the scanner's wallet search).
+      const query = path.indexOf('?')
+      const match = (query < 0 ? path : path.slice(0, query)).match(/^\/orders(?:\/([a-f0-9-]{36}))?$/)
+      if (!match || !['GET', 'POST'].includes(method ?? '') || (query >= 0 && (method !== 'GET' || match[1]))) {
         outgoing.writeHead(404).end()
         return
       }

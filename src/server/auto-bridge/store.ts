@@ -396,10 +396,17 @@ export class OrderStore {
   }
 
   // The newest orders that reached a chain, for the public scanner. Orders nobody paid into are left out.
-  feed(limit = 40): FeedOrder[] {
-    return (this.db.prepare('SELECT payload FROM orders ORDER BY address_index DESC LIMIT ?').all(limit * 5) as { payload: string }[])
+  // With `address`, only orders tied to that wallet: its source, either BCH address (in any form of the same
+  // script) or a sale's destination. Answers carry no addresses either way.
+  feed(limit = 40, address?: string): FeedOrder[] {
+    const script = address && addressToLockingBytecode(address)
+    const key = (value?: string) => (value && /^0x[0-9a-f]{40}$/i.test(value) ? value.toLowerCase() : value)
+    const owns = (order: Order) =>
+      (!!script && (order.recipientScript === script || order.refundScript === script)) ||
+      [order.source?.address, order.sale?.destination].some(value => !!value && key(value) === key(address))
+    return (this.db.prepare('SELECT payload FROM orders ORDER BY address_index DESC LIMIT ?').all(address ? 20000 : limit * 5) as { payload: string }[])
       .map(row => JSON.parse(row.payload) as Order)
-      .filter(order => order.sourceHash || order.inboundHash || order.funding.length || order.payoutTxid)
+      .filter(order => (order.sourceHash || order.inboundHash || order.funding.length || order.payoutTxid) && (!address || owns(order)))
       .slice(0, limit)
       .map((order): FeedOrder => {
         const paid = this.payout(order)

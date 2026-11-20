@@ -7,7 +7,7 @@ import { isSameOrigin } from '@/lib/same-origin'
 import { BCH_DUST_THRESHOLD, checkInbound, type InboundAddress } from '@/lib/thorchain-deposit'
 import { REFUND_FEE_CAP } from '@/lib/router-contract'
 import { OrderError, orderCategory, positiveAmount, type OrderIntent } from '@/server/auto-bridge/types'
-import { SALE_KEYS, SALE_ROUTE_KEYS, type SaleIntent } from '@/lib/auto-bridge-contract'
+import { SALE_KEYS, SALE_ROUTE_KEYS, isScanAddress, type SaleIntent } from '@/lib/auto-bridge-contract'
 import { addressToLockingBytecode } from '@/lib/bch'
 import { findNearToken, getNearStatus, getNearTokens, type NearStatusResponse, type OneClickToken } from '@/lib/near-intents'
 import { SALE_ROUTE_OPEN_MS, saleRouteProblem } from '@/server/auto-bridge/sale-route'
@@ -169,10 +169,15 @@ export async function getOrder(req: NextRequest, id: string, service: Service) {
 }
 
 // The newest orders for the public scanner; the same chain facts anyone can read, so no order capability.
+// `?address=` narrows them to one wallet's orders, and the answer names that address so a caller can tell
+// a filtered list from an older Router that ignores the filter.
 export async function listOrders(req: NextRequest, service: Service) {
   try {
     guard(req, false)
-    return reply({ orders: service.store.feed() })
+    const address = req.nextUrl.searchParams.get('address')
+    if (address === null) return reply({ orders: service.store.feed() })
+    if (!isScanAddress(address)) throw new OrderError(400, 'Invalid address')
+    return reply({ orders: service.store.feed(40, address), address })
   } catch (error) {
     return errorReply(error)
   }

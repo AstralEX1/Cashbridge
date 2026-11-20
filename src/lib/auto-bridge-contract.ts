@@ -162,6 +162,8 @@ export const isFeedOrder = (value: unknown): value is FeedOrder => {
     (o.sale === undefined || (/^\d+$/.test(o.sale.tokenAmount) && typeof o.sale.buyAsset === 'string'))
   )
 }
+// A wallet address the scanner may look orders up by: any chain's address shape, but not a transaction hash.
+export const isScanAddress = (value: string) => /^[0-9A-Za-z:._-]{20,128}$/.test(value) && !/^(0x)?[0-9a-fA-F]{64}$/.test(value)
 export const isTerminal = (state: OrderState) => ['completed', 'refunded', 'source_refunded', 'manual_review'].includes(state)
 // The Router buys any Cauldron token on a forward transfer, and sells one on a transfer back when sales are on.
 export const automaticEligible = (reverse: boolean, category: string | undefined, sales = false) => !!category && (!reverse || sales)
