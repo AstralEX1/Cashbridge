@@ -550,9 +550,21 @@
 .bridge-input-heading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+}
+.bridge-input-heading > :first-child {
+  margin-right: auto;
+}
+/* The pill widens on hover. Its row keeps that width reserved, or a tight row (BNB Smart Chain USDT) re-wraps under
+   the cursor, the pill drops a line, hover ends, it shrinks back up, and the row jumps on every move. */
+.bridge-input-heading > .bridge-wallet-badge {
+  margin-left: calc(var(--wallet-actions, -6px) + 6px);
+}
+.bridge-input-heading > .bridge-wallet-badge:hover,
+.bridge-input-heading > .bridge-wallet-badge:focus-within {
+  margin-left: 0;
 }
 .bridge-wallet-badge {
   display: inline-flex;
@@ -589,11 +601,12 @@
   background: #0ac18e;
 }
 /* Connected badge: the actions slide out of the pill on hover or focus. Animating a 0fr→1fr grid
-   track widens the pill to the actions' real width without measuring it in JS. */
+   track widens the pill to the actions' real width; the heading's reserved margin shrinks in step. */
 .bridge-wallet-badge {
   transition:
     background-color 200ms ease,
-    border-color 200ms ease;
+    border-color 200ms ease,
+    margin-left 280ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .bridge-wallet-actions {
   display: grid;
@@ -922,6 +935,9 @@
   }
 }
 @media (hover: none) {
+  .bridge-input-heading > .bridge-wallet-badge {
+    margin-left: 0;
+  }
   .bridge-wallet-actions {
     grid-template-columns: 1fr;
     margin-left: 0;

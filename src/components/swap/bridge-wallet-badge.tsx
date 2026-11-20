@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Chain, getExplorerAddressUrl } from '@tcswap/core'
 import { Check, Copy, ExternalLink, LoaderCircle, Wallet, X } from 'lucide-react'
 import { useTranslations } from 'next-intl'
@@ -113,6 +113,20 @@ export const WalletAddressBadge = ({
 }) => {
   const t = useTranslations('bridge.wallet')
   const [copied, setCopied] = useState(false)
+  const badge = useRef<HTMLDivElement>(null)
+  const actions = useRef<HTMLDivElement>(null)
+  const disconnectable = !!onDisconnect
+
+  // The actions' full width, for the row to keep reserved (bridge.css). Offsets ignore the slide-in transform.
+  useLayoutEffect(() => {
+    const inner = actions.current
+    const first = inner?.firstElementChild as HTMLElement | null
+    const last = inner?.lastElementChild as HTMLElement | null
+    if (!inner || !first || !last) return
+    const style = getComputedStyle(inner)
+    const width = last.offsetLeft + last.offsetWidth - first.offsetLeft + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
+    badge.current?.style.setProperty('--wallet-actions', `${width}px`)
+  }, [disconnectable])
 
   useEffect(() => {
     if (!copied) return
@@ -130,7 +144,7 @@ export const WalletAddressBadge = ({
   }
 
   return (
-    <div className="bridge-wallet-badge" role="group" tabIndex={0} aria-label={`${label}: ${address}`}>
+    <div ref={badge} className="bridge-wallet-badge" role="group" tabIndex={0} aria-label={`${label}: ${address}`}>
       {showChainIcon ? (
         <img className="bridge-wallet-chain" src={`/networks/${chain.toLowerCase()}.svg`} width={18} height={18} alt="" />
       ) : (
@@ -138,7 +152,7 @@ export const WalletAddressBadge = ({
       )}
       <span title={address}>{shortBridgeAddress(address)}</span>
       <div className="bridge-wallet-actions">
-        <div className="bridge-wallet-actions-inner">
+        <div ref={actions} className="bridge-wallet-actions-inner">
           <Tooltip content={t('copy')}>
             <button type="button" aria-label={t('copy')} onClick={copy}>
               {copied ? <Check size={16} /> : <Copy size={16} />}
