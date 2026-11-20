@@ -683,6 +683,24 @@
   opacity: 0.5;
 }
 
+/* @wizardconnect/react mounts its QR portal at z-index 40; Credenza/Dialog uses z-50. */
+body > div[style*='z-index: 40'],
+body > div[style*='z-index:40'] {
+  z-index: 60 !important;
+}
+
+.connect-wallet-icons {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+.connect-wallet-icons .connect-wallet-icon + .connect-wallet-icon {
+  margin-left: -10px;
+  box-shadow: 0 0 0 2px var(--sub-container-modal);
+}
+.connect-wallet-row:hover:not(:disabled) .connect-wallet-icons .connect-wallet-icon + .connect-wallet-icon {
+  box-shadow: 0 0 0 2px var(--btn-modal-hover);
+}
 .connect-wallet-icon {
   flex-shrink: 0;
   border-radius: 999px;

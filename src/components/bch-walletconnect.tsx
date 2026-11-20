@@ -7,6 +7,7 @@ import { AppConfig, BridgeConfig } from '@/config'
 import { type BchBinding, isValidBinding } from '@/lib/bch'
 import type { BchSigner } from '@/lib/bch-signing'
 import {
+  cashonizeWalletConnectUrl,
   firstP2pkhAddress,
   PAYTACA_EXTENSION_ID,
   paytacaExtensionUrl,
@@ -15,7 +16,9 @@ import {
   WC_BCH_CHAIN,
   WC_BCH_EVENTS,
   WC_BCH_METHODS,
-  walletConnectSigner
+  walletConnectSigner,
+  ZAPIT_EXTENSION_ID,
+  zapitExtensionUrl
 } from '@/lib/bch-walletconnect'
 
 // BCH wallets over WalletConnect v2 (Paytaca, Cashonize, Zapit). The SignClient keeps its own
@@ -28,9 +31,9 @@ export const WALLETCONNECT_SESSION_KEY = 'tc-bch-walletconnect'
 // 'verifying': the session is approved and the wallet is asked to sign the key-proof message.
 export type WalletConnectState = 'idle' | 'connecting' | 'verifying' | 'connected'
 
-// How the wallet is reached: any WalletConnect wallet (QR or link), or the Paytaca browser extension,
-// whose own WalletConnect page this app opens with the pairing link and again for every request.
-export type WalletConnectVia = 'walletconnect' | 'paytaca-extension'
+// How the wallet is reached: a QR/link, a named browser wallet opened with the pairing URI, or a
+// browser extension whose WalletConnect page pairs the URI (and is opened again for each request).
+export type WalletConnectVia = 'walletconnect' | 'paytaca-extension' | 'cashonize' | 'zapit-extension'
 
 interface SavedSession {
   topic: string
@@ -39,25 +42,58 @@ interface SavedSession {
 }
 
 const PAYTACA_WINDOW = 'paytaca-extension'
+const ZAPIT_WINDOW = 'zapit-extension'
+const CASHONIZE_WINDOW = 'cashonize-wallet'
 
-// The extension's icons are web-accessible, so one loads only where it is installed (Chromium).
-export const detectPaytacaExtension = () =>
+const detectExtensionIcon = (src: string) =>
   new Promise<boolean>(resolve => {
     const probe = new Image()
     probe.onload = () => resolve(true)
     probe.onerror = () => resolve(false)
-    probe.src = `chrome-extension://${PAYTACA_EXTENSION_ID}/icons/icon-16x16.png`
+    probe.src = src
   })
 
-// Opens (or reuses) a small window on the extension's WalletConnect page. A popup blocker can refuse
-// it outside a click; the dialog then offers a button that opens it.
-export const openPaytacaExtension = (uri?: string) => {
+// The extension's icons are web-accessible, so one loads only where it is installed (Chromium).
+export const detectPaytacaExtension = () => detectExtensionIcon(`chrome-extension://${PAYTACA_EXTENSION_ID}/icons/icon-16x16.png`)
+
+// Icon paths vary by Zapit build; any hit means the extension is installed.
+export const detectZapitExtension = async () => {
+  for (const path of [
+    `chrome-extension://${ZAPIT_EXTENSION_ID}/icons/icon-128.png`,
+    `chrome-extension://${ZAPIT_EXTENSION_ID}/icons/Icon-128.png`,
+    `chrome-extension://${ZAPIT_EXTENSION_ID}/icon-128.png`
+  ]) {
+    if (await detectExtensionIcon(path)) return true
+  }
+  return false
+}
+
+const openWindow = (url: string, name: string) => {
   try {
-    return !!window.open(paytacaExtensionUrl(uri), PAYTACA_WINDOW, 'popup,width=400,height=720')
+    return !!window.open(url, name, 'popup,width=420,height=720')
   } catch {
     return false
   }
 }
+
+// Opens (or reuses) a small window on the extension's WalletConnect page. A popup blocker can refuse
+// it outside a click; the dialog then offers a button that opens it.
+export const openPaytacaExtension = (uri?: string) => openWindow(paytacaExtensionUrl(uri), PAYTACA_WINDOW)
+
+export const openZapitExtension = (uri?: string) => openWindow(zapitExtensionUrl(uri), ZAPIT_WINDOW)
+
+// Cashonize is a web wallet: open its WalletConnect route with the pairing URI (wc2-bch-bcr).
+export const openCashonizeWallet = (uri?: string) => openWindow(cashonizeWalletConnectUrl(uri), CASHONIZE_WINDOW)
+
+// Opens the WalletConnect surface for the chosen via (extension or Cashonize tab).
+export const openWalletConnectVia = (via: WalletConnectVia, uri?: string) => {
+  if (via === 'paytaca-extension') return openPaytacaExtension(uri)
+  if (via === 'zapit-extension') return openZapitExtension(uri)
+  if (via === 'cashonize') return openCashonizeWallet(uri)
+  return false
+}
+
+export const walletConnectViaNeedsWindow = (via: WalletConnectVia) => via !== 'walletconnect'
 
 const readMarker = (): SavedSession | undefined => {
   try {
@@ -226,7 +262,7 @@ export function useBchWalletConnect() {
       })
       if (run !== attempt.current) return
       setUri(pairing)
-      if (how === 'paytaca-extension' && pairing) openPaytacaExtension(pairing)
+      if (pairing && walletConnectViaNeedsWindow(how)) openWalletConnectVia(how, pairing)
       const live = await approval()
       if (run !== attempt.current) {
         void instance.disconnect({ topic: live.topic, reason: USER_DISCONNECTED }).catch(() => {})
@@ -274,7 +310,7 @@ export function useBchWalletConnect() {
         if (!alive) reset()
         return alive
       }
-      const beforeRequest = via === 'paytaca-extension' ? () => void openPaytacaExtension() : undefined
+      const beforeRequest = walletConnectViaNeedsWindow(via) ? () => void openWalletConnectVia(via) : undefined
       setSigner(walletConnectSigner(instance, topic, { isLive, beforeRequest }))
     })
     return () => {

@@ -24,7 +24,10 @@ const CHAINS: Record<string, { caip: string; coin: number; native: string }> = {
   DOGE: { caip: 'bip122:00000000001a91e3dace36e2be3bf030', coin: 3, native: 'DOGE' },
   ETH: { caip: 'eip155:1', coin: 60, native: 'ETH' },
   GAIA: { caip: 'cosmos:cosmoshub-4', coin: 118, native: 'ATOM' },
+  GNO: { caip: 'eip155:100', coin: 60, native: 'XDAI' },
   LTC: { caip: 'bip122:12a765e31ffd4059bada1e25190f6e98', coin: 2, native: 'LTC' },
+  MAYA: { caip: 'cosmos:mayachain-mainnet-v1', coin: 931, native: 'CACAO' },
+  MONAD: { caip: 'eip155:143', coin: 60, native: 'MON' },
   OP: { caip: 'eip155:10', coin: 60, native: 'ETH' },
   POL: { caip: 'eip155:137', coin: 60, native: 'POL' },
   SOL: { caip: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp', coin: 501, native: 'SOL' },
@@ -39,7 +42,7 @@ const BASE58_TOKENS: Record<string, { namespace: string; contracts: string[] }> 
   SOL: { namespace: 'token', contracts: ['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB'] },
   TRON: { namespace: 'trc20', contracts: ['TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', 'TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8'] }
 }
-const EVM_PREFIXES = ['ARB', 'AVAX', 'BASE', 'BSC', 'ETH', 'OP', 'POL']
+const EVM_PREFIXES = ['ARB', 'AVAX', 'BASE', 'BSC', 'ETH', 'GNO', 'MONAD', 'OP', 'POL']
 
 // CAIP-19 id for a THORChain-style identifier (`ETH.ETH`, `BASE.USDC-0X8335…`, `SOL.USDC-EPjF…`); undefined when
 // ShapeShift does not carry the chain or the token cannot be named exactly.

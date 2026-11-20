@@ -134,3 +134,8 @@ export const isFeedOrder = (value: unknown): value is FeedOrder => {
 export const isTerminal = (state: OrderState) => ['completed', 'refunded', 'source_refunded', 'manual_review'].includes(state)
 // The Router buys any Cauldron token on a forward transfer, and sells one on a transfer back when sales are on.
 export const automaticEligible = (reverse: boolean, category: string | undefined, sales = false) => !!category && (!reverse || sales)
+// NEAR's quote deadline plus the Router's wait must finish before anyone can refund the contract deposit.
+export const nearPaysBeforeRefund = (
+  order: { contract?: { refundAfter: number }; maxWaitSeconds: number },
+  deadlineMs: number
+) => !order.contract || (Number.isFinite(deadlineMs) && deadlineMs + order.maxWaitSeconds * 1000 < order.contract.refundAfter * 1000)

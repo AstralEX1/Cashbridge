@@ -7,6 +7,7 @@ import { bindingFromPubkey } from '../src/lib/bch.ts'
 import { reviewBuild, sourcesOf } from '../src/lib/cauldron.ts'
 import { signInWallet, SignCancelled, SignDeclined, SignSessionLost, SignTimedOut, SignUndelivered } from '../src/lib/bch-signing.ts'
 import {
+  cashonizeWalletConnectUrl,
   firstP2pkhAddress,
   keyProofMessage,
   paytacaExtensionUrl,
@@ -16,7 +17,8 @@ import {
   signedHexOf,
   signedMessageHash,
   walletConnectSignParams,
-  walletConnectSigner
+  walletConnectSigner,
+  zapitExtensionUrl
 } from '../src/lib/bch-walletconnect.ts'
 import { otherKey, privateKey, pubkey, PUSD, signBuild, swapBuild } from './fixtures/bridge-fixtures.mjs'
 
@@ -180,11 +182,14 @@ test('a connection already gone is reported before anything reaches a wallet', a
   assert.equal(wallet.calls.length, 1)
 })
 
-test('the Paytaca extension is opened on its WalletConnect page, with the pairing link and before each request', async () => {
+test('Paytaca, Cashonize and Zapit WalletConnect deep links carry the pairing URI', async () => {
   assert.equal(paytacaExtensionUrl(), 'chrome-extension://pakphhpnneopheifihmjcjnbdbhaaiaa/www/index.html#/apps/wallet-connect')
+  assert.equal(cashonizeWalletConnectUrl(), 'https://cashonize.com/#/wc')
+  assert.equal(zapitExtensionUrl(), 'chrome-extension://fccgmnglbhajioalokbcidhcaikhlcpm/index.html#/wallet-connect')
   const uri = 'wc:ab12@2?relay-protocol=irn&symKey=00ff'
-  const url = paytacaExtensionUrl(uri)
-  assert.equal(new URLSearchParams(url.split('?')[1]).get('uri'), uri)
+  assert.equal(new URLSearchParams(paytacaExtensionUrl(uri).split('?')[1]).get('uri'), uri)
+  assert.equal(new URLSearchParams(cashonizeWalletConnectUrl(uri).split('?')[1]).get('uri'), uri)
+  assert.equal(new URLSearchParams(zapitExtensionUrl(uri).split('?')[1]).get('uri'), uri)
 
   const order = []
   const wallet = specWallet()

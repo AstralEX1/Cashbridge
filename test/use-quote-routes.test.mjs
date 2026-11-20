@@ -11,6 +11,7 @@ const quoteSource = readFileSync(new URL('../src/hooks/use-quote.ts', import.met
 const compareSource = readFileSync(new URL('../src/components/swap/route-compare.tsx', import.meta.url), 'utf8')
 const flowToastsSource = readFileSync(new URL('../src/components/swap/flow-toasts.tsx', import.meta.url), 'utf8')
 const pusdSource = readFileSync(new URL('../src/components/swap/pusd-swap.tsx', import.meta.url), 'utf8')
+const prepareSource = readFileSync(new URL('../src/components/swap/auto-bridge-confirm.tsx', import.meta.url), 'utf8')
 
 const usdc = {
   assetId: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near',
@@ -71,4 +72,13 @@ test('bestRoute still prefers the higher payout and THORChain on a tie', () => {
   assert.equal(bestRoute({ thorchain: thor, near: { expectedBuyAmount: '1' } }), 'thorchain')
   assert.equal(bestRoute({ thorchain: thor }), 'thorchain')
   assert.equal(bestRoute({ near: { expectedBuyAmount: '2' } }), 'near')
+})
+
+test('Automatic prepare keeps a selected NEAR route on NEAR (no silent THOR fallback)', () => {
+  const nearBranch = prepareSource.match(/if \(provider === ProviderName\.NEAR\) \{([\s\S]*?)\n  \}\n\n  const quotes = await getQuotes/)?.[1]
+  assert.ok(nearBranch, 'NEAR prepare must return before getQuotes')
+  assert.doesNotMatch(nearBranch, /getQuotes/)
+  assert.match(nearBranch, /nearPaysBeforeRefund/)
+  assert.match(nearBranch, /openOrder\(\)/)
+  assert.match(nearBranch, /return \{ reference: \{ \.\.\.ref, order: result\.order \}, route: result\.route \}/)
 })

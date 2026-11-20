@@ -24,12 +24,12 @@ import { bchAddressProblem } from '@/lib/bch'
 import { toBaseUnits } from '@/lib/bridge'
 import { firstLegSeconds } from '@/lib/bridge-summary'
 import { getQuotes, isBridgeRoute } from '@/lib/api'
-import { assertAutomaticSaved, createAutomaticOrder, OrderRequestError, orderRequest, RouterUnavailableError, startAutomaticSource } from '@/lib/auto-bridge-client'
+import { assertAutomaticSaved, createAutomaticOrder, orderRequest, RouterUnavailableError, startAutomaticSource } from '@/lib/auto-bridge-client'
 import { getNearQuote, isNearRoute, nearSlippageBps, submitNearDeposit } from '@/lib/near-intents'
 import { getUSwap } from '@/lib/wallets'
 import { resolvePriceImpact } from '@/lib/swap-helpers'
 import { autoBridgeStore, type SavedAutoOrder } from '@/store/auto-bridge-store'
-import type { AutomaticSource, OrderIntent } from '@/lib/auto-bridge-contract'
+import { nearPaysBeforeRefund, type AutomaticSource, type OrderIntent } from '@/lib/auto-bridge-contract'
 
 export interface PreparedAutomatic {
   reference: SavedAutoOrder
@@ -42,7 +42,8 @@ const sameIntent = (a: OrderIntent | undefined, b: OrderIntent) =>
 // Runs behind the main button's "Preparing swap": saves the order reference (before any request, so a
 // lost answer is recoverable), creates the order and takes an executable quote to its deposit
 // address. An unpaid order for the same transfer is reused rather than created again. The BCH
-// fallback is the recipient itself.
+// fallback is the recipient itself. When the user picked NEAR Intents, that route is prepared —
+// never swapped for a THORChain quote behind the scenes.
 export const prepareAutomatic = async ({
   source,
   token,
@@ -68,58 +69,71 @@ export const prepareAutomatic = async ({
   const reusable = autoBridgeStore
     .getState()
     .orders.find(ref => !ref.sourceAttempted && sameIntent(ref.intent, intent) && (!ref.order || (ref.order.state === 'awaiting_deposit' && !ref.order.sourceHash && !ref.order.nearDepositAddress)))
-  const ref: SavedAutoOrder = reusable ?? { id: crypto.randomUUID(), capability: (crypto.randomUUID() + crypto.randomUUID()).replaceAll('-', ''), createdAt: Date.now(), intent, token }
-  autoBridgeStore.getState().save(ref)
-  assertAutomaticSaved(ref)
-  let order = ref.order ?? (await createAutomaticOrder(ref))
-  if (order.apiVersion !== 2 || order.recoveryRequired) throw new Error(messages.serviceUpdate)
-  autoBridgeStore.getState().patch(ref.id, { order })
-  const valid = (candidate?: QuoteResponseRoute): candidate is QuoteResponseRoute =>
-    !!candidate && isBridgeRoute(candidate, { sellAsset: source.asset, destinationAddress: order.depositAddress }) && new USwapNumber(candidate.sellAmount).eqValue(source.amount)
-  let route: QuoteResponseRoute | undefined
+
+  const openOrder = async (reuse?: SavedAutoOrder) => {
+    const reference: SavedAutoOrder =
+      reuse ?? { id: crypto.randomUUID(), capability: (crypto.randomUUID() + crypto.randomUUID()).replaceAll('-', ''), createdAt: Date.now(), intent, token }
+    autoBridgeStore.getState().save(reference)
+    assertAutomaticSaved(reference)
+    const created = reference.order ?? (await createAutomaticOrder(reference))
+    if (created.apiVersion !== 2 || created.recoveryRequired) throw new Error(messages.serviceUpdate)
+    autoBridgeStore.getState().patch(reference.id, { order: created })
+    return { reference, order: created }
+  }
+
+  let { reference: ref, order } = await openOrder(reusable)
+  const validFor = (depositAddress: string, candidate?: QuoteResponseRoute): candidate is QuoteResponseRoute =>
+    !!candidate &&
+    isBridgeRoute(candidate, { sellAsset: source.asset, destinationAddress: depositAddress }) &&
+    new USwapNumber(candidate.sellAmount).eqValue(source.amount)
+
   if (provider === ProviderName.NEAR) {
-    const near = await getNearQuote({
-      sellAsset: source.asset,
-      buyAsset: BridgeConfig.buyAsset,
-      sellAmount: source.amount,
-      sourceAddress: source.address,
-      recipient: order.depositAddress,
-      refundTo: source.address,
-      dry: false,
-      slippageBps: nearSlippageBps(slippage)
-    })
-    // A reused contract order may be near its refund time: NEAR's payout and the Router's wait must both end before anyone can expire it.
-    const deadline = near?.near.quote.deadline ? Date.parse(near.near.quote.deadline) : NaN
-    if (near && valid(near) && (!order.contract || deadline + order.maxWaitSeconds * 1000 < order.contract.refundAfter * 1000)) {
-      // The Router learns the deposit address before Confirm, so it finds the payout even if this tab closes. A Router
-      // that does not take NEAR orders answers 400, and the transfer goes through THORChain instead.
-      const depositAddress = near.near.quote.depositAddress!
-      try {
-        const noted = await orderRequest(ref, 'POST', { nearDepositAddress: depositAddress })
-        if (noted.nearDepositAddress !== depositAddress) throw new Error(messages.noRoute)
-        order = noted
-        autoBridgeStore.getState().patch(ref.id, { order })
-        route = near
-      } catch (error) {
-        if (!(error instanceof OrderRequestError && error.status === 400)) throw error
-      }
+    const attachNear = async (reference: SavedAutoOrder, current: typeof order) => {
+      const near = await getNearQuote({
+        sellAsset: source.asset,
+        buyAsset: BridgeConfig.buyAsset,
+        sellAmount: source.amount,
+        sourceAddress: source.address,
+        recipient: current.depositAddress,
+        refundTo: source.address,
+        dry: false,
+        slippageBps: nearSlippageBps(slippage)
+      })
+      if (!near?.near.quote.depositAddress || !validFor(current.depositAddress, near)) return { status: 'unavailable' as const }
+      const deadline = near.near.quote.deadline ? Date.parse(near.near.quote.deadline) : NaN
+      // A reused draft may be too close to refund for NEAR's window; caller opens a fresh order.
+      if (!nearPaysBeforeRefund(current, deadline)) return { status: 'deadline' as const }
+      const depositAddress = near.near.quote.depositAddress
+      // The Router learns the deposit address before Confirm, so it finds the payout even if this tab closes.
+      const noted = await orderRequest(reference, 'POST', { nearDepositAddress: depositAddress })
+      if (noted.nearDepositAddress !== depositAddress) throw new Error(messages.noRoute)
+      autoBridgeStore.getState().patch(reference.id, { order: noted })
+      return { status: 'ok' as const, order: noted, route: near }
     }
+
+    let result = await attachNear(ref, order)
+    // Stale unpaid draft: open a new Router order so NEAR still fits before refundAfter.
+    if (result.status === 'deadline') {
+      ;({ reference: ref, order } = await openOrder())
+      result = await attachNear(ref, order)
+    }
+    if (result.status !== 'ok') throw new Error(messages.noRoute)
+    return { reference: { ...ref, order: result.order }, route: result.route }
   }
-  if (!route) {
-    const quotes = await getQuotes({
-      buyAsset: BridgeConfig.buyAsset,
-      sellAsset: source.asset,
-      sellAmount: source.amount,
-      sourceAddress: source.address,
-      destinationAddress: order.depositAddress,
-      refundAddress: source.address,
-      dry: false,
-      slippage: slippage ?? 99,
-      providers: AppConfig.providers
-    })
-    route = quotes.find(q => q.providers[0] === provider) ?? quotes[0]
-  }
-  if (!valid(route)) throw new Error(messages.noRoute)
+
+  const quotes = await getQuotes({
+    buyAsset: BridgeConfig.buyAsset,
+    sellAsset: source.asset,
+    sellAmount: source.amount,
+    sourceAddress: source.address,
+    destinationAddress: order.depositAddress,
+    refundAddress: source.address,
+    dry: false,
+    slippage: slippage ?? 99,
+    providers: AppConfig.providers
+  })
+  const route = quotes.find(q => q.providers[0] === provider) ?? quotes[0]
+  if (!validFor(order.depositAddress, route)) throw new Error(messages.noRoute)
   return { reference: { ...ref, order }, route }
 }
 

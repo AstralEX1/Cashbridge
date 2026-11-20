@@ -39,7 +39,16 @@ const CHAINS: [string, string, boolean?][] = [
   ['pol', 'Polygon', true],
   ['zec', 'Zcash'],
   ['gaia', 'Cosmos'],
-  ['thor', 'THORChain']
+  ['thor', 'THORChain'],
+  ['near', 'NEAR', true],
+  ['gno', 'Gnosis', true],
+  ['bera', 'Berachain', true],
+  ['sui', 'Sui', true],
+  ['ton', 'TON', true],
+  ['ada', 'Cardano', true],
+  ['dash', 'Dash', true],
+  ['monad', 'Monad', true],
+  ['xlayer', 'X Layer', true]
 ].filter(([, , nearOnly]) => NEAR_INTENTS || !nearOnly) as [string, string, boolean?][]
 
 const ROUTES = [
@@ -64,6 +73,7 @@ const WALLETS: [string, string?][] = [
   ['Selene', '/wallets/selene.png'],
   ['Paytaca', '/wallets/paytaca.png'],
   ['Cashonize', '/wallets/cashonize.png'],
+  ['Zapit', '/wallets/zapit.png'],
   ['MetaMask', '/wallets/metamask.svg'],
   ['Rabby', '/wallets/rabby.svg'],
   ['Phantom', '/wallets/phantom.svg'],

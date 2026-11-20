@@ -53,7 +53,7 @@ export default function Page() {
           <p>
             Use <strong>Connect wallet</strong> on the sending side and <strong>Connect BCH wallet</strong> on the receiving side. The main button at the bottom of the form shows which one is still missing.
           </p>
-          <Shot name="connect-bch" alt="The Connect BCH wallet dialog offering Selene over WizardConnect and Paytaca or Cashonize over WalletConnect" size="md" caption="Choose how your BCH wallet connects. Selene uses WizardConnect, Paytaca and Cashonize use WalletConnect." />
+          <Shot name="connect-bch" alt="The Connect BCH wallet dialog listing WizardConnect, Selene, Paytaca, Cashonize and Zapit" size="md" caption="Choose your BCH wallet. WizardConnect, Selene and Paytaca use WizardConnect (Paytaca prefers its extension when installed); Cashonize and Zapit use WalletConnect." />
           <p>
             Wallets reconnect on their own the next time you visit. Details for each wallet are in <Link href="/docs/wallets">Wallets</Link>.
           </p>

@@ -30,13 +30,13 @@ export default function Page() {
           </tr>
           <tr>
             <td>Bitcoin Cash</td>
-            <td>Selene</td>
-            <td>WizardConnect, with a QR code or a link</td>
+            <td>WizardConnect, Selene, Paytaca</td>
+            <td>WizardConnect, with a QR code or a link; Paytaca uses its browser extension when installed</td>
           </tr>
           <tr>
             <td>Bitcoin Cash</td>
-            <td>Paytaca, Cashonize</td>
-            <td>WalletConnect, with a QR code, a link or the Paytaca extension</td>
+            <td>Cashonize, Zapit</td>
+            <td>WalletConnect: Cashonize opens in the browser; Zapit uses its extension when installed, otherwise a QR code or link</td>
           </tr>
         </tbody>
       </table>
@@ -66,17 +66,17 @@ export default function Page() {
       <p>
         Press <strong>Connect BCH wallet</strong> and choose how the wallet connects. The BCH wallet receives the BCH from THORChain and signs the Cauldron swap, so it must support CashTokens when you receive PUSD or another token.
       </p>
-      <h3>Selene, over WizardConnect</h3>
+      <h3>WizardConnect, Selene and Paytaca</h3>
       <p>
-        Choose <strong>Selene</strong>. Scan the QR code with the wallet or open the link in it, then approve the connection. Keep the Selene app open while you sign. The request waits there until you answer it.
+        Choose <strong>WizardConnect</strong>, <strong>Selene</strong> or <strong>Paytaca</strong>. Scan the QR code with the wallet or open the link in it, then approve the connection. Keep the wallet app open while you sign. The request waits there until you answer it. Paytaca and Selene both speak WizardConnect; Cauldron and the wallet docs recommend it when the wallet supports it.
+      </p>
+      <p>
+        If the Paytaca browser extension is installed, choosing <strong>Paytaca</strong> opens the extension on its WalletConnect screen instead of a WizardConnect QR code.
       </p>
       <Shot name="connect-wizardconnect" alt="The WizardConnect dialog with a QR code to scan with a WizardConnect wallet" size="sm" caption="Scan the code with the wallet. The code in this image is blurred; yours is live." />
-      <h3>Paytaca and Cashonize, over WalletConnect</h3>
+      <h3>Cashonize and Zapit, over WalletConnect</h3>
       <p>
-        Choose <strong>Paytaca · Cashonize</strong>. Scan the QR code with the wallet, or press <strong>Copy link</strong> and paste it into the wallet&apos;s WalletConnect screen. On a phone, <strong>Open wallet</strong> jumps to the app. Your wallet asks you to approve a short connection message. It proves that the address is yours and sends nothing.
-      </p>
-      <p>
-        If you use the Paytaca browser extension, an extra row <strong>Paytaca · Browser extension</strong> appears. It opens the extension straight on its WalletConnect screen, so there is nothing to copy.
+        Choose <strong>Cashonize</strong> to open cashonize.com on its WalletConnect screen with the pairing link already filled in. Choose <strong>Zapit</strong> to open its browser extension when it is installed, or to show a QR code and link otherwise. On a phone, <strong>Open wallet</strong> jumps to the app. Your wallet asks you to approve a short connection message. It proves that the address is yours and sends nothing.
       </p>
       <Callout kind="note" title="Paytaca sends the transaction itself">
         Paytaca broadcasts a transaction after you approve it, even though Cash Bridge only asks for a signature. Cash Bridge allows for this: it follows the transaction by its id, and broadcasting the same signed transaction a second time does nothing extra.

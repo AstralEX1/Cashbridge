@@ -103,7 +103,7 @@ export default function Page() {
           <tr>
             <th>Wallets</th>
             <td>
-              Source: browser wallets or WalletConnect. BCH: Selene (WizardConnect), Paytaca and Cashonize (WalletConnect). See <Link href="/docs/wallets">Wallets</Link>.
+              Source: browser wallets or WalletConnect. BCH: WizardConnect, Selene and Paytaca; Cashonize and Zapit over WalletConnect. See <Link href="/docs/wallets">Wallets</Link>.
             </td>
           </tr>
           <tr>

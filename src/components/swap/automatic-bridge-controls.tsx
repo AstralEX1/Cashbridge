@@ -14,13 +14,11 @@ import { automaticPreference } from '@/store/auto-bridge-store'
 import { useSwapStore } from '@/store/swap-store'
 import { bchAddressProblem } from '@/lib/bch'
 
-const ROUTER_HINT_ID = 'bridge-router-hint'
-
 // Cashbridge Router selector: Router, the service executes the BCH-to-token step (and plain BCH runs as
 // before); Manual, every step is signed in the user's own wallets. The choice keeps its position on plain BCH.
 export const RouterSelector = () => {
   const t = useTranslations('automatic')
-  const { routerAvailable, routerOn, automatic } = useAutomaticBridge()
+  const { routerAvailable, routerOn } = useAutomaticBridge()
   const setMode = automaticPreference(state => state.setMode)
   // The saved mode is only known after hydration: until then the selector is hidden, so a page load never shows Manual flip to Router.
   const hydrated = useAutomaticHydrated()
@@ -29,7 +27,6 @@ export const RouterSelector = () => {
       className="bridge-router"
       role="group"
       aria-label={t('router')}
-      aria-describedby={automatic ? ROUTER_HINT_ID : undefined}
       data-disabled={!routerAvailable || undefined}
       data-hydrated={hydrated || undefined}
     >
@@ -41,7 +38,7 @@ export const RouterSelector = () => {
       </button>
     </div>
   )
-  return routerAvailable ? selector : <Tooltip content={t('routerUnavailable')}>{selector}</Tooltip>
+  return <Tooltip content={t(routerAvailable ? 'routerHint' : 'routerUnavailable')}>{selector}</Tooltip>
 }
 
 // Free pairs execute through THORChain; NEAR Intents retains the established BCH bridge flow.
@@ -65,18 +62,12 @@ export const OpenNetworksToggle = () => {
   )
 }
 
-// What the Router does for the user, shown under the selector while it converts to a token
-// (plain BCH has no second transaction to talk about).
+// Any-network reminder under the tools row (the Router explanation lives on the selector tooltip).
 export const RouterHint = () => {
   const t = useTranslations('automatic')
-  const { automatic } = useAutomaticBridge()
   const openNetworks = useSwapStore(state => state.openNetworks)
-  if (openNetworks) return <p className="bridge-router-hint">{t('openNetworksHint')}</p>
-  return automatic ? (
-    <p id={ROUTER_HINT_ID} className="bridge-router-hint">
-      {t('routerHint')}
-    </p>
-  ) : null
+  if (!openNetworks) return null
+  return <p className="bridge-router-hint">{t('openNetworksHint')}</p>
 }
 
 // Whether the paste field under the BCH badge is open. An invalid typed address keeps it open.

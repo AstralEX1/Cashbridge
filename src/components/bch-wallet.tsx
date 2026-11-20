@@ -9,8 +9,8 @@ import { type BchBinding, BINDING_PATHS, type BindingPath, bindingFromPubkey, is
 import type { BchSigner } from '@/lib/bch-signing'
 import { useActiveBridge } from '@/store/transaction-store'
 
-// The user's own BCH wallet, connected over WizardConnect (Selene and others) or, when a WalletConnect
-// project ID is configured, over WalletConnect v2 (Paytaca, Cashonize; see bch-walletconnect.tsx).
+// The user's own BCH wallet, connected over WizardConnect (Selene, Paytaca, …) or, when a WalletConnect
+// project ID is configured, over WalletConnect v2 (Cashonize, Zapit, Paytaca extension; see bch-walletconnect.tsx).
 // Only one connection is live at a time. It receives the first leg's BCH and signs the second leg. The public binding (key, path, index, addresses) is remembered in
 // localStorage. The relay session stays remembered until the user or the wallet disconnects.
 // A restored connection is still checked to be the same key.
@@ -276,7 +276,7 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
       wc2.clearError()
       if (kind !== 'wizardconnect') {
         if (wc.state !== 'idle') void disconnectWizard()
-        void wc2.connect(kind === 'paytaca-extension' ? 'paytaca-extension' : 'walletconnect')
+        void wc2.connect(kind)
         return
       }
       // Also a remembered session that could not be restored this visit, so it does not return on reload.
@@ -383,7 +383,8 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
       {children}
       {wc.uri && wc.qrUri && (
         <WizardConnectQRDialog
-          show={wc.state === 'connecting'}
+          // Wait until the chooser Credenza (z-50) has closed; the library portal is z-40.
+          show={wc.state === 'connecting' && !choosing}
           onClose={() => disconnect()}
           uri={wc.uri}
           qrUri={wc.qrUri}
@@ -392,7 +393,7 @@ export function BchWalletProvider({ children }: { children: ReactNode }) {
         />
       )}
       <BchWalletChooser open={choosing} onOpenChange={setChoosing} onChoose={choose} />
-      <WalletConnectDialog state={wc2.state} uri={wc2.uri} extension={wc2.via === 'paytaca-extension'} onClose={() => void wc2.disconnect()} />
+      <WalletConnectDialog state={wc2.state} uri={wc2.uri} via={wc2.via} onClose={() => void wc2.disconnect()} />
     </BchWalletContext.Provider>
   )
 }

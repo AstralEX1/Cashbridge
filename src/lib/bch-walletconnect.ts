@@ -179,3 +179,13 @@ export const proveWalletConnectKey = async (client: WalletConnectRequester, topi
 export const PAYTACA_EXTENSION_ID = 'pakphhpnneopheifihmjcjnbdbhaaiaa'
 export const paytacaExtensionUrl = (uri?: string) =>
   `chrome-extension://${PAYTACA_EXTENSION_ID}/www/index.html#/apps/wallet-connect${uri ? `?uri=${encodeURIComponent(uri)}` : ''}`
+
+// Cashonize is a browser wallet: the WC2-BCH reference opens its WalletConnect screen with the
+// pairing URI (cashonize.com/#/wc?uri=…), so there is nothing to copy.
+export const cashonizeWalletConnectUrl = (uri?: string) =>
+  `https://cashonize.com/#/wc${uri ? `?uri=${encodeURIComponent(uri)}` : ''}`
+
+// Zapit's browser extension pairs the same way as Paytaca's: its WalletConnect page accepts `uri`.
+export const ZAPIT_EXTENSION_ID = 'fccgmnglbhajioalokbcidhcaikhlcpm'
+export const zapitExtensionUrl = (uri?: string) =>
+  `chrome-extension://${ZAPIT_EXTENSION_ID}/index.html#/wallet-connect${uri ? `?uri=${encodeURIComponent(uri)}` : ''}`

@@ -16,7 +16,16 @@ globalThis.localStorage = {
 const { autoBridgeStore } = await import('../src/store/auto-bridge-store.ts')
 const { startAutomaticSource, restoreAutomaticOrder, pollAutomaticOrders, createAutomaticOrder, orderRequest, RouterUnavailableError, OrderRequestError } = await import('../src/lib/auto-bridge-client.ts')
 const { automaticCompletion, automaticTransactions } = await import('../src/lib/auto-bridge-summary.ts')
-const { automaticEligible } = await import('../src/lib/auto-bridge-contract.ts')
+const { automaticEligible, nearPaysBeforeRefund } = await import('../src/lib/auto-bridge-contract.ts')
+
+test('NEAR payout must finish before the contract refund window', () => {
+  const maxWaitSeconds = 1800
+  const refundAfter = 1_700_000_000
+  assert.equal(nearPaysBeforeRefund({ maxWaitSeconds }, refundAfter * 1000 - 60_000), true)
+  assert.equal(nearPaysBeforeRefund({ contract: { refundAfter }, maxWaitSeconds }, refundAfter * 1000 - maxWaitSeconds * 1000 - 1), true)
+  assert.equal(nearPaysBeforeRefund({ contract: { refundAfter }, maxWaitSeconds }, refundAfter * 1000 - maxWaitSeconds * 1000), false)
+  assert.equal(nearPaysBeforeRefund({ contract: { refundAfter }, maxWaitSeconds }, Number.NaN), false)
+})
 
 test('an unreachable, slow or failing worker reads as Cashbridge Router unavailable; a refused request keeps its message', async t => {
   const reference = { id: randomUUID(), capability: randomBytes(32).toString('hex') }
