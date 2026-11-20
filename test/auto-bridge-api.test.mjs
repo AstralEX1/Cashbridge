@@ -233,6 +233,21 @@ test('a NEAR Intents deposit address is noted once, before the source hash, only
     assert.equal(on.store.get(on.id).nearDepositAddress, near)
     assert.equal((await attachSource(request(on.cap, { nearDepositAddress: near, shapeshiftQuoteId: 'late' }), on.id, on.service)).status, 409, 'the route is set once')
 
+    // TON friendly addresses are base64url, so a fresh quote may contain either symbol.
+    for (const deposit of ['UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ', 'UQD7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-_v7-xzR']) {
+      const ton = open(true)
+      try {
+        for (const invalid of [` ${deposit}`, `${deposit}/`, 'a'.repeat(121)])
+          assert.equal((await attachSource(request(ton.cap, { nearDepositAddress: invalid }), ton.id, ton.service)).status, 400)
+        const noted = await attachSource(request(ton.cap, { nearDepositAddress: deposit }), ton.id, ton.service)
+        assert.equal(noted.status, 200, 'a TON deposit is accepted regardless of its base64url characters')
+        assert.equal((await noted.json()).nearDepositAddress, deposit, 'preserve the exact address for 1Click status lookup')
+        assert.equal((await attachSource(request(ton.cap, { nearDepositAddress: near }), ton.id, ton.service)).status, 409)
+      } finally {
+        ton.store.close()
+      }
+    }
+
     const shapeshift = open(true)
     assert.equal((await attachSource(request(shapeshift.cap, { shapeshiftQuoteId: 'q-1' }), shapeshift.id, shapeshift.service)).status, 400, 'a quote id needs its address')
     assert.equal((await attachSource(request(shapeshift.cap, { nearDepositAddress: near, shapeshiftQuoteId: 'bad id!' }), shapeshift.id, shapeshift.service)).status, 400)
