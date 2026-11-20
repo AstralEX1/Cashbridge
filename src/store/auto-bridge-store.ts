@@ -77,7 +77,13 @@ interface AutomaticPreference {
   setMode: (mode: 'manual' | 'automatic') => void
   setRecipient: (recipient: string) => void
 }
+// Every transfer the order contract can take goes through it; Manual is the user's own pick, kept from version 1 on.
 export const automaticPreference = create<AutomaticPreference>()(persist(
-  set => ({ mode: 'manual', recipient: '', setMode: mode => set({ mode }), setRecipient: recipient => set({ recipient }) }),
-  { name: 'cashbridge-execution', partialize: state => ({ mode: state.mode, recipient: state.recipient }) }
+  set => ({ mode: 'automatic', recipient: '', setMode: mode => set({ mode }), setRecipient: recipient => set({ recipient }) }),
+  {
+    name: 'cashbridge-execution',
+    version: 1,
+    partialize: state => ({ mode: state.mode, recipient: state.recipient }),
+    migrate: saved => ({ recipient: (saved as { recipient?: string } | undefined)?.recipient ?? '', mode: 'automatic' as const })
+  }
 ))
