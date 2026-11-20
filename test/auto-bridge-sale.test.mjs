@@ -376,7 +376,15 @@ test('the sale API checks a routed sale against 1Click: recipient, refund, asset
     })
   const later = Date.now() + 4 * 60 * 60_000
   let quote = oneClick('shapeshift', { deadline: later, amount: '2900000' })
-  const near = { status: async () => quote, tokens: async () => [{ assetId: ETH_ID, decimals: 18, blockchain: 'eth', symbol: 'ETH', price: 1 }] }
+  const HOT_ETH = 'nep245:v2_1.omni.hot.tg:1_'
+  const near = {
+    status: async () => quote,
+    tokens: async () => [
+      { assetId: ETH_ID, decimals: 18, blockchain: 'eth', symbol: 'ETH', price: 1 },
+      { assetId: HOT_ETH, decimals: 18, blockchain: 'eth', symbol: 'ETH(DEPRECATED)', price: 1 },
+      { assetId: 'nep141:arb.omft.near', decimals: 18, blockchain: 'arb', symbol: 'ETH', price: 1 }
+    ]
+  }
   const service = { store, quote: async () => ({ output: 3_000_000n }), near }
   const body = (overrides = {}) => ({ id: randomUUID(), ...intent, sale: { ...routedSale('shapeshift'), depositSats: '2900000', ...overrides } })
   try {
@@ -393,6 +401,10 @@ test('the sale API checks a routed sale against 1Click: recipient, refund, asset
     quote = { ...oneClick('shapeshift', { deadline: later, amount: '2900000' }) }
     quote.quoteResponse.quoteRequest.destinationAsset = 'nep141:other.near'
     assert.equal((await createOrder(request(body()), service)).status, 409, 'another asset')
+    quote.quoteResponse.quoteRequest.destinationAsset = 'nep141:arb.omft.near'
+    assert.equal((await createOrder(request(body()), service)).status, 409, 'the same ticker on another chain')
+    quote.quoteResponse.quoteRequest.destinationAsset = HOT_ETH
+    assert.equal((await createOrder(request(body()), service)).status, 201, "a retired 1Click row of the same coin, as ShapeShift quotes BSC USDT")
     quote = oneClick('near', { deadline: later, minAmountIn: '2939000' })
     assert.equal((await createOrder(request({ id: randomUUID(), ...intent, sale: routedSale('near') }), service)).status, 409, 'asks more than the sale guarantees')
     quote = oneClick('near', { deadline: later, minAmountIn: '2900000' })

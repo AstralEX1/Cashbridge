@@ -9,7 +9,7 @@ import { REFUND_FEE_CAP } from '@/lib/router-contract'
 import { OrderError, orderCategory, positiveAmount, type OrderIntent } from '@/server/auto-bridge/types'
 import { SALE_KEYS, SALE_ROUTE_KEYS, isScanAddress, type SaleIntent } from '@/lib/auto-bridge-contract'
 import { addressToLockingBytecode } from '@/lib/bch'
-import { findNearToken, getNearStatus, getNearTokens, submitNearDeposit, type NearStatusResponse, type OneClickToken } from '@/lib/near-intents'
+import { getNearStatus, getNearTokens, nearTokenFor, submitNearDeposit, type NearStatusResponse, type OneClickToken } from '@/lib/near-intents'
 import { SALE_ROUTE_OPEN_MS, saleRouteProblem } from '@/server/auto-bridge/sale-route'
 import type { OrderStore } from '@/server/auto-bridge/store'
 
@@ -151,7 +151,9 @@ export async function createOrder(req: NextRequest, service: Service) {
         const [status, tokens] = await Promise.all([near.status(sale.vaultAddress), near.tokens()]).catch(() => {
           throw new OrderError(503, 'NEAR Intents is unavailable; try again shortly')
         })
-        const problem = saleRouteProblem(status, sale, { refundScript: refundScript ?? '', minSats: floor }, Date.now() + SALE_ROUTE_OPEN_MS, findNearToken(tokens, sale.buyAsset)?.assetId ?? '')
+        // Any 1Click row of the same chain and contract: ShapeShift quotes some tokens through a retired duplicate row.
+        const destination = nearTokenFor(tokens, status?.quoteResponse?.quoteRequest?.destinationAsset, sale.buyAsset)?.assetId ?? ''
+        const problem = saleRouteProblem(status, sale, { refundScript: refundScript ?? '', minSats: floor }, Date.now() + SALE_ROUTE_OPEN_MS, destination)
         if (problem) throw new OrderError(409, `${problem}; get a fresh quote`)
       }
     } else {
