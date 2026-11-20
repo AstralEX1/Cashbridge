@@ -2,7 +2,7 @@ import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import { chmodSync, mkdirSync, existsSync, readFileSync, openSync, writeSync, fsyncSync, closeSync, renameSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { addressToLockingBytecode, decodeTx, type VerifiedOutput } from '@/lib/bch'
+import { addressToLockingBytecode, bchAddressProblem, decodeTx, type VerifiedOutput } from '@/lib/bch'
 import { binToHex, hexToBin, secp256k1, utf8ToBin } from '@bitauth/libauth'
 import { MAX_MEMO_BYTES } from '@/lib/thorchain-deposit'
 import { REFUND_AFTER_SECONDS, SALE_EXACT_RESERVE } from '@/lib/router-contract'
@@ -189,6 +189,8 @@ export class OrderStore {
     const recipientScript = addressToLockingBytecode(intent.recipientAddress)
     const refundScript = addressToLockingBytecode(intent.refundAddress)
     if (!recipientScript || !refundScript) throw new OrderError(400, 'Valid mainnet BCH recipient and fallback addresses are required')
+    // CashTokens: token-aware software must refuse to send tokens to an address without explicit token support.
+    if (!intent.sale && bchAddressProblem(intent.recipientAddress, true)) throw new OrderError(400, 'The token recipient must be a token-aware BCH address (z…)')
     if (intent.sale) {
       const { sale } = intent
       if (!this.saleOrders) throw new OrderError(400, 'Transfers back from BCH are not available through the Cashbridge Router')

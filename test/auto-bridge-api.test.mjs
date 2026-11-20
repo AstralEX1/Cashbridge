@@ -23,7 +23,7 @@ test('order API fixes the minimum before signing, authenticates status and rejec
   const id = randomUUID(),
     cap = randomBytes(32).toString('hex'),
     address = bindingFromPubkey(pubkey, 0).cashAddress
-  const intent = { id, recipientAddress: address, refundAddress: address, expectedBchSats: '1000000' }
+  const intent = { id, recipientAddress: bindingFromPubkey(pubkey, 0).tokenAddress, refundAddress: address, expectedBchSats: '1000000' }
   const request = (body, token = cap, method = 'POST') =>
     new NextRequest('https://bridge.example/api/auto-bridge/orders', {
       method,
@@ -78,7 +78,7 @@ test('public Next routes reach the private worker socket and cannot mutate order
   const id = randomUUID(),
     capability = randomBytes(32).toString('hex'),
     address = bindingFromPubkey(pubkey, 0).cashAddress
-  const input = { id, recipientAddress: address, refundAddress: address, expectedBchSats: '1000000' }
+  const input = { id, recipientAddress: bindingFromPubkey(pubkey, 0).tokenAddress, refundAddress: address, expectedBchSats: '1000000' }
   const headers = {
     Authorization: `Bearer ${capability}`,
     'Content-Type': 'application/json',
@@ -129,7 +129,7 @@ test('the public scanner feed lists paid orders from the worker without addresse
   const store = new OrderStore(':memory:', signer.xpub, { maxOrderSats: 100000000n, maxPendingSats: 1000000000n, maxOpenOrders: 20 })
   const server = await startOrderServer(store, async () => ({ output: 1000n }), path)
   const address = bindingFromPubkey(pubkey, 0).cashAddress
-  const intent = { recipientAddress: address, refundAddress: address, expectedBchSats: '1000000' }
+  const intent = { recipientAddress: bindingFromPubkey(pubkey, 0).tokenAddress, refundAddress: address, expectedBchSats: '1000000' }
   const capability = randomBytes(32).toString('hex')
   try {
     const paid = store.create(randomUUID(), capability, intent, '980')
@@ -180,7 +180,7 @@ test('a NEAR Intents deposit address is noted once, before the source hash, only
   const open = (nearOrders, contractOrders = false) => {
     const store = new OrderStore(':memory:', signer.xpub, { maxOrderSats: 100000000n, maxPendingSats: 1000000000n, maxOpenOrders: 20 }, undefined, undefined, contractOrders, false, nearOrders)
     const cap = randomBytes(32).toString('hex')
-    const order = store.create(randomUUID(), cap, { recipientAddress: address, refundAddress: address, expectedBchSats: '1000000' }, '980')
+    const order = store.create(randomUUID(), cap, { recipientAddress: bindingFromPubkey(pubkey, 0).tokenAddress, refundAddress: address, expectedBchSats: '1000000' }, '980')
     return { store, cap, id: order.id, service: { store, quote: async () => ({ output: 1000n }) } }
   }
   const off = open(false)

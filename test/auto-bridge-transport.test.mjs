@@ -39,7 +39,7 @@ test('Vercel proxy reaches the authenticated worker through verified HTTPS and p
       incoming.pipe(upstream)
     })
     await new Promise(resolve => tls.listen(0, 'localhost', resolve))
-    const input = { id: randomUUID(), recipientAddress: bindingFromPubkey(pubkey, 0).cashAddress,
+    const input = { id: randomUUID(), recipientAddress: bindingFromPubkey(pubkey, 0).tokenAddress,
       refundAddress: bindingFromPubkey(pubkey, 0).cashAddress, expectedBchSats: '1000000' }
     const capability = randomBytes(32).toString('hex')
     const script = `
