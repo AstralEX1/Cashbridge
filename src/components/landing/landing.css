@@ -762,6 +762,174 @@
   font-size: 13px;
 }
 
+/* For agents: the setup to copy (src/components/landing/agent-kit.tsx) */
+.landing-agents {
+  align-items: start;
+}
+.landing-agents .landing-integrations {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+/* One height for every tab: the file takes whatever the command row leaves. */
+.agent-kit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 470px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--panel);
+}
+.agent-kit :is(code, pre) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.agent-kit-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #00000033;
+}
+.agent-kit-tabs button {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 36px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  transition:
+    background-color 200ms var(--ease-out),
+    color 200ms var(--ease-out),
+    transform 160ms var(--ease-out);
+}
+.agent-kit-tabs button:active {
+  transform: scale(0.97);
+}
+.agent-kit-tabs button[aria-pressed='true'] {
+  background: var(--green);
+  color: #0f1820;
+}
+.agent-kit-command {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 6px 6px 16px;
+  border-radius: 14px;
+  background: #00000040;
+  font-size: 13px;
+}
+.agent-kit-command > span {
+  color: var(--green-text);
+}
+.agent-kit-command code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.agent-kit-file {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: 16px;
+  background: #00000040;
+}
+.agent-kit-name {
+  padding: 14px 16px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.agent-kit-file pre {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 16px 56px;
+  color: #d5e4e9;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-mask-image: linear-gradient(to bottom, #000 80%, transparent);
+  mask-image: linear-gradient(to bottom, #000 80%, transparent);
+}
+.agent-kit-file pre:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: -2px;
+  border-radius: 16px;
+}
+.agent-kit-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+}
+.agent-kit-icon {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  color: var(--muted);
+  transition:
+    background-color 160ms var(--ease-out),
+    color 160ms var(--ease-out),
+    transform 160ms var(--ease-out);
+}
+.agent-kit-icon:active {
+  transform: scale(0.94);
+}
+/* Copy and Check sit on top of each other and swap with a short blur. */
+.agent-kit-icon svg {
+  grid-area: 1 / 1;
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out),
+    filter 200ms var(--ease-out);
+}
+.agent-kit-icon .lucide-check,
+.agent-kit-icon[data-copied] .lucide-copy {
+  opacity: 0;
+  transform: scale(0.5);
+  filter: blur(4px);
+}
+.agent-kit-icon[data-copied] {
+  color: var(--green-text);
+}
+/* The file's own copy button is the main action. */
+.agent-kit-actions .agent-kit-icon:last-child {
+  background: var(--green);
+  color: #0f1820;
+}
+.agent-kit-icon[data-copied] .lucide-check {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .agent-kit-tabs button:not([aria-pressed='true']):hover,
+  .agent-kit-icon:hover {
+    color: var(--text);
+  }
+  .agent-kit-icon:hover {
+    background: #ffffff14;
+  }
+  .agent-kit-actions .agent-kit-icon:last-child:hover {
+    background: #09ad7f;
+    color: #0f1820;
+  }
+}
+
 /* Live transfers */
 .landing-scan {
   margin-top: 24px;
@@ -1042,7 +1210,17 @@
     flex: 1 1 100%;
   }
   .landing-button,
-  .beam-switch button {
+  .beam-switch button,
+  .agent-kit-tabs button,
+  .agent-kit-icon {
     transition-property: background-color, color;
+  }
+  .agent-kit-icon svg {
+    transition-property: opacity;
+  }
+  .agent-kit-icon .lucide-check,
+  .agent-kit-icon[data-copied] .lucide-copy {
+    transform: none;
+    filter: none;
   }
 }

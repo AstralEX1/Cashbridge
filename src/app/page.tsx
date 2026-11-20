@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArrowRight, FileLock2, Globe, KeyRound, PenLine, Undo2 } from 'lucide-react'
 import { BlazeBanner } from '@/components/blaze-banner'
+import { AgentKit, type AgentKitItem } from '@/components/landing/agent-kit'
 import { BeamDiagram } from '@/components/landing/beam-diagram'
 import { InView } from '@/components/landing/in-view'
 import { LandingVideo } from '@/components/landing/landing-video'
@@ -10,6 +11,7 @@ import { Marquee } from '@/components/landing/marquee'
 import { SiteFooter, SiteHeader } from '@/components/landing/site-chrome'
 import { AppConfig } from '@/config'
 import { FEATURED_TOKENS } from '@/lib/cauldron-tokens'
+import { AGENT_PROMPT, CLAUDE_CODE_COMMAND, MCP_CONFIG, SKILL_INSTALL_COMMAND, SKILL_MD, SKILL_PATH } from '@/server/agent/kit'
 import '@/components/docs/docs.css'
 import '@/components/landing/landing.css'
 
@@ -89,6 +91,12 @@ const AGENTS = [
   { name: 'Eliza', href: 'https://github.com/elizaOS/eliza' },
   { name: 'OpenClaw', href: 'https://openclaw.ai' },
   { name: 'Moltbot', href: 'https://molt.bot' }
+]
+
+const AGENT_KIT: AgentKitItem[] = [
+  { id: 'prompt', label: 'Prompt', file: 'prompt.md', text: AGENT_PROMPT },
+  { id: 'skill', label: 'Skill', file: 'SKILL.md', command: SKILL_INSTALL_COMMAND, text: SKILL_MD, download: SKILL_PATH },
+  { id: 'mcp', label: 'MCP', file: 'mcp.json', command: CLAUDE_CODE_COMMAND, text: MCP_CONFIG }
 ]
 
 // Coins around BCH: dollars on the inner ring, the other pinned tokens and "any" on the outer one.
@@ -236,25 +244,28 @@ export default function Page() {
           </InView>
         </section>
 
-        <section id="agents" className="landing-section" aria-labelledby="agents-title">
-          <h2 id="agents-title" className="landing-kicker">
-            For agents
-          </h2>
-          <p className="landing-lead">MCP and HTTP so bots can quote and bridge without a browser.</p>
-          <ul className="landing-integrations">
-            {AGENTS.map(agent => (
-              <li key={agent.name}>
-                <a href={agent.href} target="_blank" rel="noopener noreferrer">
-                  {agent.name}
-                </a>
-              </li>
-            ))}
-          </ul>
-          <div className="landing-actions">
-            <Link href="/docs#mcp" className="landing-button landing-button-ghost">
-              Agent docs <ArrowRight size={18} aria-hidden />
-            </Link>
+        <section id="agents" className="landing-section landing-split landing-agents" aria-labelledby="agents-title">
+          <div>
+            <h2 id="agents-title" className="landing-kicker">
+              For agents
+            </h2>
+            <p className="landing-lead">MCP and HTTP so bots can quote and bridge without a browser.</p>
+            <ul className="landing-integrations">
+              {AGENTS.map(agent => (
+                <li key={agent.name}>
+                  <a href={agent.href} target="_blank" rel="noopener noreferrer">
+                    {agent.name}
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <div className="landing-actions">
+              <Link href="/docs/agents" className="landing-button landing-button-ghost">
+                Agent docs <ArrowRight size={18} aria-hidden />
+              </Link>
+            </div>
           </div>
+          <AgentKit items={AGENT_KIT} />
         </section>
 
         <section id="integrations" className="landing-section" aria-labelledby="integrations-title">
