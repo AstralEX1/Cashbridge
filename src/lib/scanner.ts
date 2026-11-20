@@ -100,7 +100,7 @@ export const explorerIcon = (url: string) => {
   const found = EXPLORERS.find(([pattern]) => pattern.test(url))
   return found && chainIcon(found[1])
 }
-const leg = (label: string, url: string, hash: string, mark?: string): ScanLeg => {
+export const leg = (label: string, url: string, hash: string, mark?: string): ScanLeg => {
   const icon = mark ?? explorerIcon(url)
   return { label, url, hash, ...(icon && { icon }) }
 }
@@ -123,9 +123,15 @@ const assetSide = (asset: string, amount?: string): ScanSide => {
   return { ticker, chain, ...mark(ticker, chain), ...(amount !== undefined && { amount }) }
 }
 
+// One end of a transfer this page knows by its ticker and chain, e.g. a saved transfer's asset.
+export const sideOf = (ticker: string, chain: string, amount?: string, icon?: string): ScanSide => {
+  const token = chain.toUpperCase() === 'BCH' ? FEATURED_TOKENS.find(t => t.ticker === ticker) : undefined
+  return { ticker, chain: chain.toUpperCase(), ...mark(ticker, chain, token?.icon ?? icon), ...(amount !== undefined && { amount }) }
+}
+
 export const thorchainTxUrl = (hash: string) => `https://thorchain.net/tx/${hash.replace(/^0x/i, '').toLowerCase()}`
 export const bchTxUrl = (txid: string) => getExplorerTxUrl({ chain: 'BCH' as Chain, txHash: txid })
-const sourceTxUrl = (chain: string, hash: string) =>
+export const sourceTxUrl = (chain: string, hash: string) =>
   getExplorerTxUrl({ chain: chain as Chain, txHash: isEvmChain(chain) && /^[0-9a-f]{64}$/i.test(hash) ? `0x${hash}` : hash }) || thorchainTxUrl(hash)
 
 const STATUS: Partial<Record<OrderState, ScanStatus>> = {
@@ -215,6 +221,96 @@ export const scanRows = (orders: FeedOrder[], runs: Run[]) => {
 }
 
 const normalHash = (hash: string) => hash.replace(/^0x/i, '').toLowerCase()
+
+// The first row of each transfer, where rows from different sources share a transaction hash.
+export const uniqueRows = (rows: ScanRow[]) => {
+  const seen = new Set<string>()
+  return rows.filter(row => {
+    const hashes = [`key:${row.key}`, ...row.legs.map(leg => normalHash(leg.hash))]
+    if (hashes.some(hash => seen.has(hash))) return false
+    hashes.forEach(hash => seen.add(hash))
+    return true
+  })
+}
+
+// A wallet's transfers: its Router orders, then any listed transfer that shares a hash with its own saved or
+// THORChain transfers (it carries more steps), then those; newest first.
+export const walletRows = ({ router, feed, local, thorchain }: { router: FeedOrder[]; feed: ScanRow[]; local: ScanRow[]; thorchain: ScanRow[] }) => {
+  const hashes = new Set([...local, ...thorchain].flatMap(row => row.legs.map(leg => normalHash(leg.hash))))
+  const linked = feed.filter(row => row.legs.some(leg => hashes.has(normalHash(leg.hash))))
+  return uniqueRows([...router.map(rowFromOrder), ...linked, ...local, ...thorchain]).sort(
+    (a, b) => (b.time ?? -1) - (a.time ?? -1)
+  )
+}
+
+// One action from Midgard's /v2/actions: amounts are 1e8 base units for every asset.
+interface MidgardTx {
+  address: string
+  txID: string
+  coins: { asset: string; amount: string }[]
+}
+export interface MidgardAction {
+  date: string
+  status: string
+  type: string
+  in: MidgardTx[]
+  out: MidgardTx[]
+  metadata?: { swap?: { memo?: string }; refund?: { memo?: string } }
+}
+// Secured and trade assets (BTC-BTC, BTC~BTC) read as the chain asset they stand for.
+const chainAsset = (asset: string) => (asset.includes('.') ? asset : asset.replace(/[-~/]/, '.'))
+const BCH_TARGETS = ['BCH.BCH', 'BCH', 'C']
+// THORChain carries no Cash Bridge tag, so its swaps into or out of BCH stand for the bridge.
+const touchesBch = (action: MidgardAction) => {
+  const memo = (action.metadata?.swap?.memo ?? action.metadata?.refund?.memo ?? '').split(':')
+  return (
+    [...action.in, ...action.out].some(tx => tx.coins.some(coin => chainAsset(coin.asset) === 'BCH.BCH')) ||
+    (['=', 'S', 'SWAP'].includes(memo[0]?.toUpperCase()) && BCH_TARGETS.includes(memo[1]?.toUpperCase()))
+  )
+}
+const realHash = (hash?: string) => !!hash && /^[0-9a-zA-Z]{32,128}$/.test(hash) && !/^0+$/.test(hash)
+const units = (amount?: string) => (amount && /^\d{1,30}$/.test(amount) ? formatBaseUnits(amount, 8) : undefined)
+
+// A wallet's THORChain swaps and refunds that bridge BCH, as scanner rows.
+export const rowsFromThorchain = (actions: MidgardAction[]): ScanRow[] =>
+  actions
+    .filter(
+      action =>
+        (action?.type === 'swap' || action?.type === 'refund') &&
+        Array.isArray(action.in) &&
+        Array.isArray(action.out) &&
+        [...action.in, ...action.out].every(tx => Array.isArray(tx?.coins)) &&
+        action.in.length > 0 &&
+        touchesBch(action)
+    )
+    .map(action => {
+      const source = action.in[0]
+      const coin = source.coins[0]
+      const fromAsset = chainAsset(coin?.asset ?? 'THOR.RUNE')
+      const refund = action.type === 'refund'
+      const paid = action.out.flatMap(tx => tx.coins.map(c => ({ tx, asset: chainAsset(c.asset), amount: c.amount })))
+      const payout = refund ? paid[0] : (paid.find(p => p.asset !== fromAsset) ?? paid[0])
+      const legs: ScanLeg[] = []
+      const fromChain = fromAsset.split('.')[0]
+      if (realHash(source.txID)) {
+        if (fromChain !== 'THOR') legs.push(leg(`${chainName(fromChain)} deposit`, sourceTxUrl(fromChain, source.txID), source.txID))
+        legs.push(leg('THORChain swap', thorchainTxUrl(source.txID), source.txID))
+      }
+      for (const tx of action.out) {
+        const chain = chainAsset(tx.coins[0]?.asset ?? '').split('.')[0]
+        if (realHash(tx.txID) && chain && chain !== 'THOR') legs.push(leg(refund ? 'Refund' : 'Payout', sourceTxUrl(chain, tx.txID), tx.txID))
+      }
+      return {
+        key: `thorchain:${source.txID}`,
+        time: Math.floor(Number(action.date) / 1e6),
+        router: false,
+        verified: false,
+        from: assetSide(fromAsset, units(coin?.amount)),
+        to: payout ? assetSide(payout.asset, units(payout.amount)) : assetSide('BCH.BCH'),
+        status: refund ? 'refunded' : action.status === 'success' ? 'completed' : 'pending',
+        legs
+      }
+    })
 
 export const matchesQuery = (row: ScanRow, query: string) => {
   const q = query.trim().toLowerCase()

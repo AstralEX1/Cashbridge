@@ -1,12 +1,19 @@
 'use client'
 
-import { ArrowLeftRight, ArrowUpRight, CircleCheck, Search, SearchX, Wallet, Zap } from 'lucide-react'
-import { useState } from 'react'
+import { ArrowLeftRight, ArrowUpRight, CircleCheck, LoaderCircle, Search, SearchX, Wallet, X, Zap } from 'lucide-react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { NumberTicker } from '@/components/landing/number-ticker'
+import { isScanAddress } from '@/lib/auto-bridge-contract'
+import { localWallets } from '@/lib/local-scan'
 import { chainIcon, chainName, hashLookups, matchesQuery } from '@/lib/scanner'
+import { autoBridgeStore } from '@/store/auto-bridge-store'
+import { transactionStore } from '@/store/transaction-store'
 import { LiveDot } from './live-dot'
 import { ScanList } from './scan-list'
 import { useScanFeed } from './use-scan-feed'
+import { useWalletScan } from './use-wallet-scan'
+
+const noSubscribe = () => () => {}
 
 type Filter = 'all' | 'router' | 'manual'
 const FILTERS: [Filter, string, React.ReactNode][] = [
@@ -15,18 +22,60 @@ const FILTERS: [Filter, string, React.ReactNode][] = [
   ['manual', 'Manual', <Wallet key="manual" size={16} aria-hidden />]
 ]
 
+const shortAddress = (address: string) => {
+  const bare = address.replace(/^bitcoincash:/i, '')
+  return bare.length > 14 ? `${bare.slice(0, 6)}…${bare.slice(-4)}` : bare
+}
+
+// Img for a chain mark, or nothing for a chain without one.
+const ChainMark = ({ chain, size }: { chain: string; size: number }) => {
+  const icon = chainIcon(chain)
+  // eslint-disable-next-line @next/next/no-img-element
+  return icon ? <img src={icon} alt="" width={size} height={size} /> : null
+}
+
 export function ScannerView() {
   const { rows, now, live } = useScanFeed()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
+  // This browser's own wallets sit under the search; the server render has none.
+  const hydrated = useSyncExternalStore(noSubscribe, () => true, () => false)
+  const transactions = transactionStore(state => state.transactions)
+  const orders = autoBridgeStore(state => state.orders)
+  const wallets = useMemo(() => (hydrated ? localWallets(transactions, orders).slice(0, 4) : []), [hydrated, transactions, orders])
 
-  const shown = rows.filter(row => (filter === 'all' || row.router === (filter === 'router')) && matchesQuery(row, query))
-  const lookups = shown.length ? [] : hashLookups(query)
-  const chains = [...new Set(rows.flatMap(row => [row.from.chain, row.to.chain]))]
+  // A wallet link (/scanner?address=…) opens on that wallet.
+  useEffect(() => {
+    const address = new URLSearchParams(window.location.search).get('address')
+    if (address) setQuery(address)
+  }, [])
+
+  const text = query.trim()
+  const [address, setAddress] = useState<string>()
+  // Typing settles before the wallet is looked up; the address goes in the URL so the view can be shared.
+  useEffect(() => {
+    const next = isScanAddress(text) ? text : undefined
+    const timer = setTimeout(() => {
+      setAddress(next)
+      const url = new URL(window.location.href)
+      if (next) url.searchParams.set('address', next)
+      else url.searchParams.delete('address')
+      window.history.replaceState(window.history.state, '', url)
+    }, next ? 350 : 0)
+    return () => clearTimeout(timer)
+  }, [text])
+
+  const walletRows = useWalletScan(address, rows)
+  const searching = !!address
+  const base = searching ? (walletRows ?? []) : rows
+  const shown = base.filter(row => (filter === 'all' || row.router === (filter === 'router')) && (searching || matchesQuery(row, query)))
+  const loading = (searching && !walletRows) || (!!text && isScanAddress(text) && address !== text)
+  const lookups = shown.length || searching ? [] : hashLookups(query)
+  const chains = [...new Set(base.flatMap(row => [row.from.chain, row.to.chain]))]
   const stats: [string, React.ReactNode, number][] = [
-    ['Transfers', <ArrowLeftRight key="all" size={18} aria-hidden />, rows.length],
-    ['Router', <Zap key="router" size={18} aria-hidden />, rows.filter(row => row.router).length],
-    ['Settled', <CircleCheck key="done" size={18} aria-hidden />, rows.filter(row => row.status === 'completed').length]
+    ['Transfers', <ArrowLeftRight key="all" size={18} aria-hidden />, base.length],
+    ['Router', <Zap key="router" size={18} aria-hidden />, base.filter(row => row.router).length],
+    ['Settled', <CircleCheck key="done" size={18} aria-hidden />, base.filter(row => row.status === 'completed').length]
   ]
 
   return (
@@ -70,16 +119,21 @@ export function ScannerView() {
 
       <div className="scanner-tools">
         <label className="scanner-search">
-          <Search size={18} aria-hidden />
-          <span className="sr-only">Search transfers</span>
+          {searching ? <Wallet size={18} aria-hidden /> : <Search size={18} aria-hidden />}
+          <span className="sr-only">Search transfers by wallet address, hash, token or chain</span>
           <input
             type="search"
             value={query}
             onChange={event => setQuery(event.target.value)}
-            placeholder="Hash, token or chain"
+            placeholder="Wallet address, hash or token"
             spellCheck={false}
             autoComplete="off"
           />
+          {query && (
+            <button type="button" className="scanner-clear" aria-label="Clear search" onClick={() => setQuery('')}>
+              <X size={16} aria-hidden />
+            </button>
+          )}
         </label>
         <div className="scanner-filters" role="group" aria-label="Filter by mode">
           {FILTERS.map(([value, label, content]) => (
@@ -90,8 +144,30 @@ export function ScannerView() {
         </div>
       </div>
 
-      <div className="scanner-table" aria-live="polite">
-        {shown.length > 0 ? (
+      {!query && wallets.length > 0 && (
+        <div className="scanner-wallets" role="group" aria-label="Your wallets on this device">
+          {wallets.map(wallet => (
+            <button
+              key={wallet.address}
+              type="button"
+              title={`${chainName(wallet.chain)} · ${wallet.address}`}
+              aria-label={`Transfers of ${chainName(wallet.chain)} wallet ${shortAddress(wallet.address)}`}
+              onClick={() => setQuery(wallet.address)}
+            >
+              <ChainMark chain={wallet.chain} size={18} />
+              <span>{shortAddress(wallet.address)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="scanner-table" aria-live="polite" aria-busy={loading}>
+        {loading ? (
+          <div className="scanner-empty">
+            <LoaderCircle size={28} className="scanner-spin" aria-hidden />
+            <span className="sr-only">Looking up this wallet</span>
+          </div>
+        ) : shown.length > 0 ? (
           <ScanList rows={shown} now={now} />
         ) : (
           <div className="scanner-empty">

@@ -182,3 +182,66 @@
     display: none;
   }
 }
+
+/* Wallet search: clear button, this device's wallets, loading. */
+.scanner-clear {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: -6px;
+  border-radius: 999px;
+  color: var(--muted);
+  transition: color 160ms var(--ease-out), background-color 160ms var(--ease-out);
+}
+.scanner-search input::-webkit-search-cancel-button {
+  display: none;
+}
+.scanner-wallets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.scanner-wallets button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #00000033;
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  transition: border-color 160ms var(--ease-out), transform 160ms var(--ease-out);
+}
+.scanner-wallets button:active {
+  transform: scale(0.97);
+}
+.scanner-wallets img {
+  border-radius: 50%;
+}
+.scanner-spin {
+  animation: scanner-spin 900ms linear infinite;
+}
+@keyframes scanner-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  .scanner-clear:hover {
+    color: var(--text);
+    background: #ffffff14;
+  }
+  .scanner-wallets button:hover {
+    border-color: var(--green);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scanner-spin {
+    animation: none;
+  }
+}

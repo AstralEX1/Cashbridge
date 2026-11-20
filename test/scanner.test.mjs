@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { RUNS } from '../src/lib/mainnet-runs.ts'
-import { explorerIcon, hashLookups, matchesQuery, rowFromOrder, rowFromRun, scanRows } from '../src/lib/scanner.ts'
+import { explorerIcon, hashLookups, matchesQuery, rowFromOrder, rowFromRun, rowsFromThorchain, scanRows, walletRows } from '../src/lib/scanner.ts'
 import { FEATURED_TOKENS } from '../src/lib/cauldron-tokens.ts'
 
 const PUSD = FEATURED_TOKENS[0]
@@ -107,4 +107,55 @@ test('a full hash not in the list gets explorer lookups', () => {
   assert.equal(hashLookups('abc').length, 0)
   assert.equal(hashLookups('ab'.repeat(32)).length, 2)
   assert.equal(hashLookups(`0x${'ab'.repeat(32)}`).length, 1)
+})
+
+// Midgard's /v2/actions as THORChain reports one swap: amounts in 1e8 units, dates in nanoseconds.
+const action = (inAsset, outAsset, extra = {}) => ({
+  date: '1700000000000000000',
+  status: 'success',
+  type: 'swap',
+  in: [{ address: '0xabc', txID: 'AB'.repeat(32), coins: [{ asset: inAsset, amount: '300000000' }] }],
+  out: [{ address: 'qq', txID: 'CD'.repeat(32), coins: [{ asset: outAsset, amount: '1306603' }] }],
+  metadata: { swap: { memo: '=:c:qq:1' } },
+  ...extra
+})
+
+test("a wallet's THORChain swaps into or out of BCH become rows; other swaps and malformed answers do not", () => {
+  const [row, ...rest] = rowsFromThorchain([
+    action('BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913', 'BCH.BCH'),
+    action('ETH.ETH', 'BTC.BTC', { metadata: { swap: { memo: '=:b:bc1q:1' } } }),
+    { type: 'swap', in: 'nope', out: [] },
+    null
+  ])
+  assert.equal(rest.length, 0)
+  assert.deepEqual([row.from.amount, row.from.ticker, row.to.amount, row.to.ticker], ['3', 'USDC', '0.01306603', 'BCH'])
+  assert.deepEqual(row.legs.map(leg => leg.label), ['Base deposit', 'THORChain swap', 'Payout'])
+  assert.match(row.legs[2].url, new RegExp(`bitcoin-cash/transaction/${'cd'.repeat(32)}$`, 'i'))
+  assert.deepEqual([row.status, row.router, row.time], ['completed', false, 1700000000000])
+
+  const [refund] = rowsFromThorchain([
+    action('ETH.ETH', 'ETH.ETH', { type: 'refund', metadata: { refund: { memo: '=:BCH.BCH:qq:1' } }, out: [{ address: '0xabc', txID: 'EF'.repeat(32), coins: [{ asset: 'ETH.ETH', amount: '100' }] }] })
+  ])
+  assert.deepEqual([refund.status, refund.to.ticker, refund.legs.at(-1).label], ['refunded', 'ETH', 'Refund'])
+  const [pending] = rowsFromThorchain([action('BCH.BCH', 'ETH.ETH', { status: 'pending', out: [] })])
+  assert.deepEqual([pending.status, pending.from.ticker], ['pending', 'BCH'])
+  assert.deepEqual(pending.legs.map(leg => leg.label), ['Bitcoin Cash deposit', 'THORChain swap'], 'no payout yet')
+})
+
+test("a wallet's rows keep one row per transfer: the Router's order, then a listed row sharing a hash, then its own records", () => {
+  const thor = rowsFromThorchain([action('BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913', 'BCH.BCH', { in: [{ address: '0xabc', txID: 'AB'.repeat(32), coins: [{ asset: 'BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913', amount: '500000000' }] }] })])
+  const manual = rowsFromThorchain([
+    action('ETH.ETH', 'BCH.BCH', {
+      date: '1800000000000000000',
+      in: [{ address: '0xabc', txID: '12'.repeat(32), coins: [{ asset: 'ETH.ETH', amount: '1' }] }],
+      out: [{ address: 'qq', txID: '34'.repeat(32), coins: [{ asset: 'BCH.BCH', amount: '1' }] }]
+    })
+  ])
+  const rows = walletRows({ router: [order], feed: [], local: [], thorchain: [...thor, ...manual] })
+  assert.deepEqual(rows.map(row => row.router), [false, true], 'newest first, and the THORChain copy of the Router order is dropped')
+  assert.equal(rows[1].key, order.ref)
+  const run = RUNS.find(r => r.links.some(([, url]) => url.includes('thorchain.net')))
+  const runHash = run.links.find(([, url]) => url.includes('thorchain.net'))[1].split('/').pop()
+  const linked = walletRows({ router: [], feed: [rowFromRun(run)], local: [], thorchain: rowsFromThorchain([action('ETH.ETH', 'BCH.BCH', { in: [{ address: '0xabc', txID: runHash.toUpperCase(), coins: [{ asset: 'ETH.ETH', amount: '1' }] }], out: [] })]) })
+  assert.deepEqual(linked.map(row => row.verified), [true], 'the verified run stands for its THORChain swap')
 })

@@ -6,7 +6,7 @@ import '@/components/scanner/scanner.css'
 
 export const metadata: Metadata = {
   title: `Scanner · ${AppConfig.appName}`,
-  description: 'Transfers through Cash Bridge: Cashbridge Router orders and transfers verified on mainnet, each step linked to a public explorer.',
+  description: 'Transfers through Cash Bridge, searchable by wallet address: Cashbridge Router orders, THORChain swaps and transfers verified on mainnet, each step linked to a public explorer.',
   alternates: { canonical: '/scanner' }
 }
 
