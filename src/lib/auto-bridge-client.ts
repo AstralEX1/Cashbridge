@@ -5,7 +5,7 @@ import { withLock } from '@/lib/bridge-first-leg'
 import { isUserRejection } from '@/lib/errors'
 import { sourceTransactionId } from '@/lib/source-transaction'
 import { checkOrder } from '@/lib/auto-bridge-order'
-import { pageCanSettle, settleFromPage } from '@/lib/page-settle'
+import { pageCanSettle, pageMayReturn, returnFromPage, settleFromPage } from '@/lib/page-settle'
 import { autoBridgeStore, type SavedAutoOrder } from '@/store/auto-bridge-store'
 import { isTerminal, type PublicOrder } from '@/lib/auto-bridge-contract'
 
@@ -71,6 +71,10 @@ export async function restoreAutomaticOrder(reference: SavedAutoOrder): Promise<
 const settleOnce = (reference: SavedAutoOrder, order: PublicOrder) =>
   withLock(`cashbridge-page-settle-${reference.id}`, () => settleFromPage(order, reference.pageSecret!)).catch(error =>
     console.warn('The page could not settle the order yet; the Cashbridge Router will:', error instanceof Error ? error.message : error))
+// BCH left at the contract goes back to the customer from the page too, so a stopped Router cannot strand it.
+const returnOnce = (reference: SavedAutoOrder, order: PublicOrder) =>
+  withLock(`cashbridge-page-settle-${reference.id}`, () => returnFromPage(order, reference.pageSecret)).catch(error =>
+    console.warn('The page could not send the BCH back yet:', error instanceof Error ? error.message : error))
 
 export type OrderPollSchedule = Map<string, { at: number; attempted: boolean; failed: boolean }>
 
@@ -95,6 +99,7 @@ export async function pollAutomaticOrders(nextPoll: OrderPollSchedule, stopped: 
       nextPoll.set(reference.id, { at: Date.now() + (pageCanSettle(order, reference.pageSecret) ? 5000 : 60000), attempted: !!reference.sourceAttempted, failed: true })
     }
     if (reference.sourceAttempted && pageCanSettle(order, reference.pageSecret)) await settleOnce(reference, order)
+    if (reference.sourceAttempted && pageMayReturn(order, reference.pageSecret)) await returnOnce(reference, order)
   }
   return failed
 }

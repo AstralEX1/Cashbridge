@@ -4,7 +4,7 @@ import { createVirtualMachineBch2026 } from '@bitauth/libauth'
 import { bindingFromPubkey, decodeTx, txidOf } from '../src/lib/bch.ts'
 import { bestTrade, poolLockingBytecode, sourcesOf, reviewBuild, tradeTransaction } from '../src/lib/cauldron.ts'
 import { orderBinding } from '../src/lib/router-contract.ts'
-import { newPageKey, pageCanSettle, settleFromPage } from '../src/lib/page-settle.ts'
+import { newPageKey, pageCanSettle, pageMayReturn, returnFromPage, settleFromPage } from '../src/lib/page-settle.ts'
 import { BridgeConfig } from '../src/config.ts'
 import { otherPubkey, pubkey } from './fixtures/bridge-fixtures.mjs'
 
@@ -67,6 +67,46 @@ test('the page settles the largest coin and ignores dust, so neither sends the o
   assert.ok(txid)
   assert.deepEqual(funded.map(f => [f.vout, f.value]), [[2, '1000000']])
   assert.equal(await settleFromPage(order, page.secret, { coinsOf: async () => ({ tip: 1, utxos: [coin(0, 999n)] }), trade: async () => assert.fail('dust is not traded') }), undefined)
+})
+
+// What the contract checks for each returned coin: its own output index, the customer's BCH address, no token, fee cap.
+const checkReturn = (hex, coins) => {
+  const transaction = decodeTx(hex)
+  const lockingBytecode = Buffer.from(orderBinding(terms, 0).lockingBytecode, 'hex')
+  const sourceOutputs = coins.map(c => ({ lockingBytecode, valueSatoshis: c.value }))
+  assert.equal(createVirtualMachineBch2026(true).verify({ transaction, sourceOutputs }), true)
+  transaction.outputs.forEach((output, i) => {
+    assert.equal(Buffer.from(output.lockingBytecode).toString('hex'), refund.lockingBytecode)
+    assert.ok(!output.token && output.valueSatoshis + 2000n >= coins[i].value && output.valueSatoshis < coins[i].value)
+  })
+  return transaction
+}
+
+test('a coin left after the order settled goes back with the page key; once the refund time passes, without any key', async () => {
+  const left = [coin(3, 400000n), coin(4, 250000n)]
+  const settled = { ...order, state: 'completed', payoutTxid: 'ab'.repeat(32), recoverySats: '650000' }
+  let sent
+  const send = async (hex, id) => ((sent = hex), id)
+  const coinsOf = async () => ({ tip: 100, utxos: [...left, coin(5, 700n)] })
+  assert.ok(await returnFromPage(settled, page.secret, { coinsOf, send }))
+  assert.equal(checkReturn(sent, left).locktime, 0, 'the page key needs no wait')
+  // A closed page's order, or one without a page key, waits for the refund time and then needs no key at all.
+  assert.equal(await returnFromPage(settled, undefined, { coinsOf, send: async () => assert.fail('too early') }), undefined)
+  const late = (contract.refundAfter + 1) * 1000
+  assert.ok(await returnFromPage({ ...order, state: 'streaming' }, undefined, { coinsOf, send, now: late }))
+  const expired = checkReturn(sent, left)
+  assert.equal(expired.locktime, contract.refundAfter)
+  assert.ok(expired.inputs.every(input => input.sequenceNumber < 0xffffffff))
+})
+
+test('the page sends nothing back while the order can still settle, is under review or holds nothing', () => {
+  const late = (contract.refundAfter + 1) * 1000
+  assert.equal(pageMayReturn(order, page.secret), false, 'before the refund time an open order is settled, not returned')
+  assert.equal(pageMayReturn({ ...order, state: 'completed', recoverySats: '0' }, page.secret, late), false)
+  assert.equal(pageMayReturn({ ...order, state: 'manual_review', recoverySats: '5000' }, page.secret, late), false)
+  assert.equal(pageMayReturn({ ...order, state: 'completed', recoverySats: '5000' }, newPageKey().secret), false, 'another key waits for the refund time')
+  assert.equal(pageMayReturn({ ...order, sale: {} }, page.secret, late), false)
+  assert.equal(pageMayReturn(order, undefined, late), true)
 })
 
 test('the page leaves the order alone without its key, without a coin or once it is settled', async () => {
