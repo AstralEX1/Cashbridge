@@ -8,7 +8,7 @@ export const GET = () => {
   const site = AppConfig.baseUrl
   const body = `# Cash Bridge
 
-> Cash Bridge moves assets from other chains to Bitcoin Cash (BCH) and its CashTokens, such as the PUSD stablecoin, and from BCH back. THORChain does the cross-chain swap; for a CashToken the Cashbridge Router buys it on Cauldron. Users sign every transaction in their own wallets. Cash Bridge charges no fee of its own.
+> Cash Bridge moves assets from other chains to Bitcoin Cash (BCH) and its CashTokens, such as the PUSD stablecoin, and from BCH back. THORChain, NEAR Intents or ShapeShift does the cross-chain swap; for a CashToken the Cashbridge Router buys it on Cauldron. Users sign every transaction in their own wallets. Cash Bridge charges no fee of its own.
 
 ## For AI agents
 

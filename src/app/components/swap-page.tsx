@@ -29,7 +29,7 @@ export function SwapPage() {
         ))}
       </header>
       <p className="sr-only">
-        Bridge supported source assets to Bitcoin Cash and CashTokens through THORChain and Cauldron. Manual execution uses your own wallets.
+        Bridge supported source assets to Bitcoin Cash and CashTokens through THORChain, NEAR Intents or ShapeShift, and Cauldron. Manual execution uses your own wallets.
         With the Cashbridge Router, the BCH waits in a contract made for each order, which can only pay out the token or refund the BCH.
       </p>
       <Suspense>
