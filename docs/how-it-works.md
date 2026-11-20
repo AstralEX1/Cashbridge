@@ -34,7 +34,10 @@ its address check). A coin can leave in three ways only, each checked against th
 The order the browser receives carries the Router key and the refund time. The browser rebuilds the contract from them and the
 addresses and minimum it asked for, and refuses an order whose deposit is not that contract. The Router still chooses when
 to act (until the refund time) and which trade to make, so between the quoted minimum and the best price it is trusted; it
-cannot pay the BCH anywhere but the recipient and the fallback. An order that receives more than one coin goes back as BCH.
+cannot pay the BCH anywhere but the recipient and the fallback. Only the order's largest coin of at least half the quoted BCH is
+converted, so a stranger's coin cannot block the swap; dust under 1,000 sats is ignored, and any other coin goes back as BCH once
+the order is done. The customer's page does the same with its own key, and after the refund time it sends back whatever is left
+through expire, so a stopped Router strands nothing.
 If someone expires a coin before the Router acts, the order stops for review. `npm run contract:compile` rebuilds
 `contracts/router-order.json`; `src/lib/router-contract.ts` holds its bytecode, and `test/router-contract.test.mjs` runs it
 in the BCH VM on a real Cauldron trade.
