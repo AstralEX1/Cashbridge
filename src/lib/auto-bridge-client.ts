@@ -5,6 +5,7 @@ import { withLock } from '@/lib/bridge-first-leg'
 import { isUserRejection } from '@/lib/errors'
 import { sourceTransactionId } from '@/lib/source-transaction'
 import { checkOrder } from '@/lib/auto-bridge-order'
+import { pageCanSettle, settleFromPage } from '@/lib/page-settle'
 import { autoBridgeStore, type SavedAutoOrder } from '@/store/auto-bridge-store'
 import { isTerminal, type PublicOrder } from '@/lib/auto-bridge-contract'
 
@@ -66,6 +67,11 @@ export async function restoreAutomaticOrder(reference: SavedAutoOrder): Promise<
   return order
 }
 
+// One tab at a time settles an order from the page; a failure waits for the next poll, and the Router stays the fallback.
+const settleOnce = (reference: SavedAutoOrder, order: PublicOrder) =>
+  withLock(`cashbridge-page-settle-${reference.id}`, () => settleFromPage(order, reference.pageSecret!)).catch(error =>
+    console.warn('The page could not settle the order yet; the Cashbridge Router will:', error instanceof Error ? error.message : error))
+
 export type OrderPollSchedule = Map<string, { at: number; attempted: boolean; failed: boolean }>
 
 export async function pollAutomaticOrders(nextPoll: OrderPollSchedule, stopped: () => boolean) {
@@ -78,14 +84,17 @@ export async function pollAutomaticOrders(nextPoll: OrderPollSchedule, stopped: 
       failed ||= deferred.failed
       continue
     }
+    let order = reference.order
     try {
-      const order = await restoreAutomaticOrder(reference)
+      order = await restoreAutomaticOrder(reference)
       const delay = isTerminal(order.state) ? 300000 : reference.sourceAttempted ? 5000 : 60000
       nextPoll.set(reference.id, { at: Date.now() + delay, attempted: !!reference.sourceAttempted, failed: false })
     } catch {
       failed = true
-      nextPoll.set(reference.id, { at: Date.now() + 60000, attempted: !!reference.sourceAttempted, failed: true })
+      // The page still settles from the order it last saw while the Router is unreachable.
+      nextPoll.set(reference.id, { at: Date.now() + (pageCanSettle(order, reference.pageSecret) ? 5000 : 60000), attempted: !!reference.sourceAttempted, failed: true })
     }
+    if (reference.sourceAttempted && pageCanSettle(order, reference.pageSecret)) await settleOnce(reference, order)
   }
   return failed
 }

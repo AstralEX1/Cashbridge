@@ -28,6 +28,7 @@ import { assertAutomaticSaved, createAutomaticOrder, orderRequest, RouterUnavail
 import { FORWARD_DEADLINE_MS, getNearQuote, isNearRoute, nearLegOf, nearSlippageBps, submitNearDeposit } from '@/lib/near-intents'
 import { getShapeShiftBridgeRoute, isShapeShiftRoute, SHAPESHIFT_PROVIDER } from '@/lib/shapeshift'
 import { getUSwap } from '@/lib/wallets'
+import { newPageKey } from '@/lib/page-settle'
 import { resolvePriceImpact } from '@/lib/swap-helpers'
 import { autoBridgeStore, type SavedAutoOrder } from '@/store/auto-bridge-store'
 import { nearPaysBeforeRefund, type AutomaticSource, type OrderIntent } from '@/lib/auto-bridge-contract'
@@ -75,8 +76,15 @@ export const prepareAutomatic = async ({
     .orders.find(ref => !ref.sourceAttempted && sameIntent(ref.intent, intent) && (!ref.order || (ref.order.state === 'awaiting_deposit' && !ref.order.sourceHash && !ref.order.nearDepositAddress)))
 
   const openOrder = async (reuse?: SavedAutoOrder) => {
-    const reference: SavedAutoOrder =
-      reuse ?? { id: crypto.randomUUID(), capability: (crypto.randomUUID() + crypto.randomUUID()).replaceAll('-', ''), createdAt: Date.now(), intent, token }
+    const page = reuse ? undefined : newPageKey()
+    const reference: SavedAutoOrder = reuse ?? {
+      id: crypto.randomUUID(),
+      capability: (crypto.randomUUID() + crypto.randomUUID()).replaceAll('-', ''),
+      createdAt: Date.now(),
+      intent: { ...intent, pageKey: page!.pubkey },
+      token,
+      pageSecret: page!.secret
+    }
     autoBridgeStore.getState().save(reference)
     assertAutomaticSaved(reference)
     const created = reference.order ?? (await createAutomaticOrder(reference))

@@ -14,6 +14,8 @@ export interface SavedAutoOrder {
   sourceHash?: string
   order?: PublicOrder
   estimatedSeconds?: number
+  // The secret of the one-use key the order's contract accepts from this page (src/lib/page-settle.ts).
+  pageSecret?: string
 }
 interface AutoBridgeStore {
   orders: SavedAutoOrder[]
