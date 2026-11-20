@@ -154,6 +154,7 @@ export const useRates = (identifiers: string[], provider?: ProviderName): { rate
 
   const rates: AssetRateMap = {}
   const logos: AssetLogoMap = {}
+  const pooled = new Set<string>()
   if (midgardData) {
     // Price from the route's own network first
     const preferMaya = isMayaProvider(provider)
@@ -162,7 +163,9 @@ export const useRates = (identifiers: string[], provider?: ProviderName): { rate
     for (const id of identifiers) {
       const key = id.toLowerCase()
       const price = primary[key] ?? secondary[key]
-      if (price) rates[id] = price
+      if (!price) continue
+      rates[id] = price
+      pooled.add(id)
     }
   }
 
@@ -197,8 +200,9 @@ export const useRates = (identifiers: string[], provider?: ProviderName): { rate
     })
   }
 
-  // Dollar stables (USDC, USDT, …) are always $1, even when Midgard/DexScreener drifts.
-  for (const id of identifiers) {
+  // Dollar stables with a THORChain or Maya pool (USDC, USDT, …) are always $1, even when the pool price drifts. A wallet
+  // token that only names itself USD-something (an airdropped fake USDC) keeps its market price, or none.
+  for (const id of pooled) {
     if (isDollarStable(id)) rates[id] = oneUsd()
   }
 
