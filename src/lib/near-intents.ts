@@ -1,17 +1,29 @@
 import { Chain, getChainConfig, ProviderName } from '@tcswap/helpers'
 import type { QuoteResponseRoute } from '@tcswap/helpers/api'
 import type { Asset } from '@/components/swap/asset'
-import { BridgeConfig } from '@/config'
+import { BridgeConfig, nearIntentsApiUrl } from '@/config'
 import { formatBaseUnits, toBaseUnits } from '@/lib/bridge'
 import type { NearLeg } from '@/store/transaction-store'
 
 // NEAR Intents' 1Click API (docs.near-intents.org, OpenAPI at 1click.chaindefuser.com/docs/v0/openapi.yaml): the
 // second route between other chains and native BCH, beside THORChain. A quote gives a one-use deposit address on
 // the source chain; solvers fill the swap and pay BCH to the recipient, or refund the deposit to `refundTo`.
-// The deposit is a plain transfer (no memo, no router contract, no approval). Keyless: without a partner JWT
-// 1Click adds 25 bps to the price, which the quote already includes.
+// The deposit is a plain transfer (no memo, no router contract, no approval). Browser calls go through
+// /api/near-intents so NEAR_INTENTS_JWT stays server-side; with that JWT 1Click uses the partner fee schedule
+// (typically 20 bps) instead of the keyless +25 bps surcharge.
 
-export const ONE_CLICK_URL = process.env.NEXT_PUBLIC_NEAR_INTENTS_URL || 'https://1click.chaindefuser.com/v0'
+export const ONE_CLICK_URL =
+  process.env.NEAR_INTENTS_URL || process.env.NEXT_PUBLIC_NEAR_INTENTS_URL || 'https://1click.chaindefuser.com/v0'
+
+// Server-only partner JWT headers for direct upstream calls (agent, Router worker). Empty when unset.
+export const nearAuthHeaders = (): Record<string, string> => {
+  const jwt = typeof window === 'undefined' ? process.env.NEAR_INTENTS_JWT?.trim() : undefined
+  return jwt ? { Authorization: `Bearer ${jwt}` } : {}
+}
+
+// The page asks through our proxy; the server (agent / Router) asks 1Click itself with the JWT when set.
+const nearEndpoint = (): [string, Record<string, string>] =>
+  typeof window === 'undefined' ? [ONE_CLICK_URL, nearAuthHeaders()] : [nearIntentsApiUrl(), {}]
 
 // Native BCH as NEAR Intents holds it. 1Click pays only plain addresses (q…, p…): it refuses token-aware ones.
 export const NEAR_BCH = 'nep141:bch.omft.near'
@@ -26,22 +38,31 @@ export const REVERSE_DEADLINE_MS = 4 * 60 * 60_000
 // The form's slippage is a percentage; 1Click takes basis points.
 export const nearSlippageBps = (slippage?: number) => Math.round((slippage ?? 1) * 100)
 
-// THORChain-style chain prefix to 1Click's `blockchain`. Only chains the bridge has wallets for and whose deposit
-// is a plain transfer (XRP and Stellar deposits need a memo the wallet send does not carry).
+// THORChain-style chain prefix to 1Click's `blockchain`. Only chains the SDK names, that have a network icon,
+// and whose deposit is a plain transfer (XRP and Stellar need a memo/tag the wallet send does not carry).
 const CHAINS: Record<string, string> = {
+  ADA: 'cardano',
   ARB: 'arb',
   AVAX: 'avax',
   BASE: 'base',
   BCH: 'bch',
+  BERA: 'bera',
   BSC: 'bsc',
   BTC: 'btc',
+  DASH: 'dash',
   DOGE: 'doge',
   ETH: 'eth',
+  GNO: 'gnosis',
   LTC: 'ltc',
+  MONAD: 'monad',
+  NEAR: 'near',
   OP: 'op',
   POL: 'pol',
   SOL: 'sol',
+  SUI: 'sui',
+  TON: 'ton',
   TRON: 'tron',
+  XLAYER: 'xlayer',
   ZEC: 'zec'
 }
 export const isNearChain = (chain?: string) => !!chain && chain.toUpperCase() in CHAINS
@@ -52,15 +73,24 @@ const BLOCKCHAIN_TO_CHAIN: Record<string, Chain> = {
   avax: Chain.Avalanche,
   base: Chain.Base,
   bch: Chain.BitcoinCash,
+  bera: Chain.Berachain,
   bsc: Chain.BinanceSmartChain,
   btc: Chain.Bitcoin,
+  cardano: Chain.Cardano,
+  dash: Chain.Dash,
   doge: Chain.Dogecoin,
   eth: Chain.Ethereum,
+  gnosis: Chain.Gnosis,
   ltc: Chain.Litecoin,
+  monad: Chain.Monad,
+  near: Chain.Near,
   op: Chain.Optimism,
   pol: Chain.Polygon,
   sol: Chain.Solana,
+  sui: Chain.Sui,
+  ton: Chain.Ton,
   tron: Chain.Tron,
+  xlayer: Chain.XLayer,
   zec: Chain.Zcash
 }
 
@@ -75,8 +105,11 @@ const catalogContract = (token: OneClickToken): string | undefined | false => {
   return trimmed || false
 }
 
-const isCaseSensitiveChain = (blockchain?: string) => blockchain === 'sol' || blockchain === 'tron'
-const isCaseSensitiveAssetChain = (chain: Chain) => chain === Chain.Solana || chain === Chain.Tron
+// Account names, base58/base64 contracts and Sui type paths must keep catalog casing for wallet send.
+const isCaseSensitiveChain = (blockchain?: string) =>
+  blockchain === 'sol' || blockchain === 'tron' || blockchain === 'near' || blockchain === 'sui' || blockchain === 'ton' || blockchain === 'cardano'
+const isCaseSensitiveAssetChain = (chain: Chain) =>
+  chain === Chain.Solana || chain === Chain.Tron || chain === Chain.Near || chain === Chain.Sui || chain === Chain.Ton || chain === Chain.Cardano
 
 // Skip retired rows, unmapped chains, and rows the wallet send cannot fund or identify.
 const isSelectableNearToken = (token: OneClickToken) =>
@@ -189,9 +222,14 @@ export const mergeNearAssets = (assets: Map<string, Asset>, nearList: OneClickTo
 const PLACEHOLDERS: Record<string, string> = {
   bch: 'bitcoincash:qq9nq4t6nlzwjr3ntp7693lvzym9hq99egut9wk68z',
   btc: '122ALQhLw63cHbrSnTG9uuUao8SNd3S7K2',
+  cardano: 'addr1v8wfpcg4qfhmnzprzysj6j9c53u5j56j8rvhyjp08s53s6g07rfjm',
+  dash: 'XqHqWkZHbjDZ5Vu6Dsi4iQLsHWiS9W6wua',
   doge: 'D6AFsfdzEVwtpc33X3FiTfeBgGAfvE3dfi',
   ltc: 'LLF7bd1B1kHfYQYbxbFTBvYM1LoegXHn7P',
+  near: 'wrap.near',
   sol: '13QkxhNMrTPxoCkRdYdJ65tFuwXPhL5gLS2Z5Nr6gjRK',
+  sui: '0x0000000000000000000000000000000000000000000000000000000000000002',
+  ton: 'EQAWzEKcdnykvXfUNouqdS62tvrp32bCxuKS6eQrS6ISgcLo',
   tron: 'TAzNLU555pAZSmv5NiusS4AihvBgpMwbKY',
   zec: 't1JtmLk7UuQqCtEuLit5H3iaW3ndTNGTjVH',
   evm: '0x2527D02599Ba641c19FEa793cD0F167589a0f10D'
@@ -265,10 +303,16 @@ class OneClickError extends Error {
 }
 
 const request = async <T,>(path: string, init?: { method?: 'GET' | 'POST'; body?: unknown; signal?: AbortSignal }): Promise<T> => {
-  const response = await fetch(`${ONE_CLICK_URL}${path}`, {
+  const [base, auth] = nearEndpoint()
+  const response = await fetch(`${base}${path}`, {
     method: init?.method ?? 'GET',
-    headers: init?.body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    headers: {
+      ...auth,
+      ...(init?.body === undefined ? {} : { 'Content-Type': 'application/json' })
+    },
     body: init?.body === undefined ? undefined : JSON.stringify(init.body),
+    // A redirect would carry the server's JWT to another host.
+    redirect: 'error',
     signal: init?.signal ?? AbortSignal.timeout(20_000),
     cache: 'no-store'
   })

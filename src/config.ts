@@ -33,6 +33,12 @@ export function aggregatorApiUrl() {
   return `${origin}/api/thorchain/v1`
 }
 
+// NEAR Intents partner JWT stays on the server; the browser hits this proxy (src/app/api/near-intents).
+export function nearIntentsApiUrl() {
+  const origin = typeof window === 'undefined' ? AppConfig.baseUrl : window.location.origin
+  return `${origin}/api/near-intents/v0`
+}
+
 // THORChain -> BCH -> PUSD bridge. The first leg always buys native BCH through THORChain; PUSD is
 // only ever bought in a second, separately authorized Cauldron transaction. Never discover PUSD by
 // ticker: the category id is the token's identity (checked against paryonusd.com and its BCMR).
@@ -58,8 +64,8 @@ export const BridgeConfig = {
   nearIntents: process.env.NEXT_PUBLIC_NEAR_INTENTS !== 'false',
   // ShapeShift's swap API quoted beside THORChain on open-network pairs; 'false' leaves THORChain alone.
   shapeshift: process.env.NEXT_PUBLIC_SHAPESHIFT !== 'false',
-  // NEAR Intents for the Cashbridge Router's forward transfers too, which the Router admits with AUTO_BRIDGE_NEAR_ORDERS (a
-  // Router that does not falls back to THORChain). On by default; NEXT_PUBLIC_ROUTER_NEAR=false leaves the Router on THORChain.
+  // NEAR Intents for the Cashbridge Router's forward transfers too, which the Router admits with AUTO_BRIDGE_NEAR_ORDERS.
+  // On by default; NEXT_PUBLIC_ROUTER_NEAR=false hides NEAR on Automatic so only THORChain is offered there.
   routerNear: process.env.NEXT_PUBLIC_ROUTER_NEAR !== 'false',
   cauldronBroadcastUrl: process.env.NEXT_PUBLIC_CAULDRON_BROADCAST_URL || 'https://broadcast.cauldron.quest/broadcast',
   // Cauldron's public pool indexer: the PUSD pools the second leg trades against. Each pool a trade
@@ -70,7 +76,7 @@ export const BridgeConfig = {
   rostrumUrls: (process.env.NEXT_PUBLIC_CAULDRON_ROSTRUM_URLS ?? 'wss://rostrum.riften.net:443,wss://rostrum.cauldron.quest:50004').split(',').map(u => u.trim()).filter(Boolean),
   // Fulcrum (Electrum protocol) servers used to verify BCH transactions and unspent outputs.
   electrumUrls: (process.env.NEXT_PUBLIC_BCH_ELECTRUM_URLS || 'wss://bch.imaginary.cash:50004,wss://bch.loping.net:50004').split(',').map(u => u.trim()).filter(Boolean),
-  // WalletConnect (Reown) project ID for BCH wallets that speak WalletConnect v2 (Paytaca, Cashonize).
+  // WalletConnect (Reown) project ID for BCH wallets that speak WalletConnect v2 (Paytaca, Cashonize, Zapit).
   // Public by design (it ships in the page); the default is Cash Bridge's own project, which only
   // accepts cashbridge.space origins. An empty env value hides the option, leaving WizardConnect alone.
   walletConnectProjectId: (process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? 'b533fd30a8a2ac9a448cd0388ef0c83d').trim()

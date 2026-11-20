@@ -8,7 +8,7 @@ By default (**Manual**) the user signs every step in their own wallets. For tran
 
 Promo film on the landing page: [`/landing/cashbridge-promo.mp4`](https://www.cashbridge.space/).
 
-AI agents use the MCP server at `https://www.cashbridge.space/mcp`: list assets, quote, prepare an unsigned deposit for the user’s wallet, report the source tx, and read status. The server holds no keys; it does not prepare sale orders, and NEAR→CashToken prepare stays on THORChain via the Router. Add it with `claude mcp add --transport http cash-bridge https://www.cashbridge.space/mcp`; see the [agent docs](https://www.cashbridge.space/docs/agents).
+AI agents use the MCP server at `https://www.cashbridge.space/mcp`: list assets, quote (THORChain, NEAR Intents, ShapeShift), prepare an unsigned deposit for the user’s wallet (including Cashbridge Router purchase/sale and Any-network free pairs), report the source tx, and read status. The server holds no keys. Add it with `claude mcp add --transport http cash-bridge https://www.cashbridge.space/mcp`; see the [agent docs](https://www.cashbridge.space/docs/agents).
 
 Forked from the [swap.thorchain.org](https://github.com/thorchain/swap.thorchain) interface.
 
@@ -56,7 +56,8 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000). Copy `.env.example` to `.env.local` and set `THORCHAIN_API_KEY` (server-only, never commit
-it). Typecheck with `npx tsc --noEmit -p tsconfig.json` and run the bridge tests with `npm run test:bridge`.
+it). Optional: `NEAR_INTENTS_JWT` from the 1Click Partner Dashboard drops the keyless +25 bps surcharge.
+Typecheck with `npx tsc --noEmit -p tsconfig.json` and run the bridge tests with `npm run test:bridge`.
 
 ## Deploying
 
