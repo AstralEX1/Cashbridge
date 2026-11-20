@@ -92,3 +92,7 @@ test('a forward route whose BCH cannot fund the token sale is not offered', () =
   assert.equal(fundsTokenSale(undefined), true)
   assert.match(quoteSource, /shapeshift:\s+shapeRoute\.status === 'fulfilled' && \(openNetworks \|\| reverse \|\| fundsTokenSale\(shapeRoute\.value\)\)/)
 })
+
+test('Any network route cards name the asset bought, not BCH', () => {
+  assert.match(compareSource, /openNetworks \? bought\?\.ticker : reverse \? payout\?\.ticker : 'BCH'/)
+})

@@ -73,7 +73,7 @@ export const BridgeWalletBadge = ({ kind }: { kind: 'other' | 'bch' | 'buy' }) =
         {t(
           connecting && !(kind === 'bch' && bch.reconnectStalled)
             ? 'connecting'
-            : kind === 'buy' || side === 'to'
+            : kind === 'bch'
               ? 'connectDestination'
               : 'connectSource'
         )}
@@ -85,7 +85,7 @@ export const BridgeWalletBadge = ({ kind }: { kind: 'other' | 'bch' | 'buy' }) =
     <WalletAddressBadge
       address={address}
       chain={chain}
-      label={t(kind === 'buy' ? 'destination' : side === 'from' ? (reverse ? 'payout' : 'source') : 'destination')}
+      label={t(kind === 'buy' ? 'payout' : side === 'from' ? (reverse ? 'payout' : 'source') : 'destination')}
       showChainIcon
       onDisconnect={() => {
         if ((kind === 'buy' || side === 'from') && account) disconnectSource(account.provider)

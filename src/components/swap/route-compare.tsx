@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl'
 import { NearMark, ShapeShiftMark, ThorchainMark } from '@/components/swap/bridge-marks'
 import { useTokenQuoteFor } from '@/components/swap/pusd-swap'
 import { useQuote } from '@/hooks/use-quote'
-import { useAssetFrom, useSwap } from '@/hooks/use-swap'
+import { useAssetFrom, useAssetTo, useSwap } from '@/hooks/use-swap'
 import { formatBaseUnits } from '@/lib/bridge'
 import { firstLegSeconds, formatAmount, formatMinutes } from '@/lib/bridge-summary'
 import { useSwapStore } from '@/store/swap-store'
@@ -25,6 +25,7 @@ export const RouteCompare = () => {
   const reverse = useSwapStore(state => state.reverse)
   const openNetworks = useSwapStore(state => state.openNetworks)
   const payout = useAssetFrom()
+  const bought = useAssetTo()
   // Back from BCH the store's token is the one sold, not one bought. Open networks has no Cauldron leg.
   const bchToken = useSwapStore(state => state.bchToken)
   const token = openNetworks || reverse ? null : bchToken
@@ -51,7 +52,7 @@ export const RouteCompare = () => {
                 ? '…'
                 : `${formatAmount(Number(route.expectedBuyAmount))} BCH`
               : `${formatBaseUnits(estimate.output, token.decimals)} ${token.ticker}`
-            : `${formatAmount(Number(route.expectedBuyAmount))} ${reverse ? (payout?.ticker ?? '') : 'BCH'}`
+            : `${formatAmount(Number(route.expectedBuyAmount))} ${(openNetworks ? bought?.ticker : reverse ? payout?.ticker : 'BCH') ?? ''}`
         const seconds = route ? firstLegSeconds(route.estimatedTime) : undefined
         const selected = !!route && !!quote && route === quote
         return (
