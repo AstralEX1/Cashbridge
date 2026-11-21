@@ -286,7 +286,6 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
                 >
                   <AssetIcon asset={asset} className="size-5 [&_img]:size-5" showNetworkIcons={false} />
                   {asset.ticker}
-                  {nearOnly && <NearMark size={14} />}
                 </button>
               </HaltedTip>
             )
