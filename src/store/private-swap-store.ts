@@ -18,4 +18,3 @@ export const usePrivateSwapStore = create<PrivateSwapState>()(set => ({
 }))
 
 export const usePrivateSwapAcknowledged = () => usePrivateSwapStore(state => state.acknowledged)
-export const useSetPrivateSwapAcknowledged = () => usePrivateSwapStore(state => state.setAcknowledged)

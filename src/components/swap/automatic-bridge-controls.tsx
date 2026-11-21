@@ -41,27 +41,6 @@ export const RouterSelector = () => {
   return <Tooltip content={t(routerAvailable ? 'routerHint' : 'routerUnavailable')}>{selector}</Tooltip>
 }
 
-// Free pairs between two THORChain-listed assets, quoted on every route and signed in the source wallet.
-export const OpenNetworksToggle = () => {
-  const t = useTranslations('automatic')
-  const openNetworks = useSwapStore(state => state.openNetworks)
-  const setOpenNetworks = useSwapStore(state => state.setOpenNetworks)
-  const hydrated = useAutomaticHydrated()
-  return (
-    <Tooltip content={t('openNetworksHint')}>
-      <button
-        type="button"
-        className="bridge-open-networks"
-        aria-pressed={openNetworks}
-        data-hydrated={hydrated || undefined}
-        onClick={() => setOpenNetworks(!openNetworks)}
-      >
-        {t('openNetworks')}
-      </button>
-    </Tooltip>
-  )
-}
-
 // Any-network reminder under the tools row (the Router explanation lives on the selector tooltip).
 export const RouterHint = () => {
   const t = useTranslations('automatic')

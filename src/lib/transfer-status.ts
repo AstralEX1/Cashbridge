@@ -109,8 +109,6 @@ const statusLookup = (chain: Chain): ((hash: string) => Promise<TransferStatus>)
   return undefined
 }
 
-export const canTrackTransfer = (chain: Chain) => !!statusLookup(chain)
-
 export async function getTransferStatus(chain: Chain, hash: string): Promise<TransferStatus> {
   const lookup = statusLookup(chain)
   if (!lookup) return 'unsupported'

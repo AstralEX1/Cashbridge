@@ -108,12 +108,6 @@ export const formatExpiration = (seconds: number) => {
   return parts.join(' ')
 }
 
-// Pool-less THORChain natives (sTCY, LQDY, …) have no USD rate and aren't in the curated
-// token list, so the wallet sidebar filter allows them explicitly.
-export function isThorNativeToken(b: { chain: string; symbol: string }): boolean {
-  return b.chain === Chain.THORChain && getThorFactoryAssetTicker(b.symbol) !== undefined
-}
-
 // Dedupe key derived from the underlying denom — balance sources disagree on symbols for the
 // same coin (node and bank report "x/ruji", the balance API "RUJI").
 export function thorBalanceKey(b: { chain: string; symbol: string }): string {
