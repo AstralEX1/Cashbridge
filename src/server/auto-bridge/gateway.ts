@@ -157,7 +157,8 @@ export class BchGateway implements Gateway {
   private async electrum<T>(method: string, params: unknown[]): Promise<T> {
     let lastError: unknown
     const now = Date.now()
-    for (const server of [...this.electrumServers].sort((a, b) => Number(a.downUntil > now) - Number(b.downUntil > now))) {
+    // shortcut: at most four servers per call, so an outage fails within minutes instead of walking the whole public list; the next call starts on others.
+    for (const server of [...this.electrumServers].sort((a, b) => Number(a.downUntil > now) - Number(b.downUntil > now)).slice(0, 4)) {
       const rpc = new WsRpc(server.url)
       try {
         await rpc.open()

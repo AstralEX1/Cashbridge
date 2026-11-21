@@ -1,6 +1,7 @@
 import { binToHex, lockingBytecodeToCashAddress } from '@bitauth/libauth'
 import { address, networks, type Network } from 'bitcoinjs-lib'
 import { BCH_PREFIX, decodeTx, ELECTRUM_PROTOCOL, RpcError, txidOf, WsRpc } from '@/lib/bch'
+import { BridgeConfig } from '@/config'
 
 // Keyless public explorers behind the Blockchair-shaped routes the UTXO toolbox and this app call
 // (src/app/api/blockchair), in five HTTP dialects: Esplora (mempool.space and its forks), Bitcore,
@@ -343,7 +344,8 @@ export const UTXO_CHAINS: Record<string, { network?: Network; explorers: Explore
     network: DOGECOIN,
     explorers: [bitcore('DOGE'), blockCypher('doge'), blockbook('https://doge1.trezor.io'), blockbook('https://doge2.trezor.io'), blockbook('https://doge3.trezor.io')]
   },
-  'bitcoin-cash': { explorers: [fulcrum('wss://bch.imaginary.cash:50004'), fulcrum('wss://bch.loping.net:50004'), blockbook('https://bch1.trezor.io')] },
+  // shortcut: the first four Fulcrum servers; an unknown transaction is asked on each in turn, so all ten would be slow.
+  'bitcoin-cash': { explorers: [...BridgeConfig.electrumUrls.slice(0, 4).map(fulcrum), blockbook('https://bch1.trezor.io')] },
   dash: { explorers: [blockCypher('dash'), blockbook('https://dash1.trezor.io')] },
   zcash: { explorers: [blockchair('zcash'), blockbook('https://zec1.trezor.io')] }
 }

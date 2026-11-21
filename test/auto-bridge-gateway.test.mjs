@@ -8,6 +8,7 @@ import { BchGateway } from '../src/server/auto-bridge/gateway.ts'
 import { loadConfig } from '../src/server/auto-bridge/config.ts'
 import { BroadcastRejected, BroadcastUnknown } from '../src/lib/cauldron.ts'
 import { txidOf } from '../src/lib/bch.ts'
+import { FULCRUM_URLS } from '../src/lib/endpoints.ts'
 
 test('an accepted RPC broadcast does not call or wait for the backup broadcaster', async t => {
   const previous = ['BCHN_RPC_CONFIG_FILE', 'BCHN_RPC_COOKIE_FILE', 'BCHN_RPC_URL'].map(name => [name, process.env[name]])
@@ -375,7 +376,7 @@ test('Fulcrum servers: the configured ones first, then the public ones, without 
   const previous = process.env.AUTO_BRIDGE_FULCRUM_URL
   process.env.AUTO_BRIDGE_FULCRUM_URL = 'wss://bch.imaginary.cash:50004, ws://127.0.0.1:50003'
   try {
-    assert.deepEqual(new BchGateway().fulcrums, ['wss://bch.imaginary.cash:50004', 'ws://127.0.0.1:50003', 'wss://bch.loping.net:50004'])
+    assert.deepEqual(new BchGateway().fulcrums, ['wss://bch.imaginary.cash:50004', 'ws://127.0.0.1:50003', ...FULCRUM_URLS.filter(url => url !== 'wss://bch.imaginary.cash:50004')])
   } finally {
     if (previous === undefined) delete process.env.AUTO_BRIDGE_FULCRUM_URL
     else process.env.AUTO_BRIDGE_FULCRUM_URL = previous

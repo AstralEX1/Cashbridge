@@ -14,6 +14,7 @@ import {
   type Transaction
 } from '@bitauth/libauth'
 import { BridgeConfig } from '@/config'
+import { markDown, markUp, ordered } from '@/lib/fallback'
 import { sameSourceTransaction, sourceIdFromMemo } from '@/lib/source-transaction'
 
 // BCH-side lookups and checks for the bridge. Nothing here trusts a server's decoding: raw
@@ -192,7 +193,7 @@ export class WsRpc {
         reject(new Error(`Could not connect to ${new URL(this.url).host}`))
       }
       ws.onclose = () => {
-        this.failAll(new Error('Connection closed'))
+        this.failAll(new RpcDropError('Connection closed'))
         this.options.onClose?.()
       }
       ws.onmessage = event => this.onMessage(event.data)
@@ -203,7 +204,7 @@ export class WsRpc {
 
   request<T>(method: string, params: unknown): Promise<T> {
     const ws = this.ws
-    if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(new Error('Not connected'))
+    if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(new RpcDropError('Not connected'))
     const id = this.nextId++
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -264,6 +265,8 @@ export class RpcError extends Error {
 }
 
 export class RpcTimeoutError extends Error {}
+// The connection went away before the answer came.
+export class RpcDropError extends Error {}
 
 // --- Fulcrum lookups ---------------------------------------------------------------------------
 
@@ -271,29 +274,33 @@ export class RpcTimeoutError extends Error {}
 // reads, so the range stops at 1.5.3. A 1.4-only server still answers, as 1.4.
 export const ELECTRUM_PROTOCOL = ['1.4', '1.5.3']
 
-const electrum = async () => {
-  let lastError: unknown
-  for (const url of BridgeConfig.electrumUrls) {
+// Each call runs on one server, in BridgeConfig.electrumUrls order with a failing one asked last for a minute. A server
+// that cannot be reached, or drops or stalls mid-call, hands the whole call to the next; its own answer (RpcError) or a
+// failed check stands. Rerunning is safe: these are reads, and a broadcast of the same bytes is the same transaction.
+// shortcut: at most four servers per call, so a stalled network fails within about a minute and a half; the next call starts on others.
+const withElectrum = async <T>(fn: (client: WsRpc) => Promise<T>) => {
+  let lastError: unknown = new Error('No BCH server reachable')
+  for (const url of ordered(BridgeConfig.electrumUrls).slice(0, 4)) {
     const client = new WsRpc(url, { jsonrpc: true })
     try {
-      await client.open()
-      await client.request('server.version', ['thorchain-bch-bridge', ELECTRUM_PROTOCOL])
-      return client
+      try {
+        await client.open()
+        await client.request('server.version', ['thorchain-bch-bridge', ELECTRUM_PROTOCOL])
+      } catch (error) {
+        throw new RpcDropError(error instanceof Error ? error.message : 'BCH server unreachable')
+      }
+      const value = await fn(client)
+      markUp(url)
+      return value
     } catch (error) {
-      client.close()
+      if (!(error instanceof RpcDropError || error instanceof RpcTimeoutError)) throw error
       lastError = error
+      markDown(url)
+    } finally {
+      client.close()
     }
   }
-  throw lastError instanceof Error ? lastError : new Error('No BCH server reachable')
-}
-
-const withElectrum = async <T>(fn: (client: WsRpc) => Promise<T>) => {
-  const client = await electrum()
-  try {
-    return await fn(client)
-  } finally {
-    client.close()
-  }
+  throw lastError
 }
 
 // Electrum indexes scripts by the reversed sha256 of the locking script.
