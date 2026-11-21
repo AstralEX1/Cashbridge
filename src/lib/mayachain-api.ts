@@ -1,7 +1,6 @@
 import axios from 'axios'
 
 const mayanode = axios.create({ baseURL: 'https://mayanode.mayachain.info', timeout: 15_000 })
-const mayaMidgard = axios.create({ baseURL: 'https://midgard.mayachain.info', timeout: 15_000 })
 
 export interface MayaNameAlias {
   chain: string
@@ -39,26 +38,3 @@ export const getMayaName = async (name: string): Promise<MayaName | null> => {
   }
 }
 
-export const getMayaNamesOwned = async (address: string): Promise<string[]> => {
-  try {
-    const res = await mayaMidgard.get(`/v2/mayaname/owner/${address}`)
-    return Array.isArray(res.data) ? res.data : []
-  } catch {
-    return []
-  }
-}
-
-export interface MayaPool {
-  asset: string
-  status: string
-}
-
-export const getMayaPools = async (): Promise<MayaPool[]> => {
-  return mayanode.get('/mayachain/pools').then(res => res.data)
-}
-
-export const getMayaLastBlock = async (): Promise<number> => {
-  const data = await mayanode.get('/mayachain/lastblock').then(res => res.data)
-  const first = Array.isArray(data) ? data[0] : data
-  return first?.mayachain ?? 0
-}
