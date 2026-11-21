@@ -3,6 +3,8 @@ import { apiError, methodNotAllowed } from '@/lib/api-error'
 import { rateLimit } from '@/lib/rate-limit'
 import { isSameOrigin } from '@/lib/same-origin'
 import { readRequestBody } from '@/lib/request-body'
+import { SOLANA_RPC_URLS } from '@/lib/endpoints'
+import { markDown, markUp, ordered, refused, retriable } from '@/lib/fallback'
 
 // Server-side proxy for the Solana JSON-RPC calls the SDK's toolbox makes. No
 // free endpoint works from a browser: api.mainnet-beta.solana.com answers a
@@ -11,10 +13,11 @@ import { readRequestBody } from '@/lib/request-body'
 // for), and the rest want a key. Coming from our own origin sidesteps both, and
 // keeps the key server-side when SOLANA_RPC_URL points at a paid endpoint.
 const CONFIGURED_UPSTREAM = process.env.SOLANA_RPC_URL
-const UPSTREAM = CONFIGURED_UPSTREAM || 'https://api.mainnet-beta.solana.com'
+// The configured node first, then the free ones; a node that fails, rate-limits or refuses a method passes the call on.
+const UPSTREAMS = [...new Set([CONFIGURED_UPSTREAM, ...SOLANA_RPC_URLS].filter((url): url is string => !!url))]
 
 // A stalled node would otherwise hold the handler — and the swap UI — open indefinitely.
-const UPSTREAM_TIMEOUT_MS = 15_000
+const UPSTREAM_TIMEOUT_MS = 8_000
 
 // A batch of balance calls is a few KB; anything beyond this is not the toolbox.
 const MAX_BODY_BYTES = 100_000
@@ -33,7 +36,7 @@ function warnIfUnconfigured() {
   warnedAboutDefaultUpstream = true
 
   console.warn(
-    `SOLANA_RPC_URL is not set, so Solana RPC calls fall back to ${UPSTREAM}, which rate limits per IP. ` +
+    'SOLANA_RPC_URL is not set, so Solana RPC calls go to the free public nodes, which rate limit per IP. ' +
       'Every visitor of this deployment shares that one bucket -- point SOLANA_RPC_URL at a dedicated endpoint.'
   )
 }
@@ -94,30 +97,43 @@ export async function POST(req: NextRequest) {
 
   warnIfUnconfigured()
 
-  const upstream = await fetch(UPSTREAM, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body,
-    cache: 'no-store',
-    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
-  }).catch(() => null)
+  let answer: { status: number; type: string; payload: string } | undefined
+  for (const url of ordered(UPSTREAMS)) {
+    const upstream = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      cache: 'no-store',
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
+    }).catch(() => null)
+    if (!upstream) {
+      markDown(url)
+      continue
+    }
+    answer = { status: upstream.status, type: upstream.headers.get('content-type') ?? 'application/json', payload: await upstream.text() }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(answer.payload)
+    } catch {}
+    if (!retriable(answer.status) && parsed !== undefined && !refused(parsed)) {
+      markUp(url)
+      break
+    }
+    markDown(url)
+  }
 
-  if (!upstream) {
+  if (!answer) {
     return apiError(
       502,
       'upstream_unreachable',
       'The Solana RPC is unreachable',
-      `The upstream node did not respond within ${UPSTREAM_TIMEOUT_MS / 1000} seconds. Retry in a moment.`
+      `No Solana node responded within ${UPSTREAM_TIMEOUT_MS / 1000} seconds. Retry in a moment.`
     )
   }
 
-  const payload = await upstream.text()
-  return new NextResponse(payload, {
-    status: upstream.status,
-    headers: {
-      'Content-Type': upstream.headers.get('content-type') ?? 'application/json',
-      'Cache-Control': 'no-store'
-    }
+  return new NextResponse(answer.payload, {
+    status: answer.status,
+    headers: { 'Content-Type': answer.type, 'Cache-Control': 'no-store' }
   })
 }
 
