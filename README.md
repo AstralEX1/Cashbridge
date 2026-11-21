@@ -8,6 +8,10 @@ By default (**Manual**) the user signs every step in their own wallets. For tran
 
 Promo film on the landing page: [`/landing/cashbridge-promo.mp4`](https://www.cashbridge.space/).
 
+**[Watch the video demo on X (4:45)](https://x.com/AstralEX163/status/2124059434062426491)**
+
+[![Cash Bridge video demo — watch on X](public/landing/cashbridge-demo.jpg)](https://x.com/AstralEX163/status/2124059434062426491)
+
 AI agents use the MCP server at `https://www.cashbridge.space/mcp`: list assets, quote (THORChain, NEAR Intents, ShapeShift), prepare an unsigned deposit for the user’s wallet (including Cashbridge Router purchase/sale and Any-network free pairs), report the source tx, and read status. The server holds no keys. Add it with `claude mcp add --transport http cash-bridge https://www.cashbridge.space/mcp`; see the [agent docs](https://www.cashbridge.space/docs/agents).
 
 Forked from the [swap.thorchain.org](https://github.com/thorchain/swap.thorchain) interface.

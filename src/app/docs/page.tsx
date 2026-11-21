@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { BlazeConfig } from '@/config'
 import { DocsDemoMcp } from '@/components/docs/docs-demo-mcp'
 import { Callout, Card, CardGroup, DocsArticle, Shot } from '@/components/docs/docs-ui'
 import { RouteFigure } from '@/components/docs/route-figure'
@@ -18,6 +19,26 @@ export default function Page() {
       lead="Move value between Bitcoin Cash (and Cauldron CashTokens) and the rest of crypto. THORChain, NEAR Intents and ShapeShift carry the BCH path and Any network pairs; two modes decide who signs: Manual or the Cashbridge Router."
     >
       <Shot name="form-forward" alt="The Cash Bridge form: 25 USDC on Ethereum to about 24.63 PUSD on Bitcoin Cash" caption="The bridge form. Pick what to send, what to receive and an amount; when several routes quote, the form compares them." />
+
+      <h2 id="video-demo">Video demo</h2>
+      <figure className="docs-shot">
+        <video
+          className="w-full rounded-2xl"
+          controls
+          playsInline
+          preload="none"
+          width={1112}
+          height={720}
+          poster="/landing/cashbridge-demo.jpg"
+          aria-label="Cash Bridge video demo"
+        >
+          <source src="/landing/cashbridge-demo.mp4" type="video/mp4" />
+          <a href={BlazeConfig.videoUrl}>Watch the video demo on X</a>
+        </video>
+        <figcaption>
+          <a href={BlazeConfig.videoUrl} target="_blank" rel="noreferrer">Watch the video demo on X</a> (4:45).
+        </figcaption>
+      </figure>
 
       <h2 id="start-here">Start here</h2>
       <CardGroup title="Protocol">

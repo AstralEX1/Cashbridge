@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { AppConfig, BlazeConfig } from '@/config'
 import './blaze-banner.css'
 
-const { deckUrl, emberAddress } = BlazeConfig
+const { deckUrl, videoUrl, emberAddress } = BlazeConfig
 
 const shortAddress = (address: string) => {
   const body = address.slice(address.indexOf(':') + 1)
@@ -35,6 +35,9 @@ export function BlazeBanner() {
             Presentation
           </a>
         )}
+        <a href={videoUrl} target="_blank" rel="noreferrer">
+          Video demo
+        </a>
         <a href={AppConfig.repoUrl} target="_blank" rel="noreferrer">
           Source code
         </a>

@@ -22,6 +22,7 @@ export const AppConfig = {
 
 // BCH BLAZE 2026 entry banner at the top of the home page. An empty link hides its item.
 export const BlazeConfig = {
+  videoUrl: 'https://x.com/AstralEX163/status/2124059434062426491',
   deckUrl: 'https://docs.google.com/presentation/d/10QzqBM5q4LqizofkMIvxiYTlVTVbbakIAeEfJrDDGG0/edit?usp=sharing',
   // CashTokens address that receives donations and EMBER2026 community votes.
   emberAddress: 'bitcoincash:zp8a8c8verwpg7zf680t4v2frnhu2gs0p5wta0l8y0'

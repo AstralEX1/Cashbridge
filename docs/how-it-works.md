@@ -1,5 +1,7 @@
 # Cash Bridge transaction flows
 
+[Watch the Cash Bridge video demo on X (4:45)](https://x.com/AstralEX163/status/2124059434062426491), or play it in the [documentation](https://www.cashbridge.space/docs#video-demo).
+
 ## Manual (Cashbridge Router off, the default)
 
 Forward: source wallet → THORChain → BCH in the user's BCH wallet → optional Cauldron CashToken trade signed through WizardConnect. Native BCH skips the token trade. Reverse: BCH wallet sells the chosen token when needed, then signs the THORChain BCH deposit; the target chain proves payout. Existing manual 0-conf behavior and wallet sessions remain unchanged.
