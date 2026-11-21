@@ -13,7 +13,7 @@ import {
   UTXOChains
 } from '@tcswap/core'
 import { estimateTransactionFee } from '@tcswap/toolboxes/cosmos'
-import { getProvider } from '@tcswap/toolboxes/evm'
+import { getProvider } from '@/lib/evm-rpc'
 import { Contract } from 'ethers'
 import { useAssetFrom } from '@/hooks/use-swap'
 import { useConnectedAccount } from '@/hooks/use-wallets'

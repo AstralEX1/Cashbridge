@@ -22,6 +22,7 @@ import { vultisigWallet } from '@tcswap/wallets/vultisig'
 import { preloadWalletconnect, walletconnectWallet } from '@tcswap/wallets/walletconnect'
 export { isWalletconnectDismissed, onWalletconnectDisconnect } from '@tcswap/wallets/walletconnect'
 import { AppConfig, aggregatorApiUrl, BridgeConfig } from '@/config'
+import { EVM_RPC_URLS, OTHER_RPC_URLS } from '@/lib/endpoints'
 import { useWalletStore } from '@/store/wallets-store'
 import { BTC_PURPOSE_ADDRESS_TYPE, btcAddressType } from '@/lib/swap-helpers'
 
@@ -101,10 +102,8 @@ export function getUSwap() {
         blockchair: 'sto', // fake key to just avoid logs like: No Blockchair API key found
         walletConnectProjectId: BridgeConfig.walletConnectProjectId
       },
-      rpcUrls: {
-        [Chain.Ethereum]: ['https://ethereum-rpc.publicnode.com', 'https://eth.llamarpc.com'],
-        [Chain.Solana]: [solanaProxyUrl()]
-      },
+      // The SDK probes these in order and keeps the first that answers for two minutes (src/lib/endpoints.ts).
+      rpcUrls: { ...EVM_RPC_URLS, ...OTHER_RPC_URLS, [Chain.Solana]: [solanaProxyUrl()] },
       integrations: {
         trezor: trezorManifest
       },

@@ -2,7 +2,8 @@ import { binToHex } from '@bitauth/libauth'
 import { Chain, EVMChain, getChainConfig, UTXOChain } from '@tcswap/core'
 import { ProviderName } from '@tcswap/helpers'
 import type { QuoteResponseRoute } from '@tcswap/helpers/api'
-import { getProvider } from '@tcswap/toolboxes/evm'
+import { getProvider } from '@/lib/evm-rpc'
+import { fetchFirst } from '@/lib/fallback'
 import type { Asset } from '@/components/swap/asset'
 import { BridgeConfig } from '@/config'
 import { getInboundAddresses, getQuotes, getTxStatus, isBridgeRoute, type TxStatusResponse } from '@/lib/api'
@@ -17,9 +18,10 @@ import { getNearQuote, getNearStatus, interpretNearStatus, nearLegOf, nearSlippa
 import { getShapeShiftBridgeRoute } from '@/lib/shapeshift'
 import { blockHeight, destinationChainOf, isEvmChain } from '@/lib/payout-chains'
 import { BLOCKCHAIR_CHAINS } from '@/lib/blockchair'
-import { postJson, rpcBase, XRPL_RPC_URL } from '@/lib/transfer-status'
+import { postFirst, rpcUrls } from '@/lib/transfer-status'
+import { XRPL_RPC_URLS } from '@/lib/endpoints'
 import { generateId } from '@/lib/utils'
-import { blockchairProxyUrl, getUSwap } from '@/lib/wallets'
+import { blockchairProxyUrl } from '@/lib/wallets'
 import type { Signable } from '@/lib/bch-signing'
 import { SIGN_REQUEST_EXPIRY_S } from '@/lib/bch-walletconnect'
 import { type BridgeOperation, getActiveBridge, type NearLeg, type ReverseDetails, type SwapTransaction, transactionStore } from '@/store/transaction-store'
@@ -466,7 +468,7 @@ export const depositReadyAt = (status: TxStatusResponse, nowMs = Date.now()) => 
 const nonEvmPayout = async (chain: string, out: OutTx, expect: { destination: string; depositTxid: string; buyAsset: string }): Promise<ChainPayout | undefined> => {
   if (chain === Chain.THORChain) return thorchainPayout(out, expect)
   if (chain === Chain.Cosmos) {
-    const res = await fetch(`${await rpcBase(Chain.Cosmos)}/tx?hash=0x${out.id.replace(/^0x/i, '')}`, { signal: AbortSignal.timeout(15_000) })
+    const res = await fetchFirst(rpcUrls(Chain.Cosmos), `/tx?hash=0x${out.id.replace(/^0x/i, '')}`)
     const { result } = await res.json()
     return result ? cosmosPayout(result, out.id, expect) : undefined
   }
@@ -475,8 +477,6 @@ const nonEvmPayout = async (chain: string, out: OutTx, expect: { destination: st
 
 // A transaction on a chain without THORChain's router, looked up on that chain's own node by its hash.
 const payoutOnChain = async (chain: string, hash: string, expect: PayoutExpectation): Promise<ChainPayout | undefined> => {
-  // The SDK config is what points getRPCUrl at our Solana proxy rather than the public node.
-  getUSwap()
   const slug = BLOCKCHAIR_CHAINS[chain as UTXOChain]
   if (slug) {
     const res = await fetch(`${blockchairProxyUrl()}/${slug}/dashboards/transaction/${encodeURIComponent(hash.toLowerCase())}`, { signal: AbortSignal.timeout(15_000) })
@@ -484,11 +484,11 @@ const payoutOnChain = async (chain: string, hash: string, expect: PayoutExpectat
     return utxoPayout(await res.json(), hash.toLowerCase(), expect)
   }
   if (chain === Chain.Ripple) {
-    const { result } = await postJson(XRPL_RPC_URL, { method: 'tx', params: [{ transaction: hash }] })
+    const { result } = await postFirst(XRPL_RPC_URLS, '', { method: 'tx', params: [{ transaction: hash }] })
     return xrpPayout(result, hash, expect)
   }
   if (chain === Chain.Solana) {
-    const { result } = await postJson(await rpcBase(Chain.Solana), {
+    const { result } = await postFirst(rpcUrls(Chain.Solana), '', {
       jsonrpc: '2.0',
       id: 1,
       method: 'getTransaction',
@@ -497,9 +497,9 @@ const payoutOnChain = async (chain: string, hash: string, expect: PayoutExpectat
     return solanaPayout(result, hash, expect)
   }
   if (chain === Chain.Tron) {
-    const base = await rpcBase(Chain.Tron)
+    const urls = rpcUrls(Chain.Tron)
     const id = hash.replace(/^0x/i, '').toLowerCase()
-    const [tx, info] = await Promise.all([postJson(`${base}/wallet/gettransactionbyid`, { value: id }), postJson(`${base}/wallet/gettransactioninfobyid`, { value: id })])
+    const [tx, info] = await Promise.all([postFirst(urls, '/wallet/gettransactionbyid', { value: id }), postFirst(urls, '/wallet/gettransactioninfobyid', { value: id })])
     return tronPayout(tx, info, id, expect)
   }
   return undefined
