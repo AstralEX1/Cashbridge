@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { ExitMap } from '@/components/docs/contract-figures'
 import { Callout, DocsArticle } from '@/components/docs/docs-ui'
+import { LOGO } from '@/components/docs/route-scenes'
 
 export const metadata: Metadata = {
   title: 'Security and custody',
@@ -26,6 +28,23 @@ export default function Page() {
       <Callout kind="warning" title="The contract guarantees your minimum, not the best price">
         For <code>apiVersion=2</code> purchase orders, the bridge pays BCH to a P2SH20 contract built from your order terms. Only the Router key for that order (and, on orders your page can settle itself, a one-use key the page made) can spend early, and only to pay you at least the quoted minimum of your token (<code>convert</code>; a coin smaller than quoted must buy its share of that minimum) or to send BCH to your fallback (<code>giveBack</code>, ≤ 2,000 sats miner fee). The contract checks that one payout: BCH the trade does not need goes where the signing key sends it, so above your minimum you trust the Router. After <code>refundAfter</code> — set about three hours from order creation; Bitcoin Cash median time runs about an hour behind wall clock — anyone may <code>expire</code> on the same refund terms.
       </Callout>
+
+      <ExitMap
+        input={{ logo: LOGO.bch, label: 'BCH from the bridge', sub: 'THORChain, NEAR Intents or ShapeShift' }}
+        title="Order contract"
+        sub="one per order · P2SH20"
+        exits={[
+          { fn: 'convert', who: 'keys', when: 'any time', logo: LOGO.pusd, result: 'The token, to you', detail: 'at least the floor', tone: 'pay' },
+          { fn: 'giveBack', who: 'keys', when: 'any time', logo: LOGO.bch, result: 'The BCH, to your fallback', detail: 'at most 2,000 sats to the miner', tone: 'back' },
+          { fn: 'expire', who: 'anyone', when: 'after the refund time', logo: LOGO.bch, result: 'The BCH, to your fallback', detail: 'same terms, no signature needed', tone: 'back' }
+        ]}
+        caption={
+          <>
+            Every way out of an order contract pays you. The <Link href="/docs/smart-contracts">Smart contracts</Link> page walks through the terms, the keys, the floor
+            and the sale contracts.
+          </>
+        }
+      />
 
       <p>What the service does, and what the contract prevents:</p>
       <ul>

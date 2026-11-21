@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { Callout, DocsArticle, Shot, Step, Steps } from '@/components/docs/docs-ui'
+import { RouteFigure } from '@/components/docs/route-figure'
+import { routeScene } from '@/components/docs/route-scenes'
 import { BridgeConfig } from '@/config'
 
 export const metadata: Metadata = {
@@ -18,6 +20,11 @@ export default function Page() {
       <Callout kind="warning" title="Contract orders vs Manual">
         When the Cashbridge Router returns a contract order (<code>apiVersion=2</code>), the cross-chain bridge pays BCH to a purchase covenant built from your terms. The Router key for that order can spend it only to pay you at least the quoted minimum (a coin smaller than quoted, its share of that minimum), or to send BCH to your fallback (≤ 2,000 sats miner fee). After <code>refundAfter</code> (about three hours from order creation; Bitcoin Cash median time runs about an hour behind wall clock) anyone may send it back on the same terms. Manual mode keeps every step in your wallets. Start with a small amount.
       </Callout>
+
+      <RouteFigure
+        figure={routeScene('in', 'router', 'any').figure}
+        caption="Into PUSD with one signature: the bridge pays a contract made for your order, and the trade on Cauldron must pay you at least the minimum, or the BCH comes back."
+      />
 
       <h2 id="what-it-does">What it does</h2>
       <ul>
@@ -39,9 +46,12 @@ export default function Page() {
         )}
       </ul>
 
-      <h2 id="sale-schema">Sale covenant schema</h2>
+      <h2 id="sale-schema">Back out with a sale contract</h2>
+      <RouteFigure figure={routeScene('out', 'router', 'any').figure} steps={false} />
       <p>
-        When Router sales are offered, reverse CashToken transfers use an <code>apiVersion=2</code> sale covenant. Your wallet sends the token in; the Router may sell for ≥ min BCH and deposit to the bridge address in the terms (with the fixed memo; on ShapeShift an exact amount, the rest back to you), or return the tokens; after three hours anyone can return them. Legacy P2PKH order addresses are a different model — temporary service custody, not this script.
+        Your wallet sends the token to a contract made for this sale. The Router may sell it for at least the minimum BCH, back into the same contract, and deposit that
+        BCH to the bridge in the terms (THORChain&apos;s vault with the memo, or a NEAR Intents or ShapeShift address; on ShapeShift an exact amount, the rest back to
+        you), or return the tokens. After three hours anyone can return them. See <Link href="/docs/smart-contracts#sale-contract">the sale contract</Link>.
       </p>
 
       <h2 id="custody-boundary">Custody boundary</h2>

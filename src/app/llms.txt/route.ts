@@ -30,6 +30,7 @@ ${AGENT_RULES.map(rule => `- ${rule}`).join('\n')}
 - [The bridge](${site}/bridge): the web app, for what this server does not prepare
 - [Use Cash Bridge from an AI agent](${site}/docs/agents)
 - [How it works](${site}/docs/how-it-works)
+- [Smart contracts](${site}/docs/smart-contracts): the per-order Cashbridge Router contracts, their terms and every way out
 - [Fees and limits](${site}/docs/fees)
 - [Security and custody](${site}/docs/security)
 - [Transaction got stuck?](${site}/docs/stuck)

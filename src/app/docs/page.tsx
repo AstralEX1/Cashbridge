@@ -1,8 +1,9 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { DocsDemoFlow } from '@/components/docs/docs-demo-flow'
 import { DocsDemoMcp } from '@/components/docs/docs-demo-mcp'
 import { Callout, Card, CardGroup, DocsArticle, Shot } from '@/components/docs/docs-ui'
+import { RouteFigure } from '@/components/docs/route-figure'
+import { routeScene } from '@/components/docs/route-scenes'
 
 export const metadata: Metadata = {
   title: 'Introduction',
@@ -20,11 +21,14 @@ export default function Page() {
 
       <h2 id="start-here">Start here</h2>
       <CardGroup title="Protocol">
-        <Card href="/docs/how-it-works" title="How it works" eyebrow="Schemas">
-          Manual vs Cashbridge Router, THORChain vs NEAR Intents vs ShapeShift, forward and reverse — with a live route storyboard.
+        <Card href="/docs/how-it-works" title="How it works" eyebrow="Route explorer">
+          Every route animated: into or out of Bitcoin Cash, Manual or Cashbridge Router, THORChain, NEAR Intents or ShapeShift.
         </Card>
-        <Card href="/docs/guides/cashbridge-router" title="Cashbridge Router" eyebrow="Covenants">
-          One source signature, apiVersion=2 P2SH covenants, refundAfter and BCH fallback.
+        <Card href="/docs/smart-contracts" title="Smart contracts" eyebrow="Contracts">
+          The per-order contracts behind one signature: every way out, the floor, two keys and a clock.
+        </Card>
+        <Card href="/docs/guides/cashbridge-router" title="Cashbridge Router" eyebrow="Guide">
+          Sign once, follow the order, and what each state means.
         </Card>
         <Card href="/docs/security" title="Security and custody" eyebrow="Custody">
           Who signs, what the contract enforces, and what stays off-chain with the Router service.
@@ -42,7 +46,11 @@ export default function Page() {
         </Card>
       </CardGroup>
 
-      <DocsDemoFlow />
+      <h2 id="one-signature">One signature, start to finish</h2>
+      <RouteFigure
+        figure={routeScene('in', 'router', 'any').figure}
+        caption="USDC on Base into PUSD on Bitcoin Cash with the Cashbridge Router. The pen marks your only signature; the dashed path is the BCH coming back to you if no trade pays your minimum."
+      />
 
       <h2 id="what-you-can-do">What you can do</h2>
       <ul>
@@ -127,10 +135,10 @@ export default function Page() {
 
       <h2 id="two-ways">Manual vs Cashbridge Router</h2>
       <p>
-        <strong>Manual</strong> is the default. You sign each step: the source deposit, then — for a CashToken — the Cauldron swap in your BCH wallet. THORChain and/or NEAR Intents carry the cross-chain leg. Nothing is ever in the Router&apos;s hands.
+        <strong>Manual</strong> is the default. You sign each step: the source deposit, then, for a CashToken, the Cauldron swap in your BCH wallet. THORChain, NEAR Intents or ShapeShift carries the cross-chain leg. Nothing is ever in the Router&apos;s hands.
       </p>
       <p>
-        <strong>Cashbridge Router</strong> is the second option above the form. You sign once in the source wallet. For contract orders (<code>apiVersion=2</code>), BCH lands in a per-order purchase covenant; the Router may buy your token on Cauldron at or above the fixed minimum, or return BCH to your fallback. Sale covenants cover bridging a CashToken back when that path is offered. Legacy proof rows used temporary P2PKH custody — do not treat them as contract settlement.
+        <strong>Cashbridge Router</strong> is the second option above the form. You sign once in the source wallet. For contract orders (<code>apiVersion=2</code>), BCH lands in a per-order purchase covenant; the Router may buy your token on Cauldron at or above the fixed minimum, or return BCH to your fallback. Sale contracts do the same for bridging a CashToken back. See <Link href="/docs/smart-contracts">Smart contracts</Link>. The two oldest Router rows in Proof on mainnet used an earlier model with temporary P2PKH custody.
       </p>
 
       <h2 id="agents-strip">For agents</h2>
