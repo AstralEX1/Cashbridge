@@ -406,6 +406,23 @@ function btcPathMismatch(chain: Chain, address: string, derivationPath?: number[
   )
 }
 
+// The chains the hardware steps (connect-wallet/ledger.tsx, trezor.tsx) carry derivation paths for. No Zcash: the SDK
+// signs it for the NU6.1 branch, which the network stopped accepting at NU7.
+export const HARDWARE_EVM_CHAINS = [Chain.Ethereum, Chain.Arbitrum, Chain.BinanceSmartChain, Chain.Base, Chain.Avalanche]
+export const LEDGER_CHAINS = [
+  ...HARDWARE_EVM_CHAINS,
+  Chain.Bitcoin,
+  Chain.BitcoinCash,
+  Chain.Litecoin,
+  Chain.Dogecoin,
+  Chain.Dash,
+  Chain.Ripple,
+  Chain.Tron,
+  Chain.Cosmos,
+  Chain.THORChain
+]
+export const TREZOR_CHAINS = [...HARDWARE_EVM_CHAINS, Chain.Bitcoin, Chain.BitcoinCash, Chain.Litecoin, Chain.Dogecoin, Chain.Dash]
+
 // What the wallet shows on its approval screen. The storage prefix keeps these sessions apart from the BCH
 // WalletConnect client's (src/components/bch-walletconnect.tsx): two clients on one store overwrite each
 // other's session list.
@@ -439,8 +456,8 @@ export const supportedChains = {
   [WalletOption.EXODUS]: exodusWallet.connectExodus.supportedChains,
   [WalletOption.KEPLR]: keplrWallet.connectKeplr.supportedChains,
   [WalletOption.LEAP]: keplrWallet.connectKeplr.supportedChains,
-  [WalletOption.LEDGER]: ledgerWallet.connectLedger.supportedChains,
-  [WalletOption.LEDGER_LIVE]: ledgerWallet.connectLedger.supportedChains,
+  [WalletOption.LEDGER]: LEDGER_CHAINS,
+  [WalletOption.LEDGER_LIVE]: LEDGER_CHAINS,
   [WalletOption.METAMASK]: evmWallet.connectEVMWallet.supportedChains,
   [WalletOption.RABBY]: evmWallet.connectEVMWallet.supportedChains,
   [WalletOption.OKX]: okxWallet.connectOkx.supportedChains,
@@ -452,7 +469,7 @@ export const supportedChains = {
   ],
   // Its Bitcoin connector takes the first account (the ordinals one in Phantom's docs) and has no signer to send with.
   [WalletOption.PHANTOM]: phantomWallet.connectPhantom.supportedChains.filter(chain => chain !== Chain.Bitcoin),
-  [WalletOption.TREZOR]: trezorWallet.connectTrezor.supportedChains,
+  [WalletOption.TREZOR]: TREZOR_CHAINS,
   [WalletOption.TRONLINK]: tronlinkWallet.connectTronLink.supportedChains,
   [WalletOption.TRUSTWALLET_WEB]: evmWallet.connectEVMWallet.supportedChains,
   [WalletOption.VULTISIG]: vultisigWallet.connectVultisig.supportedChains,

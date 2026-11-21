@@ -15,6 +15,17 @@ test('Phantom is offered for Ethereum, Monad and Solana but not for Bitcoin, whe
   assert.deepEqual(supportedChains[WalletOption.PHANTOM], [Chain.Ethereum, Chain.Monad, Chain.Solana])
 })
 
+test('hardware wallets are offered only on the chains their connect steps carry a path for, and not on Zcash', () => {
+  for (const option of [WalletOption.LEDGER, WalletOption.TREZOR]) {
+    for (const chain of [Chain.Zcash, Chain.Near, Chain.Optimism, Chain.Polygon, Chain.Monad])
+      assert.equal(supportedChains[option].includes(chain), false, `${option} ${chain}`)
+    for (const chain of [Chain.Ethereum, Chain.Base, Chain.Bitcoin, Chain.Litecoin, Chain.Dogecoin])
+      assert.equal(supportedChains[option].includes(chain), true, `${option} ${chain}`)
+  }
+  for (const chain of [Chain.Ripple, Chain.Tron, Chain.Cosmos, Chain.THORChain])
+    assert.equal(supportedChains[WalletOption.LEDGER].includes(chain), true)
+})
+
 test('multi-chain extensions are offered only for the chains their connectors can send on', () => {
   for (const chain of [Chain.Solana, Chain.Cosmos]) assert.equal(supportedChains[WalletOption.BITGET].includes(chain), false)
   assert.equal(supportedChains[WalletOption.BITGET].includes(Chain.Bitcoin), true)
