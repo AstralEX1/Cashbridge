@@ -4,6 +4,7 @@ import { Noto_Sans_Runic } from 'next/font/google'
 import { ThemeProvider } from 'next-themes'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
+import { headers } from 'next/headers'
 import { Toaster } from '@/components/ui/sonner'
 import { ReactQueryProvider } from '@/components/react-query/react-query-provider'
 import { WalletStoreHydration } from '@/components/wallet-store-hydration'
@@ -81,6 +82,8 @@ const notoRunic = Noto_Sans_Runic({
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const locale = (await getLocale()) as Locale
   const messages = await getMessages()
+  // The theme's inline script runs before paint, so it carries the page's CSP nonce (src/proxy.ts).
+  const nonce = (await headers()).get('x-nonce') ?? undefined
 
   return (
     <html lang={locale} dir={getLangDir(locale)} data-brand={AppConfig.id} suppressHydrationWarning>
@@ -88,7 +91,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <WalletStoreHydration />
         <ReactQueryProvider>
           <NextIntlClientProvider locale={locale} messages={messages}>
-            <ThemeProvider defaultTheme="light" attribute="class" disableTransitionOnChange>
+            <ThemeProvider defaultTheme="light" attribute="class" disableTransitionOnChange nonce={nonce}>
               <BchWalletProvider>
                 {children}
                 <BridgeTracker />

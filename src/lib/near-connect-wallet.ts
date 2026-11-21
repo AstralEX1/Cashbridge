@@ -1,6 +1,7 @@
 import { type AssetValue, Chain, type WalletOption } from '@tcswap/core'
 import { createWallet } from '@tcswap/wallets'
 import type { NearConnector, NearWalletBase } from '@hot-labs/near-connect'
+import { pageNonce } from '@/lib/csp'
 
 // NEAR wallets (HOT, Meteor, Intear, MyNearWallet, …) connect through NEAR Connect, the connector NEAR's docs name in
 // place of the deprecated Wallet Selector (docs.near.org/tools/near-connect): its picker lists the wallets from a
@@ -16,7 +17,8 @@ const GAS = '100000000000000'
 let connector: Promise<NearConnector> | undefined
 const nearConnect = () =>
   (connector ??= import('@hot-labs/near-connect').then(async ({ NearConnector }) => {
-    const instance = new NearConnector({ network: 'mainnet' })
+    // Each wallet runs in a srcdoc frame, which inherits this page's CSP: its inline script needs the page's nonce.
+    const instance = new NearConnector({ network: 'mainnet', cspNonce: pageNonce() })
     await instance.whenManifestLoaded.catch(() => {})
     return instance
   }))
