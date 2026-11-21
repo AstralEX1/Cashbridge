@@ -934,7 +934,7 @@
       "learnFees": "Learn more about the fees",
       "send": "Send {amount} {ticker}",
       "sendFirst": "Send {amount} {ticker} (1/2)",
-      "openWallet": "Open your {chain} wallet"
+      "openWallet": "Open your {chain} wallet and come back"
     },
     "cancelledInWallet": "Transaction cancelled in wallet",
     "reverse": {
@@ -955,7 +955,7 @@
       "routeSingle": "Bridge BCH → {to} via {bridge}, signed in your BCH wallet and paid on {chain}.",
       "gasBch": "Bitcoin Cash network (swap and deposit)",
       "swapFirst": "Swap {amount} {ticker} (1/2)",
-      "walletAway": "Open your BCH wallet app",
+      "walletAway": "Open your BCH wallet app and come back",
       "depositRate": "1 BCH ≈ {amount} {ticker}",
       "deposit": "Deposit to {bridge}",
       "expected": "Expected to receive",
@@ -987,7 +987,7 @@
         "refunded": "Refunded",
         "failed": "Failed"
       },
-      "openWallet": "Open {wallet} and approve the swap. It is waiting for you there.",
+      "openWallet": "Open {wallet}, approve the swap there and come back.",
       "cancel": "Cancel",
       "waitingWallet": "Waiting for {wallet}…",
       "preparing": "Preparing the transaction…",

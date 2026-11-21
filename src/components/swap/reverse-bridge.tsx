@@ -553,7 +553,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
   }, [isOpen])
   const submitting = phase !== 'idle'
   // A phone wallet drops off the relay while its app is in the background; Send waits on the button
-  // itself (spinner, "Open your BCH wallet app") until the wallet answers again.
+  // itself (spinner, "Open your BCH wallet app and come back") until the wallet answers again.
   const walletAway = !wallet.signer || wallet.state !== 'connected'
   // One request at a time, whatever the button sees: state updates land a render late.
   const inFlight = useRef(false)
