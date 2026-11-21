@@ -1278,8 +1278,10 @@ const sourceStatus = (hash: string, status: TxStatusResponse) => {
   }
 }
 
+const STATUS_IDS = 'Give order_id + order_token, near_deposit_address, shapeshift_quote_id, or source_tx'
+
 const getBridgeStatus = async (args: Args, context: ToolContext) => {
-  if (args.order_id !== undefined) {
+  if (args.order_id !== undefined || args.order_token !== undefined) {
     const { id, capability } = orderCredentials(args)
     return orderSummary(verified(await routerCall('GET', `/orders/${id}`, capability, context.ip), id))
   }
@@ -1309,7 +1311,9 @@ const getBridgeStatus = async (args: Args, context: ToolContext) => {
       note: 'NEAR Intents reports this state; check the payout on the destination chain before treating the transfer as done.'
     }
   }
-  const hash = sourceTransactionId(text(args, 'source_tx')!)
+  const raw = text(args, 'source_tx', false)
+  if (!raw) throw new ToolError(STATUS_IDS)
+  const hash = sourceTransactionId(raw)
   if (!hash) throw new ToolError('"source_tx" is not a transaction hash')
   const status = await getTxStatus(hash).catch(() => undefined)
   if (!status) throw new ToolError('THORChain did not answer; try again shortly')
@@ -1345,6 +1349,8 @@ const reportSourceTransaction = async (args: Args, context: ToolContext) => {
       note: 'ShapeShift tracks externally paid quotes by quote id; keep polling get_bridge_status with shapeshift_quote_id.'
     }
   }
+  if (args.order_id === undefined && args.order_token === undefined)
+    throw new ToolError('Give order_id + order_token, near_deposit_address, or shapeshift_quote_id with source_tx')
   const { id, capability } = orderCredentials(args)
   const hash = sourceTransactionId(raw)
   if (!hash) throw new ToolError('"source_tx" is not a transaction hash')
@@ -1440,7 +1446,7 @@ export const TOOLS: Tool[] = [
     name: 'get_bridge_status',
     title: 'Check a transfer',
     description:
-      'Shows where a transfer is: a Cashbridge Router order, a NEAR Intents deposit, a ShapeShift quote id, or a THORChain swap by its source transaction hash.',
+      'Shows where a transfer is: a Cashbridge Router order, a NEAR Intents deposit, a ShapeShift quote id, or a THORChain swap by its source transaction hash. Give one: order_id + order_token, near_deposit_address, shapeshift_quote_id, or source_tx.',
     inputSchema: {
       type: 'object',
       properties: {

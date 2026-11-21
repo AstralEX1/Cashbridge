@@ -227,6 +227,16 @@ test('GET serves the server card, and an SSE request is refused', async () => {
   assert.equal((await mcpGet(new NextRequest('https://cashbridge.space/mcp', { headers: { accept: 'text/event-stream' } }))).status, 405)
 })
 
+test('a status or report call without an id names every id it accepts', async () => {
+  const none = await call('get_bridge_status', {})
+  assert.equal(none.isError, true)
+  assert.equal(none.content[0].text, 'Give order_id + order_token, near_deposit_address, shapeshift_quote_id, or source_tx')
+  assert.match((await call('get_bridge_status', { order_token: 'ab'.repeat(32) })).content[0].text, /"order_id" is required/)
+  const report = await call('report_source_transaction', { source_tx: 'ab'.repeat(32) })
+  assert.equal(report.isError, true)
+  assert.match(report.content[0].text, /order_id \+ order_token, near_deposit_address, or shapeshift_quote_id/)
+})
+
 test('each client gets 60 requests per window, then 429 with Retry-After', async () => {
   for (let i = 0; i < 60; i++) assert.equal((await post({ jsonrpc: '2.0', id: i, method: 'ping' }, '203.0.113.9')).status, 200)
   const limited = await post({ jsonrpc: '2.0', id: 61, method: 'ping' }, '203.0.113.9')
