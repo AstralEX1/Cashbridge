@@ -6,6 +6,7 @@ import { Asset } from '@/components/swap/asset'
 import { type BchBinding, isValidBinding, type VerifiedOutput } from '@/lib/bch'
 import { type CauldronToken, isCauldronToken, PUSD_TOKEN } from '@/lib/cauldron-tokens'
 import type { Signable } from '@/lib/bch-signing'
+import type { PublicOrder } from '@/lib/auto-bridge-contract'
 
 // 'broadcast': a send history cannot confirm on its chain - known to be submitted, nothing more.
 export type TxStatus = 'not_started' | 'pending' | 'swapping' | 'completed' | 'failed' | 'expired' | 'refunded' | 'unknown' | 'broadcast'
@@ -174,8 +175,9 @@ export interface ReverseDetails {
   // Expired or rejected authorizations remain recoverable if their wallet later broadcasts them.
   priorDeposits?: ReverseDeposit[]
   // Set when the Cashbridge Router runs the sale and the deposit: its order (id and capability), the signed send of
-  // the tokens to the order's contract, and what the payout search needs.
-  router?: { id: string; capability: string; depositAddress: string; sendTxid?: string; signedHex?: string; payoutRouter?: string; startBlock?: number }
+  // the tokens to the order's contract, and what the payout search needs. `order` keeps the contract's terms, so the
+  // page can send the coins back itself after the refund time if the Router stops.
+  router?: { id: string; capability: string; depositAddress: string; sendTxid?: string; signedHex?: string; payoutRouter?: string; startBlock?: number; order?: PublicOrder }
   // The bound wallet's own inputs of the first transaction, and when it went to the wallet: an answer that never came
   // back is settled by whether they get spent.
   signing?: { inputs: { txid: string; vout: number }[]; sentAt: number }

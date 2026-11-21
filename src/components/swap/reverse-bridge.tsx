@@ -37,6 +37,8 @@ import { useSetExternalWalletMode } from '@/hooks/use-wallets'
 import { binToHex } from '@bitauth/libauth'
 import { checkUnspent, findThorchainOutbound, getRawTransaction, getTransactionState, historyIncludes } from '@/lib/bch'
 import { orderRequest } from '@/lib/auto-bridge-client'
+import type { PublicOrder } from '@/lib/auto-bridge-contract'
+import { returnFromPage } from '@/lib/page-settle'
 import { useAutomaticBridge } from '@/hooks/use-automatic-bridge'
 import { prepareRouterSale } from '@/lib/router-sale-client'
 import { formatBaseUnits, toBaseUnits } from '@/lib/bridge'
@@ -193,6 +195,14 @@ const bchPaidTo = async (txid: string, lockingBytecode: string) => {
     .toString()
 }
 
+// Coins still at the sale contract after its refund time go back to the user's wallet through `expire`, which needs no
+// key. True when the page sent them.
+const returnSale = async (tx: BridgeTx, order: PublicOrder, update: Update) => {
+  if (!(await returnFromPage(order, undefined))) return false
+  update(tx.uid, () => ({ stage: 'failed', error: 'The Cashbridge Router did not finish in time, so this page sent the coins at its contract back to your wallet' }))
+  return true
+}
+
 // A transfer the Cashbridge Router runs: the user's send to the order's sale contract (sent again while the chain has
 // not seen it), then the Router's sale and THORChain deposit read from the order. The payout is then found on the
 // destination chain like any deposit's. True when the operation needs nothing more from syncReverse this time.
@@ -204,8 +214,16 @@ const syncRouterOrder = async (tx: BridgeTx, update: Update) => {
   const requestEnded = Date.now() - (reverse.signing?.sentAt ?? 0) > OPEN_REQUEST_MS
   if (router.sendTxid && router.signedHex && before && !(await getTransactionState(router.sendTxid)).seen)
     await broadcastRouterSend(tx.uid, router.signedHex, router.sendTxid, update)
-  const order = await orderRequest({ id: router.id, capability: router.capability }, 'GET')
+  let order: PublicOrder
+  try {
+    order = await orderRequest({ id: router.id, capability: router.capability }, 'GET')
+  } catch (error) {
+    // A stopped Router cannot strand the coins: past the refund time the page sends them back from the saved terms.
+    if (router.order && (await returnSale(tx, router.order, update))) return true
+    throw error
+  }
   if (order.depositAddress !== router.depositAddress) throw new Error('The Cashbridge Router order changed its address')
+  if (await returnSale(tx, order, update)) return true
   const accepted = (kind: 'swap' | 'deposit' | 'refund') => order.attempts.find(a => a.kind === kind && a.status === 'accepted')
   const [sold, deposited, returned] = [accepted('swap'), accepted('deposit'), accepted('refund')]
   if (before) {
@@ -681,7 +699,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
               ...reverse,
               signing: signingInputs(routed.send),
               sale: { attempt: generateId(), sellTokens: routed.sellTokens.toString(), minOutput: routed.minSats.toString(), bchOut: routed.bchOut.toString(), minerFeeSats: routed.send.feeSats.toString() },
-              router: { id, capability, depositAddress: order!.depositAddress, payoutRouter: routed.payoutRouter, startBlock: routed.startBlock }
+              router: { id, capability, depositAddress: order!.depositAddress, payoutRouter: routed.payoutRouter, startBlock: routed.startBlock, order }
             }
           }
         )

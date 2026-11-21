@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { createVirtualMachineBch2026 } from '@bitauth/libauth'
 import { bindingFromPubkey, decodeTx, txidOf } from '../src/lib/bch.ts'
 import { bestTrade, poolLockingBytecode, sourcesOf, reviewBuild, tradeTransaction } from '../src/lib/cauldron.ts'
-import { orderBinding } from '../src/lib/router-contract.ts'
+import { orderBinding, saleBinding } from '../src/lib/router-contract.ts'
 import { newPageKey, pageCanSettle, pageMayReturn, returnFromPage, settleFromPage } from '../src/lib/page-settle.ts'
 import { BridgeConfig } from '../src/config.ts'
 import { otherPubkey, pubkey } from './fixtures/bridge-fixtures.mjs'
@@ -105,7 +105,6 @@ test('the page sends nothing back while the order can still settle, is under rev
   assert.equal(pageMayReturn({ ...order, state: 'completed', recoverySats: '0' }, page.secret, late), false)
   assert.equal(pageMayReturn({ ...order, state: 'manual_review', recoverySats: '5000' }, page.secret, late), false)
   assert.equal(pageMayReturn({ ...order, state: 'completed', recoverySats: '5000' }, newPageKey().secret), false, 'another key waits for the refund time')
-  assert.equal(pageMayReturn({ ...order, sale: {} }, page.secret, late), false)
   assert.equal(pageMayReturn(order, undefined, late), true)
 })
 
@@ -117,4 +116,44 @@ test('the page leaves the order alone without its key, without a coin or once it
   assert.equal(pageCanSettle({ ...order, state: 'completed' }, page.secret), false)
   assert.equal(await settleFromPage(order, page.secret, { coinsOf: async () => ({ tip: 1, utxos: [] }), trade: never }), undefined)
   await assert.rejects(settleFromPage({ ...order, depositAddress: refund.cashAddress }, page.secret, { trade: never }), /not its contract/)
+})
+
+// A sale contract (contracts/router-sale.cash) whose Router stopped: the tokens, or the BCH they sold for, go back once the
+// refund time passes, through `expire`, which needs no key.
+const vault = bindingFromPubkey(otherPubkey, 1)
+const saleTerms = { routerKey: router.pubkey, vaultScript: vault.lockingBytecode, memo: '=:BASE.USDC:0xabc:0', refundScript: recipient.lockingBytecode, minSats: '50000', refundAfter: contract.refundAfter }
+const saleOrder = {
+  id: 's',
+  recipientAddress: recipient.tokenAddress,
+  refundAddress: recipient.tokenAddress,
+  expectedBchSats: '60000',
+  contract: { routerKey: router.pubkey, refundAfter: contract.refundAfter },
+  depositAddress: saleBinding(saleTerms, 0).cashAddress,
+  minPusd: '50000',
+  sale: { category: BridgeConfig.pusd.category, tokenAmount: '500', buyAsset: 'BASE.USDC', destination: '0xabc', memo: saleTerms.memo, vaultAddress: vault.cashAddress },
+  state: 'awaiting_deposit',
+  attempts: []
+}
+
+test('a sale whose Router stopped sends its tokens back from the page after the refund time, without any key', async () => {
+  const token = { category: BridgeConfig.pusd.category, amount: 500n, nft: false }
+  const coins = [{ ...coin(0, 2000n), hasToken: true, token }, coin(1, 58000n), { ...coin(2, 2000n), hasToken: true, token: { ...token, nft: true } }]
+  let sent
+  const coinsOf = async () => ({ tip: 100, utxos: coins })
+  const send = async (hex, id) => ((sent = hex), id)
+  const late = (contract.refundAfter + 1) * 1000
+  assert.equal(await returnFromPage(saleOrder, undefined, { coinsOf, send: async () => assert.fail('too early') }), undefined)
+  assert.equal(pageMayReturn(saleOrder, page.secret), false, 'a page key cannot sign for a sale')
+  assert.equal(pageMayReturn({ ...saleOrder, state: 'manual_review' }, undefined, late), false)
+  assert.ok(await returnFromPage({ ...saleOrder, state: 'streaming' }, page.secret, { coinsOf, send, now: late }))
+  const transaction = decodeTx(sent)
+  const lockingBytecode = Buffer.from(saleBinding(saleTerms, 0).lockingBytecode, 'hex')
+  const returned = coins.slice(0, 2)
+  const sourceOutputs = returned.map(c => ({ lockingBytecode, valueSatoshis: c.value, ...(c.token && { token: { category: Buffer.from(c.token.category, 'hex'), amount: c.token.amount } }) }))
+  assert.equal(createVirtualMachineBch2026(true).verify({ transaction, sourceOutputs }), true)
+  assert.equal(transaction.locktime, contract.refundAfter)
+  assert.equal(transaction.inputs.length, 2, 'the NFT is not the customer’s and stays')
+  assert.equal(transaction.outputs[0].token.amount, 500n)
+  assert.ok(!transaction.outputs[1].token && transaction.outputs[1].valueSatoshis + 2000n >= 58000n)
+  transaction.outputs.forEach(output => assert.equal(Buffer.from(output.lockingBytecode).toString('hex'), recipient.lockingBytecode))
 })

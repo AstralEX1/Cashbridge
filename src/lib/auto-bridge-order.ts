@@ -1,7 +1,7 @@
 import { BridgeConfig } from '@/config'
 import { addressToLockingBytecode } from '@/lib/bch'
 import { minOutputFor } from '@/lib/bridge'
-import { orderBinding, REFUND_AFTER_SECONDS, SALE_FLOOR_TOLERANCE_BPS, saleBinding, type OrderTerms } from '@/lib/router-contract'
+import { orderBinding, REFUND_AFTER_SECONDS, SALE_FLOOR_TOLERANCE_BPS, saleBinding, type OrderTerms, type SaleTerms } from '@/lib/router-contract'
 import { sameSale, type OrderIntent, type PublicOrder } from '@/lib/auto-bridge-contract'
 
 // Every order the Router answers with, for the page and the agent endpoint alike: it is this order, it echoes the
@@ -21,16 +21,7 @@ export const checkOrder = (order: PublicOrder | undefined, id: string, intent?: 
     throw new Error('The automatic order response is invalid')
   // The deposit must be the contract of exactly these terms, so the Router can only pay the customer from it.
   if (order.sale) {
-    const terms = {
-      routerKey: order.contract?.routerKey ?? '',
-      vaultScript: addressToLockingBytecode(order.sale.vaultAddress) ?? '',
-      memo: order.sale.memo,
-      refundScript: addressToLockingBytecode(order.refundAddress) ?? '',
-      minSats: order.minPusd,
-      refundAfter: order.contract?.refundAfter ?? 0,
-      ...(order.sale.depositSats !== undefined && { depositSats: order.sale.depositSats })
-    }
-    if (!order.contract || saleBinding(terms, 0).cashAddress !== order.depositAddress) throw new Error('The automatic order address is not its contract')
+    if (!order.contract || saleBinding(saleTermsOf(order), 0).cashAddress !== order.depositAddress) throw new Error('The automatic order address is not its contract')
   } else if (order.contract) {
     const { version, pageKey } = order.contract
     if (version !== undefined && (version !== 2 || !/^0[23][0-9a-f]{64}$/.test(pageKey ?? ''))) throw new Error('The automatic order response is invalid')
@@ -59,4 +50,15 @@ export const orderTermsOf = (order: PublicOrder): OrderTerms => ({
   category: order.category ?? BridgeConfig.pusd.category,
   minPusd: order.minPusd,
   ...(order.contract?.version === 2 && { version: 2 as const, pageKey: order.contract.pageKey, quotedSats: order.expectedBchSats })
+})
+
+// The terms of a sale order's contract, from the order the Router answered with.
+export const saleTermsOf = (order: PublicOrder): SaleTerms => ({
+  routerKey: order.contract?.routerKey ?? '',
+  vaultScript: addressToLockingBytecode(order.sale?.vaultAddress ?? '') ?? '',
+  memo: order.sale?.memo ?? '',
+  refundScript: addressToLockingBytecode(order.refundAddress) ?? '',
+  minSats: order.minPusd,
+  refundAfter: order.contract?.refundAfter ?? 0,
+  ...(order.sale?.depositSats !== undefined && { depositSats: order.sale.depositSats })
 })

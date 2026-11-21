@@ -6,8 +6,8 @@
 import { binToHex, encodeTransaction, generatePrivateKey, generateSigningSerializationBch, hash256, hexToBin, secp256k1, type Output, type Transaction } from '@bitauth/libauth'
 import { decodeTx, listWalletCoins, txidOf } from '@/lib/bch'
 import { broadcastBchTransaction, buildTokenTrade, checkPoolCovenants, checkSigned, reviewBuild, sourcesOf } from '@/lib/cauldron'
-import { coinFloor, MIN_ORDER_COIN_SATS, orderBinding, orderRedeemScript, orderUnlock, parseOrderUnlock, REFUND_FEE_CAP, settlingCoin, type OrderTerms } from '@/lib/router-contract'
-import { orderTermsOf } from '@/lib/auto-bridge-order'
+import { coinFloor, MIN_ORDER_COIN_SATS, orderBinding, orderRedeemScript, orderUnlock, parseOrderUnlock, REFUND_FEE_CAP, saleBinding, saleUnlock, settlingCoin, type OrderTerms } from '@/lib/router-contract'
+import { orderTermsOf, saleTermsOf } from '@/lib/auto-bridge-order'
 import { isTerminal, type PublicOrder } from '@/lib/auto-bridge-contract'
 
 // A one-use key pair for a new order: the secret stays in this browser with the order, the public key goes to the Router.
@@ -81,11 +81,12 @@ function signWithPage(terms: OrderTerms, secret: string, transaction: Transactio
   }
 }
 
-// Whether BCH may still sit at the order's contract for the page to send back: whatever is there once the refund time
-// has passed (a stopped Router must not strand it), and before that a coin the Router reports left after the order
-// settled, which the page's own key can return at once. An order under review waits for the operator.
+// Whether coins may still sit at the order's contract for the page to send back: whatever is there once the refund time
+// has passed (a stopped Router must not strand it), and before that a coin the Router reports left after a forward order
+// settled, which the page's own key can return at once. A sale has no page key, so its coins wait for the refund time.
+// An order under review waits for the operator.
 export const pageMayReturn = (order: PublicOrder | undefined, secret: string | undefined, now = Date.now()): order is PublicOrder => {
-  if (!order?.contract || order.sale || order.state === 'manual_review') return false
+  if (!order?.contract || order.state === 'manual_review') return false
   const done = isTerminal(order.state)
   if (done && !(BigInt(order.recoverySats ?? '0') > 0n)) return false
   return now >= order.contract.refundAfter * 1000 || (done && ownsKey(order, secret))
@@ -97,38 +98,47 @@ export const pageKeySpent = (order: PublicOrder) =>
   ['completed', 'refunded', 'source_refunded'].includes(order.state) && !(BigInt(order.recoverySats ?? '0') > 0n)
 
 const ownsKey = (order: PublicOrder, secret: string | undefined) =>
-  !!secret && order.contract?.version === 2 && binToHex(secp256k1.derivePublicKeyCompressed(hexToBin(secret)) as Uint8Array) === order.contract.pageKey
+  !!secret && !order.sale && order.contract?.version === 2 && binToHex(secp256k1.derivePublicKeyCompressed(hexToBin(secret)) as Uint8Array) === order.contract.pageKey
 
-// Sends the BCH at the order's contract back to the customer's BCH address, each coin at its own index as the contract
-// requires: with the page's key when it has it, else through `expire` once the chain's median time passes the refund
-// time (a node refuses it before then; the next poll tries again). Answers the txid, or undefined with nothing to send.
+// Sends the coins at the order's contract back to the customer's BCH address, each coin at its own index as the contract
+// requires: the BCH of a forward order, or a sale's tokens as they came (or the BCH of their sale, or of a bridge refund).
+// With the page's key when it has it, else through `expire` once the chain's median time passes the refund time (a node
+// refuses it before then; the next poll tries again). Answers the txid, or undefined with nothing to send.
 export async function returnFromPage(
   order: PublicOrder,
   secret: string | undefined,
   { coinsOf = listWalletCoins, send = broadcastBchTransaction, now = Date.now() }: { coinsOf?: typeof listWalletCoins; send?: (hex: string, txid: string) => Promise<string>; now?: number } = {}
 ): Promise<string | undefined> {
   if (!pageMayReturn(order, secret, now)) return
+  const sale = order.sale ? saleTermsOf(order) : undefined
   const terms = orderTermsOf(order)
-  const contract = orderBinding(terms, 0)
+  const contract = sale ? saleBinding(sale, 0) : orderBinding(terms, 0)
   if (contract.cashAddress !== order.depositAddress) throw new Error('The order address is not its contract')
-  const coins = (await coinsOf(contract.lockingBytecode)).utxos.filter(coin => !coin.hasToken && coin.value >= MIN_ORDER_COIN_SATS)
+  // A sale returns its fungible tokens too; an NFT there is not the customer's, and its commitment is not listed anyway.
+  const coins = (await coinsOf(contract.lockingBytecode)).utxos.filter(coin =>
+    coin.token ? !!sale && !coin.token.nft : !coin.hasToken && coin.value >= MIN_ORDER_COIN_SATS
+  )
   if (!coins.length) return
   const keyed = ownsKey(order, secret)
+  const tokenOf = (coin: (typeof coins)[number]) => coin.token && { token: { category: hexToBin(coin.token.category), amount: coin.token.amount } }
   const transaction: Transaction = {
     version: 2,
     locktime: keyed ? 0 : order.contract!.refundAfter,
     inputs: coins.map(coin => ({ outpointTransactionHash: hexToBin(coin.txid), outpointIndex: coin.vout, sequenceNumber: keyed ? 0xffffffff : 0xfffffffe, unlockingBytecode: new Uint8Array() })),
-    outputs: coins.map(coin => ({ lockingBytecode: hexToBin(terms.refundScript), valueSatoshis: coin.value }))
+    outputs: coins.map(coin => ({ lockingBytecode: hexToBin(terms.refundScript), valueSatoshis: coin.value, ...tokenOf(coin) }))
   }
-  const unlock = keyed ? orderUnlock(terms, 'giveBack', new Uint8Array(65), terms.pageKey) : orderUnlock(terms, 'expire')
+  const unlock = keyed ? orderUnlock(terms, 'giveBack', new Uint8Array(65), terms.pageKey) : sale ? saleUnlock(sale, 'expire') : orderUnlock(terms, 'expire')
   // One sat per byte, shared by the coins; the contract lets each leave at most REFUND_FEE_CAP.
   const fee = BigInt(encodeTransaction(transaction).length + coins.length * (unlock.length + 2))
   const share = (fee + BigInt(coins.length) - 1n) / BigInt(coins.length)
-  if (share > REFUND_FEE_CAP || transaction.outputs.some(output => output.valueSatoshis - share < 546n)) return
+  if (share > REFUND_FEE_CAP || transaction.outputs.some(output => output.valueSatoshis - share < (output.token ? TOKEN_DUST : 546n))) return
   transaction.outputs.forEach(output => (output.valueSatoshis -= share))
-  const sourceOutputs = coins.map(coin => ({ lockingBytecode: hexToBin(contract.lockingBytecode), valueSatoshis: coin.value }))
+  const sourceOutputs = coins.map(coin => ({ lockingBytecode: hexToBin(contract.lockingBytecode), valueSatoshis: coin.value, ...tokenOf(coin) }))
   if (keyed) signWithPage(terms, secret!, transaction, sourceOutputs, coins.map((_, index) => index), 'giveBack')
   else transaction.inputs.forEach(input => (input.unlockingBytecode = unlock))
   const hex = binToHex(encodeTransaction(transaction))
   return send(hex, txidOf(hex))
 }
+
+// The least BCH a relay node takes on an output that carries a CashToken.
+const TOKEN_DUST = 800n
