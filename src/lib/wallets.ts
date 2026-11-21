@@ -14,6 +14,7 @@ import { okxWallet } from '@tcswap/wallets/okx'
 import { phantomWallet } from '@tcswap/wallets/phantom'
 import { trezorWallet } from '@tcswap/wallets/trezor'
 import { tronlinkWallet } from '@/lib/tronlink'
+import { LEATHER, leatherWallet, UNISAT, unisatWallet } from '@/lib/bitcoin-wallets'
 import { ETERNL, eternlWallet, LACE, laceWallet, YOROI, yoroiWallet } from '@/lib/cardano-wallet'
 import { NEARCONNECT, nearconnectWallet } from '@/lib/near-connect-wallet'
 import { BACKPACK, SOLANA_WALLET_NAMES, solanaStandardWallet, SOLFLARE } from '@/lib/solana-wallet'
@@ -48,6 +49,7 @@ const defaultWallets = {
   ...exodusWallet,
   ...keplrWallet,
   ...laceWallet,
+  ...leatherWallet,
   ...ledgerWallet,
   ...nearconnectWallet,
   ...okxWallet,
@@ -57,6 +59,7 @@ const defaultWallets = {
   ...tonconnectWallet,
   ...trezorWallet,
   ...tronlinkWallet,
+  ...unisatWallet,
   ...vultisigWallet,
   ...walletconnectWallet,
   ...yoroiWallet
@@ -207,6 +210,10 @@ export async function connectWallet(option: WalletOption, chains: Chain[], confi
       return uSwap.connectEternl(chains, { restoreOnly: config?.restoreOnly })
     case YOROI:
       return uSwap.connectYoroi(chains, { restoreOnly: config?.restoreOnly })
+    case UNISAT:
+      return uSwap.connectUnisat(chains, { restoreOnly: config?.restoreOnly })
+    case LEATHER:
+      return uSwap.connectLeather(chains, { restoreOnly: config?.restoreOnly })
     default: {
       throw new Error(`Unsupported wallet option: ${option}`)
     }
@@ -325,6 +332,8 @@ export const RESTORE_ONLY = new Set<WalletOption>([
   NIGHTLY,
   SOLFLARE,
   BACKPACK,
+  UNISAT,
+  LEATHER,
   TONCONNECT,
   NEARCONNECT,
   LACE,
@@ -431,5 +440,7 @@ export const supportedChains = {
   [NEARCONNECT]: nearconnectWallet.connectNearConnect.supportedChains,
   [LACE]: laceWallet.connectLace.supportedChains,
   [ETERNL]: eternlWallet.connectEternl.supportedChains,
-  [YOROI]: yoroiWallet.connectYoroi.supportedChains
+  [YOROI]: yoroiWallet.connectYoroi.supportedChains,
+  [UNISAT]: unisatWallet.connectUnisat.supportedChains,
+  [LEATHER]: leatherWallet.connectLeather.supportedChains
 } satisfies Partial<Record<WalletOption, Chain[]>>

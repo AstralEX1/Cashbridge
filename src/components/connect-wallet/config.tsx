@@ -4,6 +4,7 @@ import { getBraveEVMProvider, getBraveSolanaProvider } from '@tcswap/wallets/bra
 // The injected-provider globals (window.vultisig, window.phantom, ...) are declared by this package.
 import type {} from '@tcswap/wallet-extensions'
 import { BridgeConfig } from '@/config'
+import { LEATHER, leatherProvider, UNISAT, unisatProvider } from '@/lib/bitcoin-wallets'
 import { CIP30_IDS, cip30Entry, ETERNL, LACE, YOROI } from '@/lib/cardano-wallet'
 import { NEARCONNECT } from '@/lib/near-connect-wallet'
 import { BACKPACK, findSolanaWallet, SOLFLARE } from '@/lib/solana-wallet'
@@ -183,6 +184,22 @@ export const WALLETS: WalletParams[] = [
     supportedChains: supportedChains[BACKPACK]
   },
   {
+    key: 'unisat',
+    type: WalletType.browser,
+    label: 'UniSat',
+    option: UNISAT,
+    link: 'https://unisat.io',
+    supportedChains: supportedChains[UNISAT]
+  },
+  {
+    key: 'leather',
+    type: WalletType.browser,
+    label: 'Leather',
+    option: LEATHER,
+    link: 'https://leather.io',
+    supportedChains: supportedChains[LEATHER]
+  },
+  {
     key: 'lace',
     type: WalletType.browser,
     label: 'Lace',
@@ -327,6 +344,10 @@ export const isWalletAvailable = (option: WalletOption) => {
       return solflareInjected() || findSolanaWallet(option)
     case BACKPACK:
       return findSolanaWallet(option)
+    case UNISAT:
+      return unisatProvider()
+    case LEATHER:
+      return leatherProvider()
     case TONCONNECT:
     case NEARCONNECT:
       return true

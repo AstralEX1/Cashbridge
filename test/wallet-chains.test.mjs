@@ -6,6 +6,7 @@ import { getWallets } from '@mysten/wallet-standard'
 import { getAccounts, RESTORE_ONLY, supportedChains } from '../src/lib/wallets.ts'
 import { NIGHTLY, SLUSH, SUIET } from '../src/lib/sui-wallet.ts'
 import { BACKPACK, SOLFLARE } from '../src/lib/solana-wallet.ts'
+import { LEATHER, UNISAT } from '../src/lib/bitcoin-wallets.ts'
 
 // Loaded as on a server; the window appears afterwards, so the connectors can look for the wallets registered below.
 globalThis.window = Object.assign(new EventTarget(), { location: { origin: 'http://localhost', reload: () => {} } })
@@ -19,11 +20,12 @@ test('TON Connect is offered for TON and restores without a wallet prompt', () =
   assert.equal(RESTORE_ONLY.has('TONCONNECT'), true)
 })
 
-test('Sui and Solana extension wallets restore from an earlier grant only', () => {
+test('Sui, Solana and Bitcoin extension wallets restore from an earlier grant only', () => {
   for (const option of [SLUSH, SUIET]) assert.deepEqual(supportedChains[option], [Chain.Sui])
   for (const option of [SOLFLARE, BACKPACK]) assert.deepEqual(supportedChains[option], [Chain.Solana])
+  for (const option of [UNISAT, LEATHER]) assert.deepEqual(supportedChains[option], [Chain.Bitcoin])
   assert.deepEqual(supportedChains[NIGHTLY], [Chain.Sui, Chain.Solana])
-  for (const option of [SLUSH, SUIET, NIGHTLY, SOLFLARE, BACKPACK]) assert.equal(RESTORE_ONLY.has(option), true)
+  for (const option of [SLUSH, SUIET, NIGHTLY, SOLFLARE, BACKPACK, UNISAT, LEATHER]) assert.equal(RESTORE_ONLY.has(option), true)
 })
 
 test('one wallet row connects its Sui and Solana accounts through the Wallet Standard, each filed under that row', async () => {
