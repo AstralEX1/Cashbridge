@@ -110,6 +110,9 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
   const [chain, setChain] = useState<Chain | undefined>(selected?.chain)
   const [search, setSearch] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
+  const picker = useRef<HTMLElement>(null)
+  const tokensLabel = useRef<HTMLParagraphElement>(null)
+  const [chainTap, setChainTap] = useState(0)
   const assets = useMemo(() => {
     if (!modeAssets) return []
     if (openNetworks) return modeAssets.filter(a => a.identifier !== other?.identifier)
@@ -155,6 +158,15 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
     searchInput.current?.focus()
   }, [open, selected?.chain])
 
+  // A tapped chain glides the picker itself (never the page) down to that chain's tokens, after they render.
+  useEffect(() => {
+    const box = picker.current
+    const label = tokensLabel.current
+    if (!chainTap || !box || !label) return
+    const top = box.scrollTop + label.getBoundingClientRect().top - box.getBoundingClientRect().top
+    box.scrollTo({ top, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  }, [chainTap])
+
   const pickBch = (token: CauldronToken | null) => {
     setBchToken(token)
     onClose()
@@ -162,6 +174,7 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
 
   return (
     <section
+      ref={picker}
       className="bridge-picker"
       aria-label={t(side === 'from' ? 'from' : 'to')}
       onKeyDown={e => {
@@ -197,9 +210,11 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
               className="bridge-pill"
               data-halted={!bch && haltedChains.has(item) ? 'true' : undefined}
               aria-pressed={item === activeChain && !openNetworks}
-              onClick={() => {
+              onClick={e => {
                 if (bch && openNetworks) setOpenNetworks(false)
                 setChain(item)
+                // Keyboard picks (detail 0) keep the focused chain in view.
+                if (e.detail > 0) setChainTap(n => n + 1)
               }}
             >
               <img src={`/networks/${item.toLowerCase()}.svg`} width={20} height={20} alt="" />
@@ -222,7 +237,9 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
           </button>
         )}
       </div>
-      <p className="bridge-picker-label">{t('tokens')}</p>
+      <p ref={tokensLabel} className="bridge-picker-label">
+        {t('tokens')}
+      </p>
       <div key={open ? activeChain : 'closed'} className="bridge-options bridge-token-options" role="group" aria-label={t('tokens')}>
         {bch ? (
           <>
