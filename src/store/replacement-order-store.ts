@@ -1,10 +1,7 @@
-import { useCallback } from 'react'
 import { ProviderName } from '@tcswap/helpers'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { Asset } from '@/components/swap/asset'
-import { useSetAmountFrom, useSetAssetFrom, useSetAssetTo } from '@/hooks/use-swap'
-import { useSetIsLimitSwap, useSetPendingLimitOrder } from '@/store/limit-swap-store'
 
 // THORChain cannot edit an open limit order's expiry, so changing it cancels the order and places a
 // new one. The deposit only comes back after an outbound, minutes later, and the replacement needs a
@@ -58,30 +55,5 @@ export const useReplacementOrderStore = create<ReplacementOrderState>()(
   )
 )
 
-// Hydrating the swap form from a parked replacement is needed both by the Modify dialog and by the
-// global watcher; keeping it beside the type stops the two prefills drifting apart.
-export const useSeedReplacementForm = () => {
-  const setAmountFrom = useSetAmountFrom()
-  const setAssetFrom = useSetAssetFrom()
-  const setAssetTo = useSetAssetTo()
-  const setIsLimitSwap = useSetIsLimitSwap()
-  const setPendingLimitOrder = useSetPendingLimitOrder()
-
-  return useCallback(
-    ({ assetFrom, assetTo, amountFrom, pricePerUnit, expiryBlocks }: ReplacementOrder) => {
-      // Limit mode first: in Send mode each asset setter fills both sides.
-      setIsLimitSwap(true)
-      setAssetFrom(assetFrom)
-      setAssetTo(assetTo)
-      setAmountFrom(amountFrom)
-      // SwapLimit consumes this and sets the expiry and buy amount from it.
-      setPendingLimitOrder({ pricePerUnit, expiryBlocks })
-    },
-    [setAmountFrom, setAssetFrom, setAssetTo, setIsLimitSwap, setPendingLimitOrder]
-  )
-}
-
 export const useReplacementOrder = () => useReplacementOrderStore(state => state.replacement)
 export const useSetReplacementOrder = () => useReplacementOrderStore(state => state.setReplacement)
-export const useMarkReplacementRefunded = () => useReplacementOrderStore(state => state.markRefunded)
-export const useMarkReplacementConsumed = () => useReplacementOrderStore(state => state.markConsumed)

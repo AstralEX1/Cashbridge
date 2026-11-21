@@ -5,7 +5,6 @@ import type { Chain } from '@tcswap/core'
 export const useAccounts = () => useWalletStore(state => state.accounts)
 export const useHasHydrated = () => useWalletStore(state => state.hasHydrated)
 export const useDisconnect = () => useWalletStore(state => state.disconnect)
-export const useConnectedWallets = () => useWalletStore(state => state.connectedWallets)
 export const useSelectAccount = () => useWalletStore(state => state.select)
 export const useSetExternalWalletMode = () => useWalletStore(state => state.setExternalWalletMode)
 

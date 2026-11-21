@@ -5,7 +5,6 @@ import { BridgeConfig } from '@/config'
 import { type CauldronToken, isCauldronToken, PUSD_TOKEN } from '@/lib/cauldron-tokens'
 import { isPayoutChain } from '@/lib/payout-chains'
 import { automaticPreference } from '@/store/auto-bridge-store'
-import { useLimitSwapStore } from '@/store/limit-swap-store'
 
 // A first visit opens on BTC with this sample amount, so there is a quote to look at; no other visit gets one.
 export const FIRST_VISIT_AMOUNT = '0.00156'
@@ -15,15 +14,6 @@ export const FIRST_VISIT_AMOUNT = '0.00156'
 export const isBridgeBuyAsset = (asset?: Pick<Asset, 'identifier'>) => asset?.identifier.toUpperCase() === BridgeConfig.buyAsset
 export const isBridgeSellAsset = (asset?: Asset) => !!asset && !isBridgeBuyAsset(asset) && asset.chain !== 'BCH'
 export const isNetworkAsset = (asset?: Asset) => !!asset && !!asset.providers?.some(provider => BridgeConfig.providers.includes(provider))
-
-// On the PRIVATE tab picking the other side's asset switches Send on instead of flipping. Pickers
-// only: the URL and tab-switch code pass through momentary same-asset pairs.
-export const startPrivateSendOnSamePick = (picked: Asset, side: 'from' | 'to') => {
-  const { isPrivateSwap, setIsPrivateSend } = useLimitSwapStore.getState()
-  const { assetFrom, assetTo } = useSwapStore.getState()
-  const other = side === 'from' ? assetTo : assetFrom
-  if (isPrivateSwap && picked.identifier === other?.identifier) setIsPrivateSend(true)
-}
 
 export const INITIAL_SLIPPAGE = 1
 export const INITIAL_CUSTOM_INTERVAL = 0

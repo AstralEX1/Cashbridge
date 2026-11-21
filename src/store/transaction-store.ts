@@ -422,9 +422,6 @@ export const transactionStore = create<TransactionStore>()(
   )
 )
 
-const sortedTransactions = (state: TransactionStore) =>
-  state.transactions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-
 export const useSetTransaction = () => transactionStore(state => state.setTransaction)
 export const useSetTransactionDetails = () => transactionStore(state => state.setTransactionDetails)
 export const useSetTransactionStatus = () => transactionStore(state => state.setTransactionStatus)
@@ -438,8 +435,6 @@ export const activeBridge = (state: TransactionStore) => state.transactions.find
 // Every unfinished operation, the active one and those waiting in the background.
 export const unfinishedBridges = (state: TransactionStore) => state.transactions.filter(isUnfinishedBridge)
 export const getActiveBridge = () => activeBridge(transactionStore.getState())
-export const useTransactions = () => transactionStore(sortedTransactions)
-export const useHasTransactions = () => transactionStore(state => state.transactions.length > 0)
 export const useTransaction = (uid?: string) => transactionStore(state => (uid ? state.transactions.find(tx => tx.uid === uid) : undefined))
 
 export const isTxPending = (status: string) => status === 'not_started' || status === 'swapping' || status === 'pending'
@@ -452,6 +447,5 @@ export const hasDepositArrived = (tx: Transaction) => !!tx.hash || DEPOSIT_SEEN_
 const isTxSyncable = (tx: Transaction) => isTxPending(tx.status) || (tx.kind !== 'send' && !tx.details && !isTxTerminal(tx.status))
 const isBridgeTx = (tx: Transaction) => tx.kind !== 'send' && !!tx.bridge
 
-export const usePendingTransactions = () => transactionStore(useShallow(state => state.transactions.filter(isTxSyncable)))
 // Bridge operations are tracked by useBridgeTracker, not the generic tracker poll.
 export const useSyncablePlainTransactions = () => transactionStore(useShallow(state => state.transactions.filter(tx => isTxSyncable(tx) && !isBridgeTx(tx))))

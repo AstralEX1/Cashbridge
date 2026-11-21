@@ -20,8 +20,6 @@ export const useSetCustomInterval = () => useSwapStore(state => state.setCustomI
 export const useCustomQuantity = () => useSwapStore(state => state.customQuantity)
 export const useSetCustomQuantity = () => useSwapStore(state => state.setCustomQuantity)
 
-export const useSwapAssets = () => useSwapStore(state => state.swapAssets)
-
 // Hooks
 
 export const useSwap = () => {

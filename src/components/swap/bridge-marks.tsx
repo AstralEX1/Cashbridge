@@ -20,11 +20,6 @@ export const CauldronMark = ({ size = 20 }: { size?: number }) => (
   <img src="/providers/cauldron.png" width={size} height={size} alt="Cauldron" className="bridge-mark" />
 )
 
-// ParyonUSD's icon from its BCMR metadata (see public/tokens/README.md).
-export const PusdMark = ({ size = 34 }: { size?: number }) => (
-  <img src="/tokens/pusd.svg" width={size} height={size} alt="" className="bridge-mark bridge-pusd-mark" />
-)
-
 // A Cauldron token's icon from its BCMR metadata, or its ticker's first letter when there is none
 // or it fails to load. The icon is a third-party image, loaded without a referrer.
 export const TokenMark = ({ token, size = 34 }: { token: Pick<CauldronToken, 'ticker' | 'icon'>; size?: number }) => {

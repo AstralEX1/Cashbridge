@@ -57,10 +57,7 @@ export const useIsPrivateSend = () => useLimitSwapStore(isPrivateSendMode)
 export const useSetIsPrivateSend = () => useLimitSwapStore(state => state.setIsPrivateSend)
 
 export const useLimitSwapBuyAmount = () => useLimitSwapStore(state => state.limitSwapBuyAmount)
-export const useSetLimitSwapBuyAmount = () => useLimitSwapStore(state => state.setLimitSwapBuyAmount)
 
 export const useLimitSwapExpiry = () => useLimitSwapStore(state => state.limitSwapExpiry)
-export const useSetLimitSwapExpiry = () => useLimitSwapStore(state => state.setLimitSwapExpiry)
 
-export const usePendingLimitOrder = () => useLimitSwapStore(state => state.pendingLimitOrder)
 export const useSetPendingLimitOrder = () => useLimitSwapStore(state => state.setPendingLimitOrder)
