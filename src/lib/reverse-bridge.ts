@@ -392,7 +392,7 @@ export const nearReverseOutcome = async (op: BridgeOperation): Promise<NearRever
   if (view.kind === 'failed') return { error: view.reason }
   if (view.kind === 'pending') return view.detail ? { error: view.detail } : undefined
   const chain = destinationChainOf(reverse.buyAsset)
-  const expect = { destination: reverse.destination, buyAsset: reverse.buyAsset }
+  const expect = { destination: reverse.destination, buyAsset: reverse.buyAsset, ...(view.txids.length === 1 && view.amountOut && { reportedAmount: view.amountOut }) }
   const found = (await Promise.all(view.txids.map(hash => payoutByHash(chain, hash, expect).catch(() => undefined)))).filter(p => p !== undefined)
   const total = found.reduce((sum, p) => sum + BigInt(p.amount), 0n)
   return found.length && total >= BigInt(near.minAmountOut) ? { payout: { hash: found[0].hash, amount: total.toString() } } : undefined

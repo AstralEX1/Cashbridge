@@ -22,7 +22,8 @@ const syncNearSwap = async (tx: SwapTransaction, depositAddress: string): Promis
   if (view.kind === 'failed') return { hash: tx.hash, status: 'failed' }
   if (view.kind === 'pending') return { hash: tx.hash, status: 'pending' }
   const chain = destinationChainOf(tx.assetTo.identifier)
-  const payouts = await Promise.all(view.txids.map(txid => payoutByHash(chain, txid, { destination: tx.addressTo, buyAsset: tx.assetTo.identifier }).catch(() => undefined)))
+  const expect = { destination: tx.addressTo, buyAsset: tx.assetTo.identifier, ...(view.txids.length === 1 && view.amountOut && { reportedAmount: view.amountOut }) }
+  const payouts = await Promise.all(view.txids.map(txid => payoutByHash(chain, txid, expect).catch(() => undefined)))
   const paid = payouts.filter(p => !!p)
   const amount = paid.reduce((sum, p) => sum + BigInt(p.amount), 0n)
   if (!paid.length || amount < BigInt(tx.networkSwap!.minOutput)) return { hash: tx.hash, status: 'pending' }

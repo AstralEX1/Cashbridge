@@ -20,6 +20,8 @@ export interface PayoutExpectation {
   depositTxid?: string
   // The asked THORChain asset, e.g. TRON.USDT-TR7NHQ... (its contract identifies a token payout).
   buyAsset: string
+  // What the bridge reports this one transaction paid, in base units (1Click's amountOut).
+  reportedAmount?: string
 }
 
 // Chains only THORChain pays here (Cosmos Hub, THORChain itself): the memo always names the deposit.
@@ -150,13 +152,21 @@ const ERC20_TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a116
 // plain transfer to it. THORChain's EVM payouts go through its router instead (matchPayout in thorchain-deposit.ts).
 export const evmTransferPayout = (
   receipt: { status?: number | null; logs: readonly { address: string; topics: readonly string[]; data: string }[] } | null,
-  tx: { to?: string | null; value?: bigint } | null,
+  tx: { to?: string | null; value?: bigint; data?: string } | null,
   hash: string,
   expect: PayoutExpectation
 ): ChainPayout | undefined => {
   if (!receipt || receipt.status !== 1) return undefined
   const token = expect.buyAsset.split('-')[1]
-  if (!token) return tx?.to && sameAddress(tx.to, expect.destination) && tx.value && tx.value > 0n ? { hash, amount: tx.value.toString() } : undefined
+  if (!token) {
+    if (tx?.to && sameAddress(tx.to, expect.destination) && tx.value && tx.value > 0n) return { hash, amount: tx.value.toString() }
+    // A bridge contract pays the coin by an internal transfer, which leaves no log (1Click's Optimism ETH payouts do):
+    // it counts when the successful call's arguments name the destination and the amount the bridge reports.
+    const reported = expect.reportedAmount ? BigInt(expect.reportedAmount) : 0n
+    const words = new Set(tx?.data?.replace(/^0x/, '').slice(8).toLowerCase().match(/.{64}/g) ?? [])
+    const word = (hex: string) => hex.toLowerCase().replace(/^0x/, '').padStart(64, '0')
+    return reported > 0n && words.has(word(expect.destination)) && words.has(word(reported.toString(16))) ? { hash, amount: reported.toString() } : undefined
+  }
   const to = `0x${expect.destination.toLowerCase().replace(/^0x/, '').padStart(64, '0')}`
   const paid = receipt.logs
     .filter(l => l.address.toLowerCase() === token.toLowerCase() && l.topics[0]?.toLowerCase() === ERC20_TRANSFER_TOPIC && l.topics[2]?.toLowerCase() === to)

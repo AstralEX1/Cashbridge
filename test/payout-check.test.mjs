@@ -206,4 +206,14 @@ test('an EVM payout from NEAR Intents is the token’s Transfer to the destinati
   const eth = { destination, buyAsset: 'BASE.ETH' }
   assert.deepEqual(evmTransferPayout(receipt([]), { to: destination.toLowerCase(), value: 10n ** 15n }, '0xh', eth), { hash: '0xh', amount: '1000000000000000' })
   assert.equal(evmTransferPayout(receipt([]), { to: usdc, value: 10n ** 15n }, '0xh', eth), undefined)
+
+  // 1Click's Optimism ETH payout (0xca49a393…): a bridge call naming the destination and amount, paid by an internal transfer.
+  const bridge = '0x233c5370ccfb3cd7409d9a3fb98ab94de94cb4cd'
+  const call = (to, amount) => ({ to: bridge, value: 0n, data: `0xd9e7c316${[word('6151bac12a4d9e7dce'), word('0'), word(to), word(amount.toString(16)), word('a0')].map(w => w.slice(2)).join('')}` })
+  const reported = { ...eth, reportedAmount: '4926495063359270' }
+  assert.deepEqual(evmTransferPayout(receipt([]), call(destination, 4_926_495_063_359_270n), '0xh', reported), { hash: '0xh', amount: '4926495063359270' })
+  assert.equal(evmTransferPayout(receipt([]), call(destination, 4_926_495_063_359_270n), '0xh', eth), undefined, 'no reported amount')
+  assert.equal(evmTransferPayout(receipt([]), call(usdc, 4_926_495_063_359_270n), '0xh', reported), undefined, 'another recipient')
+  assert.equal(evmTransferPayout(receipt([]), call(destination, 1n), '0xh', reported), undefined, 'another amount')
+  assert.equal(evmTransferPayout({ status: 0, logs: [] }, call(destination, 4_926_495_063_359_270n), '0xh', reported), undefined, 'reverted')
 })
