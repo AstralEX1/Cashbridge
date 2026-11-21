@@ -5,7 +5,7 @@ import { withLock } from '@/lib/bridge-first-leg'
 import { isUserRejection } from '@/lib/errors'
 import { sourceTransactionId } from '@/lib/source-transaction'
 import { checkOrder } from '@/lib/auto-bridge-order'
-import { pageCanSettle, pageMayReturn, returnFromPage, settleFromPage } from '@/lib/page-settle'
+import { pageCanSettle, pageKeySpent, pageMayReturn, returnFromPage, settleFromPage } from '@/lib/page-settle'
 import { autoBridgeStore, type SavedAutoOrder } from '@/store/auto-bridge-store'
 import { isTerminal, type PublicOrder } from '@/lib/auto-bridge-contract'
 
@@ -91,6 +91,8 @@ export async function pollAutomaticOrders(nextPoll: OrderPollSchedule, stopped: 
     let order = reference.order
     try {
       order = await restoreAutomaticOrder(reference)
+      // A key that can sign nothing more is not kept in the browser ('' stays erased; see the order storage).
+      if (reference.pageSecret && pageKeySpent(order)) autoBridgeStore.getState().patch(reference.id, { pageSecret: '' })
       const delay = isTerminal(order.state) ? 300000 : reference.sourceAttempted ? 5000 : 60000
       nextPoll.set(reference.id, { at: Date.now() + delay, attempted: !!reference.sourceAttempted, failed: false })
     } catch {

@@ -71,6 +71,32 @@ test('terminal automatic orders refresh late custody and payout warnings on a bo
   assert.equal(calls, 2)
 })
 
+test('the page key leaves browser storage once its order is done with no BCH left at the contract, and stays gone', async t => {
+  t.after(() => { autoBridgeStore.setState({ orders: [] }); data.clear() })
+  const address = bindingFromPubkey(pubkey, 0).cashAddress
+  const secret = randomBytes(32).toString('hex')
+  const saved = id => JSON.parse(data.get(`cashbridge-auto-order-${id}`) ?? 'null')
+  const run = async (state, recoverySats) => {
+    const reference = { id: randomUUID(), capability: randomBytes(32).toString('hex'), pageSecret: secret }
+    autoBridgeStore.getState().save(reference)
+    t.mock.method(globalThis, 'fetch', async () => Response.json({ id: reference.id, depositAddress: address, minPusd: '100', state, recoverySats }))
+    await pollAutomaticOrders(new Map(), () => false)
+    t.mock.restoreAll()
+    return reference.id
+  }
+  for (const [state, recovery, kept] of [['completed', '0', false], ['refunded', undefined, false], ['completed', '12000', true], ['manual_review', '0', true], ['submitted', '0', true]]) {
+    const id = await run(state, recovery)
+    const label = `${state} with ${recovery ?? 'no'} sats left`
+    assert.equal(autoBridgeStore.getState().orders.find(order => order.id === id).pageSecret, kept ? secret : '', label)
+    assert.equal(saved(id).pageSecret, kept ? secret : '', label)
+  }
+  // An older tab that still holds the key cannot write it back.
+  const id = autoBridgeStore.getState().orders.find(order => order.pageSecret === '').id
+  autoBridgeStore.setState(state => ({ orders: state.orders.map(order => order.id === id ? { ...order, pageSecret: secret, estimatedSeconds: 60 } : order) }))
+  assert.equal(saved(id).pageSecret, '')
+  assert.equal(saved(id).estimatedSeconds, 60)
+})
+
 test('the poller leaves an order alone while its create request is in flight', async t => {
   t.after(() => { autoBridgeStore.setState({ orders: [] }); data.clear() })
   const address = bindingFromPubkey(pubkey, 0).cashAddress
