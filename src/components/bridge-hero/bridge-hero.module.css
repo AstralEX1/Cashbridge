@@ -93,8 +93,6 @@
 .field {
   position: relative;
   overflow: hidden;
-  max-width: 480px;
-  margin-inline: auto;
   aspect-ratio: 360 / 220;
   border-radius: 16px;
   cursor: pointer;
@@ -196,8 +194,6 @@
 .shop {
   position: absolute;
   inset: 0;
-  max-width: 480px;
-  margin-inline: auto;
   overflow-y: auto;
   padding: 8px 10px 10px;
   border-radius: 16px;
@@ -260,12 +256,6 @@
   font-size: 48px;
   font-variant-numeric: tabular-nums;
   line-height: 1;
-}
-.note {
-  margin: 10px 6px 2px;
-  color: #7fae98;
-  font-size: 12px;
-  line-height: 1.4;
 }
 @media (prefers-reduced-motion: reduce) {
   .game,

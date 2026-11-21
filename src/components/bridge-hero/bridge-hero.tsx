@@ -237,10 +237,6 @@ const Game = ({ start, onClose }: { start: number; onClose: () => void }) => {
                 <Hand size={14} />
                 {t('hold')}
               </span>
-              <span>
-                <Coins size={14} />
-                {t('hop')}
-              </span>
             </span>
           )}
         </div>
@@ -264,7 +260,6 @@ const Game = ({ start, onClose }: { start: number; onClose: () => void }) => {
         )}
         {shop && <Shop wallet={wallet} onPick={pick} onClose={() => setShop(false)} />}
       </div>
-      <p className={styles.note}>{t('note')}</p>
       <p className="sr-only" role="status" aria-live="polite">
         {over ? t('missed', { score: view.score }) : view.score ? t('crossed', { score: view.score }) : ''}
       </p>
