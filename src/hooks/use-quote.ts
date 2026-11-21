@@ -1,5 +1,5 @@
 import { RefetchOptions, useQuery } from '@tanstack/react-query'
-import { USwapNumber } from '@tcswap/core'
+import { Chain, USwapNumber, WalletOption } from '@tcswap/core'
 import { ProviderName, USwapError } from '@tcswap/helpers'
 import { QuoteResponseRoute } from '@tcswap/helpers/api'
 import { AppConfig, BridgeConfig } from '@/config'
@@ -17,6 +17,7 @@ import { formatBaseUnits, secondLegSellAmount, toBaseUnits } from '@/lib/bridge'
 import { shapeShiftSaleSats } from '@/lib/router-contract'
 import { getShapeShiftQuote, type ShapeShiftRoute } from '@/lib/shapeshift'
 import { useSourceGas } from '@/hooks/use-source-gas'
+import { useConnectedAccount } from '@/hooks/use-wallets'
 import type { SourceGas } from '@/lib/source-gas'
 
 // The routes' quotes for the same transfer; any may be missing. ShapeShift is quoted on open-network pairs only.
@@ -48,6 +49,8 @@ type UseQuote = {
   // Set when the amount is under THORChain's minimum swap, in the sell asset's units.
   minimum?: string
 }
+
+const LEDGER_MEMO_TRIMMED: Chain[] = [Chain.Litecoin, Chain.Dogecoin, Chain.BitcoinCash, Chain.Dash, Chain.Zcash]
 
 export const useQuote = (): UseQuote => {
   const { valueFrom } = useSwap()
@@ -94,6 +97,11 @@ export const useQuote = (): UseQuote => {
     : assetFrom && (reverse ? { sellDecimals: 8, buyDecimals: assetFrom.decimals } : { sellDecimals: assetFrom.decimals, buyDecimals: 8 })
   // On the bridge form `assetFrom` is the non-BCH side; NEAR-only rows must never ask THORChain for a deposit.
   const nearOnly = !openNetworks && isNearOnlyAsset(assetFrom)
+  const sellChain = sellAsset?.split('.')[0] as Chain | undefined
+  const sender = useConnectedAccount(sellChain, true)
+  // Ledger's SDK connector cuts the last memo field, the trade limit, off a deposit on a UTXO chain other than Bitcoin
+  // (wallet-hardware ledger `reduceMemo`): THORChain would swap it with no minimum out. NEAR Intents and ShapeShift take no memo.
+  const noThorchain = nearOnly || (!!sender && sender.provider === WalletOption.LEDGER && LEDGER_MEMO_TRIMMED.includes(sender.network))
   const choice = useSwapStore(state => state.routeChoice)
 
   const queryKey = [
@@ -112,7 +120,7 @@ export const useQuote = (): UseQuote => {
     nearAllowed,
     shapeshiftAllowed,
     shapeshiftAmount,
-    nearOnly
+    noThorchain
   ]
 
   const {
@@ -160,7 +168,7 @@ export const useQuote = (): UseQuote => {
               return undefined
             })
           : undefined
-      const thorchain = nearOnly
+      const thorchain = noThorchain
         ? Promise.resolve(undefined)
         : (openNetworks ? getNetworkQuotes : getQuotes)(
             {
