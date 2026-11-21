@@ -137,6 +137,10 @@ const STANDARD_CHAINS = [
 
 export async function connectWallet(option: WalletOption, chains: Chain[], config?: any): Promise<boolean> {
   const uSwap = getUSwap()
+  // A connection saved before a chain stopped being offered for this wallet does not come back on it.
+  const offered = (supportedChains as Partial<Record<WalletOption, Chain[]>>)[option]
+  if (offered) chains = chains.filter(chain => offered.includes(chain))
+  if (chains.length === 0) return false
 
   // Sui, and Solana in wallets the SDK has no Solana connector for, go through the Wallet Standard; a multi-chain
   // wallet's other chains through its own connector. One after the other, so a wallet shows one prompt at a time.
@@ -169,8 +173,7 @@ export async function connectWallet(option: WalletOption, chains: Chain[], confi
       if (!metamask) throw new Error('MetaMask not found. Install or enable the MetaMask extension.')
       return connectEach(c => uSwap.connectEVMWallet(c, WalletOption.METAMASK, metamask))
     case WalletOption.PHANTOM:
-      // Not on Bitcoin (see supportedChains), also for a Phantom saved on it before.
-      return connectEach(c => (c.includes(Chain.Bitcoin) ? Promise.reject(new Error('Phantom is not offered for Bitcoin')) : uSwap.connectPhantom(c)))
+      return connectEach(c => uSwap.connectPhantom(c))
     case WalletOption.TRUSTWALLET_WEB:
       const trust = getEIP6963Wallets().providers.find(p => p.info.name === 'Trust Wallet')
       return connectEach(c => uSwap.connectEVMWallet(c, WalletOption.TRUSTWALLET_WEB, trust?.provider))
@@ -467,13 +470,15 @@ export const supportedChains = {
     ...onekeyWallet.connectOnekeyWallet.supportedChains.filter(chain => chain !== Chain.Bitcoin && chain !== Chain.Solana),
     Chain.Sui
   ],
-  // Its Bitcoin connector takes the first account (the ordinals one in Phantom's docs) and has no signer to send with.
-  [WalletOption.PHANTOM]: phantomWallet.connectPhantom.supportedChains.filter(chain => chain !== Chain.Bitcoin),
+  // Its Bitcoin connector takes the first account (the ordinals one in Phantom's docs) and has no signer to send with;
+  // Phantom has dropped Monad (docs.phantom.com: "Monad support has been deprecated").
+  [WalletOption.PHANTOM]: phantomWallet.connectPhantom.supportedChains.filter(chain => chain !== Chain.Bitcoin && chain !== Chain.Monad),
   [WalletOption.TREZOR]: TREZOR_CHAINS,
   [WalletOption.TRONLINK]: tronlinkWallet.connectTronLink.supportedChains,
   [WalletOption.TRUSTWALLET_WEB]: evmWallet.connectEVMWallet.supportedChains,
   [WalletOption.VULTISIG]: vultisigWallet.connectVultisig.supportedChains,
-  [WalletOption.WALLETCONNECT]: walletconnectWallet.connectWalletconnect.supportedChains,
+  // Its NEAR signer hands the SDK a zero signature, not the transaction the wallet sent (wallets/src/walletconnect).
+  [WalletOption.WALLETCONNECT]: walletconnectWallet.connectWalletconnect.supportedChains.filter(chain => chain !== Chain.Near),
   [WalletOption.WALLET_SELECTOR]: [Chain.Near],
   [SLUSH]: suiWallet.connectSuiWallet.supportedChains,
   [SUIET]: suiWallet.connectSuiWallet.supportedChains,

@@ -11,8 +11,16 @@ import { LEATHER, UNISAT } from '../src/lib/bitcoin-wallets.ts'
 // Loaded as on a server; the window appears afterwards, so the connectors can look for the wallets registered below.
 globalThis.window = Object.assign(new EventTarget(), { location: { origin: 'http://localhost', reload: () => {} } })
 
-test('Phantom is offered for Ethereum, Monad and Solana but not for Bitcoin, where its connector cannot send', () => {
-  assert.deepEqual(supportedChains[WalletOption.PHANTOM], [Chain.Ethereum, Chain.Monad, Chain.Solana])
+test('Phantom is offered for Ethereum and Solana: not for Bitcoin, where its connector cannot send, nor Monad, which Phantom dropped', () => {
+  assert.deepEqual(supportedChains[WalletOption.PHANTOM], [Chain.Ethereum, Chain.Solana])
+})
+
+test('a wallet connection saved on a chain no longer offered for it does not come back there', async () => {
+  const asked = []
+  window.phantom = { ethereum: { request: async ({ method }) => (asked.push(method), ['0x702570b16d6A5bB2a9AbF4872710b3925D379709']) } }
+  assert.deepEqual(await getAccounts(WalletOption.PHANTOM, [Chain.Monad]), [])
+  assert.deepEqual(asked, [], 'Phantom is never asked for a Monad account')
+  delete window.phantom
 })
 
 test('hardware wallets are offered only on the chains their connect steps carry a path for, and not on Zcash', () => {
@@ -24,6 +32,11 @@ test('hardware wallets are offered only on the chains their connect steps carry 
   }
   for (const chain of [Chain.Ripple, Chain.Tron, Chain.Cosmos, Chain.THORChain])
     assert.equal(supportedChains[WalletOption.LEDGER].includes(chain), true)
+})
+
+test('WalletConnect is not offered on NEAR, where its signer returns no real signature', () => {
+  assert.equal(supportedChains[WalletOption.WALLETCONNECT].includes(Chain.Near), false)
+  assert.equal(supportedChains[WalletOption.WALLETCONNECT].includes(Chain.Ethereum), true)
 })
 
 test('multi-chain extensions are offered only for the chains their connectors can send on', () => {
