@@ -74,7 +74,7 @@ export default function Page() {
 
       <h2 id="impact">Reading the price impact</h2>
       <p>
-        Next to the amount you receive, the form shows the price impact of the whole route: what you lose between the value you send and the value you receive, without gas. Hover over it for the breakdown into bridge fee (THORChain when that route wins), Cauldron fee and pool price impact. When THORChain, NEAR Intents or ShapeShift quote together, compare their outputs side by side before you choose. A small transfer pays mostly fees. A large one pays mostly price impact, because the pools have limited depth.
+        Next to the amount you receive, the form shows the price impact of the whole route: what you lose between the value you send and the value you receive, without gas. Hover over it for the breakdown into bridge fee (THORChain when that route wins), Cauldron fee and pool price impact. When THORChain, NEAR Intents or ShapeShift quote together, compare their outputs side by side before you choose. On an EVM chain each card shows what arrives after the gas its deposit costs (an approval and a router call for THORChain with a token, one transfer for NEAR Intents and ShapeShift), priced at the chain&apos;s live gas price, and the best one is picked on that net amount. A small transfer pays mostly fees. A large one pays mostly price impact, because the pools have limited depth.
       </p>
       <p>
         If the Cauldron pools price PUSD away from its peg of one dollar, the form shows the rate at which one PUSD costs. A smaller amount, or waiting for the pools to recover, gives a better result. Transfers with the Cashbridge Router ask you to tick a box before you accept a price impact above about 2%.

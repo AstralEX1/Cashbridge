@@ -1004,7 +1004,8 @@
       "best": "Best",
       "minutes": "≈ {minutes} min",
       "unavailable": "No quote for this amount",
-      "halted": "Paused on THORChain"
+      "halted": "Paused on THORChain",
+      "gas": "Gas to send: {usd}, already taken off the amount"
     }
   },
   "automatic": {
