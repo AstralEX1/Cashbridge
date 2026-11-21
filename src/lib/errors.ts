@@ -112,13 +112,14 @@ const isAssetMissingError = (message: string): boolean => message.includes('not 
 //     THORChain declined for an entirely different - and fixable - reason.
 const errorRank = (message: string): number => (isAssetMissingError(message) ? 2 : isTradingHaltedError(message) ? 1 : 0)
 
-// The user declined in the wallet: EIP-1193 4001, ethers' ACTION_REJECTED, or the wallets' own wording.
+// The user declined in the wallet: EIP-1193 4001, ethers' ACTION_REJECTED, or the wallets' own wording. TronLink
+// throws the bare string "Confirmation declined by user"; Sui wallets say "Rejected from user".
 // Nothing was signed, so nothing can have been sent.
 export const isUserRejection = (error: unknown): boolean => {
   for (let e: any = error, depth = 0; e && depth < 5; e = e.cause ?? e.error ?? e.info?.error, depth++) {
     if (e.code === 4001 || e.code === 'ACTION_REJECTED') return true
-    const message = typeof e.message === 'string' ? e.message.toLowerCase() : ''
-    if (/user rejected|user denied|rejected by user|user cancel+ed|request rejected/.test(message)) return true
+    const message = (typeof e === 'string' ? e : typeof e.message === 'string' ? e.message : '').toLowerCase()
+    if (/user rejected|user denied|rejected (by|from) user|declined by user|user cancel+ed|request rejected/.test(message)) return true
   }
   return false
 }

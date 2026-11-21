@@ -146,6 +146,10 @@ test('wallet rejections are recognised in the shapes wallets and ethers report t
   const { isUserRejection } = await import('../src/lib/errors.ts')
   assert.equal(isUserRejection({ code: 4001, message: 'User rejected the request.' }), true)
   assert.equal(isUserRejection({ code: 'ACTION_REJECTED' }), true)
+  // TronLink rejects with a bare string, Sui wallets with their own wording.
+  assert.equal(isUserRejection('Confirmation declined by user'), true)
+  assert.equal(isUserRejection(new Error('Rejected from user')), true)
+  assert.equal(isUserRejection('Insufficient balance'), false)
   assert.equal(isUserRejection(new Error('MetaMask Tx Signature: User denied transaction signature.')), true)
   assert.equal(isUserRejection({ message: 'wrapped', cause: { code: 4001 } }), true)
   assert.equal(isUserRejection(new Error('insufficient funds for gas')), false)
