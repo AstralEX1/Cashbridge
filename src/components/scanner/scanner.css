@@ -62,6 +62,38 @@
   border-radius: 50%;
   background: #142026;
 }
+.scanner-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+}
+.scanner-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #00000033;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  transition: border-color 160ms var(--ease-out), color 160ms var(--ease-out), transform 160ms var(--ease-out);
+}
+.scanner-help:hover {
+  border-color: var(--green);
+  color: var(--text);
+}
+.scanner-help:active {
+  transform: scale(0.97);
+}
+.scanner-help:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
 .scanner-tools {
   display: flex;
   flex-wrap: wrap;

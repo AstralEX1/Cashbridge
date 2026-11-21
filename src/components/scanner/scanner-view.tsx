@@ -1,6 +1,7 @@
 'use client'
 
-import { ArrowLeftRight, ArrowUpRight, CircleCheck, LoaderCircle, Search, SearchX, Wallet, X, Zap } from 'lucide-react'
+import { ArrowLeftRight, ArrowUpRight, CircleCheck, LifeBuoy, LoaderCircle, Search, SearchX, Wallet, X, Zap } from 'lucide-react'
+import Link from 'next/link'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { NumberTicker } from '@/components/landing/number-ticker'
 import { isScanAddress } from '@/lib/auto-bridge-contract'
@@ -80,9 +81,15 @@ export function ScannerView() {
 
   return (
     <>
-      <h1 className="scanner-title">
-        Scanner <LiveDot live={live} />
-      </h1>
+      <div className="scanner-head">
+        <h1 className="scanner-title">
+          Scanner <LiveDot live={live} />
+        </h1>
+        <Link href="/docs/stuck" className="scanner-help">
+          <LifeBuoy size={16} aria-hidden />
+          Transaction got stuck?
+        </Link>
+      </div>
 
       <dl className="scanner-stats">
         {stats.map(([label, icon, value]) => (
