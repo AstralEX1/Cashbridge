@@ -11,6 +11,8 @@ export const TONCONNECT = 'TONCONNECT' as string as WalletOption
 
 const MAINNET = '-239'
 const TONCENTER = 'https://toncenter.com/api/v3'
+// Balances only, when toncenter fails: the jetton wallet a transfer is sent to always comes from toncenter.
+const TONAPI = 'https://tonapi.io/v2'
 // Gas attached to a jetton transfer, and the 1 nanoton that makes the jetton wallet notify the deposit address
 // (docs.ton.org/applications/ton-connect/how-to/send-transaction#jetton-transfer).
 const JETTON_GAS = 50_000_000n
@@ -122,9 +124,16 @@ export const tonconnectWallet = createWallet({
         const balances = []
         // One after another: keyless toncenter rate-limits parallel calls.
         for (const asset of await nearCatalogAssets(Chain.Ton)) {
-          const raw = asset.address
-            ? ((await jettonWallet(address, asset.address))?.balance ?? '0')
-            : (await toncenter<{ balance: string }>(`/addressInformation?address=${encodeURIComponent(address)}&use_v2=false`)).balance
+          const raw = await (asset.address
+            ? jettonWallet(address, asset.address).then(wallet => wallet?.balance ?? '0')
+            : toncenter<{ balance: string }>(`/addressInformation?address=${encodeURIComponent(address)}&use_v2=false`).then(info => info.balance)
+          ).catch(async error => {
+            const response = await fetch(`${TONAPI}/accounts/${encodeURIComponent(address)}${asset.address ? `/jettons/${encodeURIComponent(asset.address)}` : ''}`, {
+              signal: AbortSignal.timeout(15_000)
+            }).catch(() => undefined)
+            if (!response?.ok) throw error
+            return String((await response.json()).balance ?? '0')
+          })
           balances.push(catalogBalance(asset, raw))
         }
         return balances
