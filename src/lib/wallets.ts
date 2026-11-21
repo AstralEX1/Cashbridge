@@ -137,6 +137,10 @@ const STANDARD_CHAINS = [
 
 export async function connectWallet(option: WalletOption, chains: Chain[], config?: any): Promise<boolean> {
   const uSwap = getUSwap()
+  // A connection saved before a chain stopped being offered for this wallet does not come back on it.
+  const offered = (supportedChains as Partial<Record<WalletOption, Chain[]>>)[option]
+  if (offered) chains = chains.filter(chain => offered.includes(chain))
+  if (chains.length === 0) return false
 
   // Sui, and Solana in wallets the SDK has no Solana connector for, go through the Wallet Standard; a multi-chain
   // wallet's other chains through its own connector. One after the other, so a wallet shows one prompt at a time.
@@ -169,8 +173,7 @@ export async function connectWallet(option: WalletOption, chains: Chain[], confi
       if (!metamask) throw new Error('MetaMask not found. Install or enable the MetaMask extension.')
       return connectEach(c => uSwap.connectEVMWallet(c, WalletOption.METAMASK, metamask))
     case WalletOption.PHANTOM:
-      // Not on Bitcoin (see supportedChains), also for a Phantom saved on it before.
-      return connectEach(c => (c.includes(Chain.Bitcoin) ? Promise.reject(new Error('Phantom is not offered for Bitcoin')) : uSwap.connectPhantom(c)))
+      return connectEach(c => uSwap.connectPhantom(c))
     case WalletOption.TRUSTWALLET_WEB:
       const trust = getEIP6963Wallets().providers.find(p => p.info.name === 'Trust Wallet')
       return connectEach(c => uSwap.connectEVMWallet(c, WalletOption.TRUSTWALLET_WEB, trust?.provider))
@@ -378,7 +381,7 @@ export async function getAccounts(
       const raw = uSwap.getWallet(option, chain)?.address
       const address = Array.isArray(raw) ? raw[0] : raw
       if (!address) return null
-      const mismatch = btcPathMismatch(chain, address, config?.derivationPath)
+      const mismatch = btcPathMismatch(chain, address, config?.derivationPath) ?? bitgetBtcAddressType(option, chain, address)
       if (mismatch) {
         uSwap.disconnectChain(chain)
         throw new Error(mismatch)
@@ -405,6 +408,29 @@ function btcPathMismatch(chain: Chain, address: string, derivationPath?: number[
     `Update your device's Bitcoin app to the latest version, or connect using ${BTC_ADDRESS_TYPE_LABEL[actual]} instead.`
   )
 }
+
+// Bitget signs the toolbox's PSBT as it is, and its inputs carry only `witnessUtxo`: no redeem script for a 3… account.
+function bitgetBtcAddressType(option: WalletOption, chain: Chain, address: string): string | null {
+  if (option !== WalletOption.BITGET || chain !== Chain.Bitcoin || /^bc1[qp]/.test(address)) return null
+  return 'Switch Bitget Wallet to a Native SegWit (bc1q) or Taproot (bc1p) Bitcoin address and connect again'
+}
+
+// The chains the hardware steps (connect-wallet/ledger.tsx, trezor.tsx) carry derivation paths for. No Zcash: the SDK
+// signs it for the NU6.1 branch, which the network stopped accepting at NU7.
+export const HARDWARE_EVM_CHAINS = [Chain.Ethereum, Chain.Arbitrum, Chain.BinanceSmartChain, Chain.Base, Chain.Avalanche]
+export const LEDGER_CHAINS = [
+  ...HARDWARE_EVM_CHAINS,
+  Chain.Bitcoin,
+  Chain.BitcoinCash,
+  Chain.Litecoin,
+  Chain.Dogecoin,
+  Chain.Dash,
+  Chain.Ripple,
+  Chain.Tron,
+  Chain.Cosmos,
+  Chain.THORChain
+]
+export const TREZOR_CHAINS = [...HARDWARE_EVM_CHAINS, Chain.Bitcoin, Chain.BitcoinCash, Chain.Litecoin, Chain.Dogecoin, Chain.Dash]
 
 // What the wallet shows on its approval screen. The storage prefix keeps these sessions apart from the BCH
 // WalletConnect client's (src/components/bch-walletconnect.tsx): two clients on one store overwrite each
@@ -439,8 +465,8 @@ export const supportedChains = {
   [WalletOption.EXODUS]: exodusWallet.connectExodus.supportedChains,
   [WalletOption.KEPLR]: keplrWallet.connectKeplr.supportedChains,
   [WalletOption.LEAP]: keplrWallet.connectKeplr.supportedChains,
-  [WalletOption.LEDGER]: ledgerWallet.connectLedger.supportedChains,
-  [WalletOption.LEDGER_LIVE]: ledgerWallet.connectLedger.supportedChains,
+  [WalletOption.LEDGER]: LEDGER_CHAINS,
+  [WalletOption.LEDGER_LIVE]: LEDGER_CHAINS,
   [WalletOption.METAMASK]: evmWallet.connectEVMWallet.supportedChains,
   [WalletOption.RABBY]: evmWallet.connectEVMWallet.supportedChains,
   [WalletOption.OKX]: okxWallet.connectOkx.supportedChains,
@@ -450,13 +476,15 @@ export const supportedChains = {
     ...onekeyWallet.connectOnekeyWallet.supportedChains.filter(chain => chain !== Chain.Bitcoin && chain !== Chain.Solana),
     Chain.Sui
   ],
-  // Its Bitcoin connector takes the first account (the ordinals one in Phantom's docs) and has no signer to send with.
-  [WalletOption.PHANTOM]: phantomWallet.connectPhantom.supportedChains.filter(chain => chain !== Chain.Bitcoin),
-  [WalletOption.TREZOR]: trezorWallet.connectTrezor.supportedChains,
+  // Its Bitcoin connector takes the first account (the ordinals one in Phantom's docs) and has no signer to send with;
+  // Phantom has dropped Monad (docs.phantom.com: "Monad support has been deprecated").
+  [WalletOption.PHANTOM]: phantomWallet.connectPhantom.supportedChains.filter(chain => chain !== Chain.Bitcoin && chain !== Chain.Monad),
+  [WalletOption.TREZOR]: TREZOR_CHAINS,
   [WalletOption.TRONLINK]: tronlinkWallet.connectTronLink.supportedChains,
   [WalletOption.TRUSTWALLET_WEB]: evmWallet.connectEVMWallet.supportedChains,
   [WalletOption.VULTISIG]: vultisigWallet.connectVultisig.supportedChains,
-  [WalletOption.WALLETCONNECT]: walletconnectWallet.connectWalletconnect.supportedChains,
+  // Its NEAR signer hands the SDK a zero signature, not the transaction the wallet sent (wallets/src/walletconnect).
+  [WalletOption.WALLETCONNECT]: walletconnectWallet.connectWalletconnect.supportedChains.filter(chain => chain !== Chain.Near),
   [WalletOption.WALLET_SELECTOR]: [Chain.Near],
   [SLUSH]: suiWallet.connectSuiWallet.supportedChains,
   [SUIET]: suiWallet.connectSuiWallet.supportedChains,

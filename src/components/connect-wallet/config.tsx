@@ -29,6 +29,7 @@ export type WalletParams = {
   tonWallet?: TonWallet
 }
 
+// No Maya: no route here sells CACAO (THORChain is the only native provider) and no picker lists it.
 export const ALL_CHAINS = [
   Chain.Arbitrum,
   Chain.Aurora,
@@ -45,7 +46,6 @@ export const ALL_CHAINS = [
   Chain.Ethereum,
   Chain.Gnosis,
   Chain.Litecoin,
-  Chain.Maya,
   Chain.Monad,
   Chain.Near,
   Chain.Optimism,

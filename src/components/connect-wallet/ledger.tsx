@@ -10,6 +10,7 @@ import { chainLabel, WalletParams } from '@/components/connect-wallet/config'
 import { GenericButton } from '@/components/generic-button'
 import { useAccounts, useWallets } from '@/hooks/use-wallets'
 import { cn } from '@/lib/utils'
+import { HARDWARE_EVM_CHAINS, LEDGER_CHAINS } from '@/lib/wallets'
 
 const DERIVATION_PATHS = {
   native_segwit: {
@@ -47,16 +48,11 @@ const DERIVATION_PATHS = {
     pathTitle: "m/44'/931'/0'/0/{index}",
     path: (index: number) => [44, 931, 0, 0, index]
   },
-  // Litecoin (SLIP-44 coin type 2). Native segwit ⇒ ltc1… addresses.
+  // Litecoin (SLIP-44 coin type 2). Native segwit ⇒ ltc1… addresses; the SDK signs Litecoin as segwit only.
   ltc_native_segwit: {
     title: 'Native Segwit',
     pathTitle: "m/84'/2'/0'/0/{index}",
     path: (index: number) => [84, 2, 0, 0, index]
-  },
-  ltc_legacy: {
-    title: 'Legacy',
-    pathTitle: "m/44'/2'/0'/0/{index}",
-    path: (index: number) => [44, 2, 0, 0, index]
   },
   // Bitcoin Cash (SLIP-44 coin type 145). No segwit, legacy only.
   bch: {
@@ -75,12 +71,6 @@ const DERIVATION_PATHS = {
     title: 'Default',
     pathTitle: "m/44'/5'/0'/0/{index}",
     path: (index: number) => [44, 5, 0, 0, index]
-  },
-  // Zcash (SLIP-44 coin type 133). Transparent (t-addr) legacy.
-  zcash: {
-    title: 'Default',
-    pathTitle: "m/44'/133'/0'/0/{index}",
-    path: (index: number) => [44, 133, 0, 0, index]
   },
   // XRP Ledger (SLIP-44 coin type 144).
   ripple: {
@@ -105,20 +95,18 @@ const DERIVATION_PATHS = {
 // EVM chains all use coin type 60, so they share one address and the same path
 // presets. They're listed individually (rather than under one "EVM" entry) so a
 // user who only knows Ethereum or Avalanche understands each is connectable.
-const EVM_CHAINS = [Chain.Ethereum, Chain.Arbitrum, Chain.BinanceSmartChain, Chain.Base, Chain.Avalanche]
 const EVM_PATHS: Array<keyof typeof DERIVATION_PATHS> = ['metamask', 'ledger_live', 'legacy']
 
 // Every selectable chain needs at least one preset: the connect flow passes the
 // chosen path down, and the SDK throws on an undefined path rather than falling
 // back to a per-chain default.
 const CHAIN_PATH_MAP: Record<string, Array<keyof typeof DERIVATION_PATHS>> = {
-  ...Object.fromEntries(EVM_CHAINS.map(c => [c, EVM_PATHS])),
+  ...Object.fromEntries(HARDWARE_EVM_CHAINS.map(c => [c, EVM_PATHS])),
   [Chain.Bitcoin]: ['native_segwit', 'native_segwit_middle', 'taproot'],
-  [Chain.Litecoin]: ['ltc_native_segwit', 'ltc_legacy'],
+  [Chain.Litecoin]: ['ltc_native_segwit'],
   [Chain.BitcoinCash]: ['bch'],
   [Chain.Dogecoin]: ['doge'],
   [Chain.Dash]: ['dash'],
-  [Chain.Zcash]: ['zcash'],
   [Chain.Ripple]: ['ripple'],
   [Chain.Tron]: ['tron'],
   [Chain.Cosmos]: ['cosmos'],
@@ -127,19 +115,7 @@ const CHAIN_PATH_MAP: Record<string, Array<keyof typeof DERIVATION_PATHS>> = {
 
 export const Ledger = ({ wallet }: { wallet: WalletParams; onConnect: () => void }) => {
   const t = useTranslations('wallet')
-  const chains = [
-    ...EVM_CHAINS,
-    Chain.Bitcoin,
-    Chain.BitcoinCash,
-    Chain.Litecoin,
-    Chain.Dogecoin,
-    Chain.Dash,
-    Chain.Zcash,
-    Chain.Ripple,
-    Chain.Tron,
-    Chain.Cosmos,
-    Chain.THORChain
-  ].sort((a, b) => chainLabel(a).localeCompare(chainLabel(b)))
+  const chains = [...LEDGER_CHAINS].sort((a, b) => chainLabel(a).localeCompare(chainLabel(b)))
 
   const accounts = useAccounts()
   const { connect } = useWallets()
@@ -262,7 +238,11 @@ export const Ledger = ({ wallet }: { wallet: WalletParams; onConnect: () => void
         <Info className="mt-0.5 size-4 shrink-0" />
         <span>
           {t('ledgerUnlockHint', {
-            app: EVM_CHAINS.includes(selectedChain as Chain) ? 'Ethereum' : selectedChain ? chainLabel(selectedChain as Chain) : t('correspondingApp')
+            app: HARDWARE_EVM_CHAINS.includes(selectedChain as Chain)
+              ? 'Ethereum'
+              : selectedChain
+                ? chainLabel(selectedChain as Chain)
+                : t('correspondingApp')
           })}
         </span>
       </div>

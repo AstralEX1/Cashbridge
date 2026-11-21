@@ -10,6 +10,7 @@ import { chainLabel, WalletParams } from '@/components/connect-wallet/config'
 import { GenericButton } from '@/components/generic-button'
 import { useAccounts, useWallets } from '@/hooks/use-wallets'
 import { cn } from '@/lib/utils'
+import { HARDWARE_EVM_CHAINS, TREZOR_CHAINS } from '@/lib/wallets'
 
 type PathPreset = {
   title: string
@@ -20,7 +21,6 @@ type PathPreset = {
 // EVM chains all use coin type 60, so they share one address and the same path
 // preset. They're listed individually (rather than under one "EVM" entry) so a
 // user who only knows Ethereum or Avalanche understands each is connectable.
-const EVM_CHAINS = [Chain.Ethereum, Chain.Arbitrum, Chain.BinanceSmartChain, Chain.Base, Chain.Avalanche]
 const EVM_PATHS: PathPreset[] = [{ title: 'Default', pathTitle: "m/44'/60'/0'/0/{index}", path: index => [44, 60, 0, 0, index] }]
 
 // Trezor derives an address by BIP-44 path. The first element selects the UTXO
@@ -29,7 +29,7 @@ const EVM_PATHS: PathPreset[] = [{ title: 'Default', pathTitle: "m/44'/60'/0'/0/
 // presets (unlike Ledger, whose UI reuses one BTC-centric map and relies on SDK
 // defaults). Taproot is Bitcoin-only: Litecoin has never activated it.
 const CHAIN_PATH_MAP: Record<string, PathPreset[]> = {
-  ...Object.fromEntries(EVM_CHAINS.map(c => [c, EVM_PATHS])),
+  ...Object.fromEntries(HARDWARE_EVM_CHAINS.map(c => [c, EVM_PATHS])),
   [Chain.Bitcoin]: [
     { title: 'Native SegWit', pathTitle: "m/84'/0'/0'/0/{index}", path: index => [84, 0, 0, 0, index] },
     { title: 'Taproot', pathTitle: "m/86'/0'/0'/0/{index}", path: index => [86, 0, 0, 0, index] },
@@ -43,15 +43,12 @@ const CHAIN_PATH_MAP: Record<string, PathPreset[]> = {
   ],
   [Chain.BitcoinCash]: [{ title: 'Default', pathTitle: "m/44'/145'/0'/0/{index}", path: index => [44, 145, 0, 0, index] }],
   [Chain.Dogecoin]: [{ title: 'Default', pathTitle: "m/44'/3'/0'/0/{index}", path: index => [44, 3, 0, 0, index] }],
-  [Chain.Dash]: [{ title: 'Default', pathTitle: "m/44'/5'/0'/0/{index}", path: index => [44, 5, 0, 0, index] }],
-  [Chain.Zcash]: [{ title: 'Default', pathTitle: "m/44'/133'/0'/0/{index}", path: index => [44, 133, 0, 0, index] }]
+  [Chain.Dash]: [{ title: 'Default', pathTitle: "m/44'/5'/0'/0/{index}", path: index => [44, 5, 0, 0, index] }]
 }
 
 export const Trezor = ({ wallet }: { wallet: WalletParams; onConnect: () => void }) => {
   const t = useTranslations('wallet')
-  const chains = [...EVM_CHAINS, Chain.Bitcoin, Chain.BitcoinCash, Chain.Litecoin, Chain.Dogecoin, Chain.Dash, Chain.Zcash].sort((a, b) =>
-    chainLabel(a).localeCompare(chainLabel(b))
-  )
+  const chains = [...TREZOR_CHAINS].sort((a, b) => chainLabel(a).localeCompare(chainLabel(b)))
 
   const accounts = useAccounts()
   const { connect } = useWallets()
