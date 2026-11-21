@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { Suspense } from 'react'
 import { BlazeBanner } from '@/components/blaze-banner'
 import { GlobalDialog } from '@/components/global-dialog'
+import { LanguageSwitchButton } from '@/components/header/language-switch-button'
 import { Swap } from '@/components/swap/swap'
 import { AppConfig } from '@/config'
 
@@ -27,6 +28,7 @@ export function SwapPage() {
             {label}
           </Link>
         ))}
+        <LanguageSwitchButton />
       </header>
       <p className="sr-only">
         Bridge supported source assets to Bitcoin Cash and CashTokens through THORChain, NEAR Intents or ShapeShift, and Cauldron. Manual execution uses your own wallets.

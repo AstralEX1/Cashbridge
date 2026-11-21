@@ -5,7 +5,6 @@ import { useLocale, useTranslations } from 'next-intl'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Icon } from '@/components/icons'
-import { GenericButton } from '@/components/generic-button'
 import { COOKIE_NAME, defaultLocale, isLocale, type Locale, localeNames, locales } from '@/i18n/config'
 import { setUserLocale } from '@/i18n/locale'
 import { LocaleFlag } from './locale-flag'
@@ -29,10 +28,14 @@ export const LanguageSwitchButton = () => {
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
-        <GenericButton size="medium" aria-label={t('language')} className="flex items-center gap-1.5 uppercase max-sm:size-10 max-sm:p-0">
+        <button
+          type="button"
+          aria-label={t('language')}
+          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium uppercase opacity-70 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 data-[state=open]:opacity-100"
+        >
           <LocaleFlag locale={current} />
-          <span className="hidden sm:inline">{current}</span>
-        </GenericButton>
+          {current.split('-')[0]}
+        </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
