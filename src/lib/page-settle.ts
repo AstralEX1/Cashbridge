@@ -91,6 +91,11 @@ export const pageMayReturn = (order: PublicOrder | undefined, secret: string | u
   return now >= order.contract.refundAfter * 1000 || (done && ownsKey(order, secret))
 }
 
+// Whether the page's key has nothing left to sign: the order is done and the Router reports no BCH at its contract. BCH
+// that turns up later still goes back through the Router or `expire`. Under review the operator may still need the page.
+export const pageKeySpent = (order: PublicOrder) =>
+  ['completed', 'refunded', 'source_refunded'].includes(order.state) && !(BigInt(order.recoverySats ?? '0') > 0n)
+
 const ownsKey = (order: PublicOrder, secret: string | undefined) =>
   !!secret && order.contract?.version === 2 && binToHex(secp256k1.derivePublicKeyCompressed(hexToBin(secret)) as Uint8Array) === order.contract.pageKey
 

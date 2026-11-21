@@ -14,7 +14,8 @@ export interface SavedAutoOrder {
   sourceHash?: string
   order?: PublicOrder
   estimatedSeconds?: number
-  // The secret of the one-use key the order's contract accepts from this page (src/lib/page-settle.ts).
+  // The secret of the one-use key the order's contract accepts from this page (src/lib/page-settle.ts); '' once the
+  // order no longer needs it.
   pageSecret?: string
 }
 interface AutoBridgeStore {
@@ -51,8 +52,10 @@ const orderStorage = (): StateStorage => {
         const serialized = JSON.stringify(ref)
         if (previous.get(ref.id) === serialized) continue
         const old = JSON.parse(localStorage.getItem(prefix + ref.id) ?? 'null') as SavedAutoOrder | null
+        // An erased page key stays erased, whatever an older tab still holds in memory.
         const merged = old ? { ...old, ...ref, intent: old.intent ?? ref.intent,
-          order: old.order && (!ref.order || old.order.updatedAt > ref.order.updatedAt) ? old.order : ref.order } : ref
+          order: old.order && (!ref.order || old.order.updatedAt > ref.order.updatedAt) ? old.order : ref.order,
+          ...(old.pageSecret === '' && { pageSecret: '' }) } : ref
         localStorage.setItem(prefix + ref.id, JSON.stringify(merged))
         previous.set(ref.id, serialized)
       }
