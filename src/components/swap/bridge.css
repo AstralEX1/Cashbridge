@@ -2340,6 +2340,7 @@ button.bridge-flow-primary:disabled {
 .bridge-route-name { display: grid; flex: 1; min-width: 0; }
 .bridge-route-name span { color: #a9b9be; font-size: 12px; }
 .bridge-route-amount { display: flex; align-items: center; gap: 8px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bridge-route-gas { display: inline-flex; align-items: center; gap: 3px; margin-left: 8px; font-variant-numeric: tabular-nums; }
 .bridge-route-best { padding: 2px 8px; border-radius: 999px; background: #0ac18e; color: #0f1820; font-size: 11px; font-weight: 700; }
 .bridge-routes[data-loading] .bridge-route-amount { opacity: 0.72; }
 .bridge-picker-empty {

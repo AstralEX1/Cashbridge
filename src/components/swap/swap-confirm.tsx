@@ -15,6 +15,7 @@ import { PriceImpact } from '@/components/swap/price-impact'
 import { SwapFeeDialog } from '@/components/swap/swap-fee-dialog'
 import { SwapProvider } from '@/components/swap/swap-provider'
 import { InfoTooltip } from '@/components/tooltip'
+import { useSourceGas } from '@/hooks/use-source-gas'
 import { houdiniQuoteRates, useRates, useSwapRates } from '@/hooks/use-rates'
 import { useAssetFrom, useAssetTo, useSlippage } from '@/hooks/use-swap'
 import { formatExpiration, isHoudiniProvider, isPrivateSend, resolveFees } from '@/lib/swap-helpers'
@@ -70,6 +71,7 @@ export const BridgeConfirm = ({ quote, token, bchAddress, automatic }: BridgeCon
   const { rates } = useRates(identifiers, quote.providers[0])
   const { rateFrom, rateTo } = useSwapRates()
   const { inbound, included } = resolveFees(quote, rates)
+  const sourceGas = useSourceGas({ route: quote }).route
 
   const sent = Number(quote.sellAmount)
   const bch = Number(quote.expectedBuyAmount)
@@ -80,7 +82,8 @@ export const BridgeConfirm = ({ quote, token, bchAddress, automatic }: BridgeCon
     bch,
     bchUsd: toNumber(rateTo),
     thorFeeUsd: toNumber(included),
-    sourceGasUsd: inbound && toNumber(inbound.usd) ? toNumber(inbound.usd) : undefined,
+    // The same live deposit gas the route cards rank by (EVM); THORChain's own inbound estimate elsewhere.
+    sourceGasUsd: sourceGas?.usd ?? (inbound && toNumber(inbound.usd) ? toNumber(inbound.usd) : undefined),
     thorSeconds: firstLegSeconds(quote.estimatedTime),
     tokenTicker: token?.ticker,
     pusd: leg && {
