@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArrowRight, FileLock2, Globe, KeyRound, PenLine, Undo2 } from 'lucide-react'
 import { BlazeBanner } from '@/components/blaze-banner'
+import { AgentChat } from '@/components/landing/agent-chat'
 import { AgentKit, type AgentKitItem } from '@/components/landing/agent-kit'
 import { BeamDiagram } from '@/components/landing/beam-diagram'
 import { InView } from '@/components/landing/in-view'
@@ -244,16 +245,13 @@ export default function Page() {
         </section>
 
         <section id="agents" className="landing-section landing-split landing-agents" aria-labelledby="agents-title">
-          <div>
-            <h2 id="agents-title" className="landing-kicker">
-              For agents
-            </h2>
-            <p className="landing-lead">MCP and HTTP so bots can quote and bridge without a browser.</p>
-            <div className="landing-actions">
-              <Link href="/docs/agents" className="landing-button landing-button-ghost">
-                Agent docs <ArrowRight size={18} aria-hidden />
-              </Link>
-            </div>
+          <div className="landing-agents-copy">
+            <p className="landing-kicker">For agents</p>
+            <h2 id="agents-title">Bridge from your AI agent.</h2>
+            <AgentChat />
+            <Link href="/docs/agents" className="landing-more">
+              Agent docs <ArrowRight size={16} aria-hidden />
+            </Link>
           </div>
           <AgentKit items={AGENT_KIT} />
         </section>
