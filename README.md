@@ -27,6 +27,136 @@ Forked from the [swap.thorchain.org](https://github.com/thorchain/swap.thorchain
 - The interface comes in 24 languages, and AI agents can quote and prepare transfers over MCP.
 - Real transfers on mainnet, each step linked to a public explorer. See [Proof on mainnet](#proof-on-mainnet).
 
+## How the smart contracts work
+
+With the Cashbridge Router your coins never sit in a wallet the service controls. Each order gets its own small [CashScript](https://cashscript.org) contract on Bitcoin Cash, and every way out of it pays you: the token you asked for, or your coins back. The full walkthrough, with animated diagrams and a floor calculator, is at [/docs/smart-contracts](https://www.cashbridge.space/docs/smart-contracts).
+
+### At a glance, for developers
+
+Each box is a coin locked in the contract; each arrow is one function and the checks it makes. `i` is the index of the coin being spent, and every check reads `tx.outputs[i]`.
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    state "RouterOrderV2 coin" as O
+    state "token at payoutLock" as T
+    state "BCH at fallbackLock" as F
+    [*] --> O: bridge pays BCH
+    O --> T: convert(sig, key) / key is router or page, token ≥ floor
+    O --> F: giveBack(sig, key) / no token, fee ≤ 2000
+    O --> F: expire() / tx.time ≥ refundTime, no signature
+```
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    state "RouterSale: token coin" as S
+    state "RouterSale: BCH coin" as C
+    state "bridge deposit" as B
+    state "coins at fallbackLock" as Y
+    [*] --> S: you send the token
+    S --> C: sell(sig) / BCH ≥ minSats, same lock
+    C --> B: deposit(sig) / out[0] vaultLock, out[1] memoLock, fee ≤ 2000
+    S --> Y: giveBack(sig), or expire() after refundTime / as it came, fee ≤ 2000
+    C --> Y: giveBack(sig), or expire() after refundTime / as it came, fee ≤ 2000
+```
+
+```text
+RouterOrderV2(router, page, payoutLock, fallbackLock, token, minTokens, quotedSats, refundTime)
+  floor = min(in[i].value × minTokens ÷ quotedSats, minTokens)
+RouterSale(router, vaultLock, memoLock, fallbackLock, minSats, refundTime)
+RouterSaleExact(router, vaultLock, memoLock, fallbackLock, depositSats, minSats, refundTime)
+  deposit: out[0] gets exactly depositSats, out[1] the memo, out[2] the rest at fallbackLock
+```
+
+### The terms are the address
+
+The contract's terms are written into its script, and the deposit address is the hash of that script (P2SH20, because THORChain pays only 20-byte script hashes). Your page rebuilds the address from the order's terms, checks the addresses it gave, and refuses any other address, so a matching address is proof of the terms.
+
+```mermaid
+flowchart LR
+    subgraph T["Order terms"]
+        direction TB
+        K["router key + page key"]
+        A["your token address + your BCH fallback"]
+        M["token, minimum, quoted BCH"]
+        R["refund time, 3 h out"]
+    end
+    T -- "hash160 of the script" --> D["bitcoincash:p… deposit address"]
+    D -- "page rebuilds and compares" --> OK["sign only if it matches"]
+```
+
+### Into Bitcoin Cash: the order contract
+
+```mermaid
+flowchart LR
+    W["Your wallet<br/>USDC on Base"] -- "your one signature" --> B(["THORChain<br/>NEAR Intents<br/>ShapeShift"])
+    B -- "native BCH" --> C["Order contract<br/>one per order"]
+    C -- "convert" --> P["Cauldron trade"]
+    P -- "at least the floor" --> Y["PUSD at your address"]
+    C -. "giveBack, or expire after 3 h" .-> F["BCH at your fallback"]
+```
+
+| Way out | Who can use it | When | What you get |
+|---|---|---|---|
+| `convert` | the Router's key or your page's one-use key | any time | the token at your address, at least the floor |
+| `giveBack` | the same two keys | any time | the BCH at your fallback, at most 2,000 sats to the miner |
+| `expire` | anyone | after the refund time | the same as `giveBack` |
+
+The floor is `min(coin × minTokens ÷ quotedSats, minTokens)`: a bridge that pays a little less BCH than quoted still gets its token, at a proportionally lower floor. Each check reads the output with the same index as the coin being spent, so one payout can never settle two coins. Only the order's largest coin of at least half the quoted BCH settles it; dust under 1,000 sats is ignored and any other coin goes back to you.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as You
+    participant P as Your page
+    participant R as Cashbridge Router
+    participant B as Bridge
+    participant C as Order contract
+    participant K as Cauldron
+    P->>R: order: your addresses, token, quoted BCH, page public key
+    R-->>P: terms with the minimum, and the deposit address
+    P->>P: rebuild the contract from the terms, compare the address
+    U->>B: sign the deposit (the only signature)
+    B->>C: native BCH
+    P->>K: convert with the page key, as soon as the BCH lands
+    Note over R,C: tab closed? the Router converts after 12 s
+    K-->>U: PUSD, at least the floor
+    Note over C,U: no trade meets the floor: giveBack sends the BCH to you, and after 3 h anyone can expire it
+```
+
+### Back out: the sale contract
+
+```mermaid
+flowchart LR
+    Y["Your BCH wallet<br/>PUSD"] -- "your one signature" --> S["Sale contract<br/>one per sale"]
+    S -- "sell" --> K["Cauldron"]
+    K -- "at least the minimum BCH, back into the contract" --> S
+    S -- "deposit" --> B(["THORChain vault + memo<br/>or a NEAR Intents / ShapeShift address"])
+    B --> D["USDC on Base"]
+    S -. "giveBack, or expire after 3 h" .-> Y
+```
+
+| Way out | Who can use it | What it may do |
+|---|---|---|
+| `sell` | the Router | a Cauldron sale that pays at least the minimum BCH, with no token, back into the same contract |
+| `deposit` | the Router | the contract's BCH, alone in its transaction, to the bridge in the terms with the memo; at most 2,000 sats to the miner |
+| `giveBack` | the Router | every coin back to you exactly as it came: same token, amount and commitment |
+| `expire` | anyone, after the refund time | the same as `giveBack` |
+
+ShapeShift takes an exact amount, so its sales use [`router-sale-exact.cash`](contracts/router-sale-exact.cash): the deposit pays exactly the quoted BCH and the rest comes back to you as plain BCH.
+
+### What the script guarantees, and what you trust
+
+| Guaranteed by the script | Trusted to Cash Bridge |
+|---|---|
+| Coins leave only to your addresses, or to the bridge deposit fixed in a sale's terms | The price between your minimum and the best trade |
+| A token payout is at least the floor | When to act before the refund time |
+| A refund leaves at most 2,000 sats per coin to the miner | The bridge paying out: THORChain, NEAR Intents or ShapeShift |
+| After the refund time anyone can send the coins back | Your page's one-use key while it sits in your browser |
+
+Sources: [`contracts/`](contracts) (CashScript 0.14; `npm run contract:compile` rebuilds them with cashc 0.14.0). The page and the Router build every address and unlocking script from the bytecode in [`src/lib/router-contract.ts`](src/lib/router-contract.ts), sign with Schnorr and `SIGHASH_ALL | SIGHASH_UTXOS`, and run each signed transaction through the Bitcoin Cash VM before it is broadcast. `npm run test:auto-bridge` runs the contracts in the VM on real Cauldron trades, including the spends that must fail: a payout to anyone else, one unit under the floor, another key, an early `expire`, a fee over the cap.
+
 ## How Cash Bridge meets the bounty
 
 Cash Bridge is an entry for the BCH BLAZE 2026 [Stablecoin Bridge bounty](https://bchblaze.cash/bounties/stablecoin-bridge/). The same list, with links into the app, is at [/docs/bounty](https://www.cashbridge.space/docs/bounty).
