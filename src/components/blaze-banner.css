@@ -1,18 +1,23 @@
-/* BCH BLAZE 2026 entry banner above the header: the header's width, quiet on the dark page. */
+/* BCH BLAZE 2026 entry banner: a thin full-width strip at the top of the page, so the interface below stays
+   where it was. Two lines on a laptop; one swipeable line on a phone. */
 .blaze-banner {
-  max-width: 514px;
-  margin: 0 auto 20px;
-  padding: 10px 14px;
-  border: 1px solid #ffffff1a;
-  border-radius: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 2px 14px;
+  padding: 7px 16px;
+  border-bottom: 1px solid #ffffff1a;
   background: #ffffff0a;
   color: #d2dee2;
   font-size: 13px;
   line-height: 1.45;
+  text-align: center;
 }
 .blaze-links {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
   gap: 4px 14px;
 }
@@ -45,7 +50,27 @@
   overflow-wrap: anywhere;
 }
 .blaze-note {
-  margin-top: 6px;
   color: #a9bbc2;
   font-size: 12px;
+}
+@media (max-width: 640px) {
+  .blaze-banner,
+  .blaze-links {
+    flex-wrap: nowrap;
+    white-space: nowrap;
+  }
+  .blaze-banner {
+    justify-content: flex-start;
+    padding-right: 40px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent);
+  }
+  .blaze-banner > * {
+    flex-shrink: 0;
+  }
+  /* Beats a page's own paragraph wrapping (the landing sets text-wrap on every p). */
+  .blaze-banner .blaze-note {
+    white-space: nowrap;
+  }
 }

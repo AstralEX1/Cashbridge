@@ -69,9 +69,7 @@ const Coin = ({ icon, ticker, angle }: { icon?: string; ticker: string; angle: n
 export default function Page() {
   return (
     <div className="landing">
-      <div className="landing-banner">
-        <BlazeBanner />
-      </div>
+      <BlazeBanner />
 
       <SiteHeader />
 

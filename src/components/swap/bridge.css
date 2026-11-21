@@ -4,6 +4,10 @@
   background: radial-gradient(ellipse at 80% 80%, #0ac18e12, transparent 60%), linear-gradient(115deg, #020707, #0f1820 58%, #213744);
   color: #f8fdff;
 }
+/* The banner spans the page edge to edge, over the page padding. */
+.bridge-page > .blaze-banner {
+  margin: -32px -16px 24px;
+}
 
 .bridge-widget {
   /* Allbridge's elastic.out(1.2, 0.4), sampled for native CSS transitions. */
@@ -524,6 +528,9 @@
 }
 
 @media (max-width: 480px) {
+  .bridge-page > .blaze-banner {
+    margin: -24px -12px 20px;
+  }
   .bridge-page {
     padding: 24px 12px 40px;
   }
