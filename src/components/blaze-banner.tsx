@@ -27,7 +27,7 @@ export function BlazeBanner() {
   }
 
   return (
-    <aside className="blaze-banner" aria-label="BCH BLAZE 2026 entry">
+    <aside className="blaze-banner" aria-label="BCH BLAZE 2026 entry" lang="en" dir="ltr">
       <div className="blaze-links">
         <span className="blaze-tag">BCH BLAZE 2026</span>
         {deckUrl && (

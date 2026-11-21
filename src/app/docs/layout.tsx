@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function DocsLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <div className="docs-page">
+    <div className="docs-page" lang="en" dir="ltr">
       <header className="docs-top">
         <Link href="/docs" className="docs-brand">
           <Image src={AppConfig.logo} alt="" width={32} height={32} priority sizes="32px" />
