@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { RUNS } from '../src/lib/mainnet-runs.ts'
-import { explorerIcon, hashLookups, matchesQuery, rowFromOrder, rowFromRun, rowsFromThorchain, scanRows, walletRows } from '../src/lib/scanner.ts'
+import { explorerIcon, hashLookups, matchesQuery, rowFromOrder, rowFromRun, rowsFromThorchain, SCAN_START, scanRows, walletRows } from '../src/lib/scanner.ts'
 import { FEATURED_TOKENS } from '../src/lib/cauldron-tokens.ts'
 
 const PUSD = FEATURED_TOKENS[0]
@@ -9,7 +9,7 @@ const order = {
   ref: 'a1b2c3d4e5f6',
   kind: 'forward',
   state: 'completed',
-  createdAt: 1000,
+  createdAt: Date.UTC(2026, 10, 19),
   updatedAt: 2000,
   contract: false,
   category: PUSD.category,
@@ -115,7 +115,7 @@ test('a full hash not in the list gets explorer lookups', () => {
 
 // Midgard's /v2/actions as THORChain reports one swap: amounts in 1e8 units, dates in nanoseconds.
 const action = (inAsset, outAsset, extra = {}) => ({
-  date: '1700000000000000000',
+  date: String(BigInt(Date.UTC(2026, 10, 18)) * 1000000n),
   status: 'success',
   type: 'swap',
   in: [{ address: '0xabc', txID: 'AB'.repeat(32), coins: [{ asset: inAsset, amount: '300000000' }] }],
@@ -135,7 +135,7 @@ test("a wallet's THORChain swaps into or out of BCH become rows; other swaps and
   assert.deepEqual([row.from.amount, row.from.ticker, row.to.amount, row.to.ticker], ['3', 'USDC', '0.01306603', 'BCH'])
   assert.deepEqual(row.legs.map(leg => leg.label), ['Base deposit', 'THORChain swap', 'Payout'])
   assert.match(row.legs[2].url, new RegExp(`bitcoin-cash/transaction/${'cd'.repeat(32)}$`, 'i'))
-  assert.deepEqual([row.status, row.router, row.time], ['completed', false, 1700000000000])
+  assert.deepEqual([row.status, row.router, row.time], ['completed', false, Date.UTC(2026, 10, 18)])
 
   const [refund] = rowsFromThorchain([
     action('ETH.ETH', 'ETH.ETH', { type: 'refund', metadata: { refund: { memo: '=:BCH.BCH:qq:1' } }, out: [{ address: '0xabc', txID: 'EF'.repeat(32), coins: [{ asset: 'ETH.ETH', amount: '100' }] }] })
@@ -166,4 +166,11 @@ test("a wallet's rows keep one row per transfer: the Router's order, then a list
   const runHash = run.links.find(([, url]) => url.includes('thorchain.net'))[1].split('/').pop()
   const linked = walletRows({ router: [], feed: [rowFromRun(run)], local: [], thorchain: rowsFromThorchain([action('ETH.ETH', 'BCH.BCH', { in: [{ address: '0xabc', txID: runHash.toUpperCase(), coins: [{ asset: 'ETH.ETH', amount: '1' }] }], out: [] })]) })
   assert.deepEqual(linked.map(row => row.verified), [true], 'the verified run stands for its THORChain swap')
+
+  // Transfers before Cash Bridge's first one are not its own: neither the feed nor a wallet lists them.
+  const before = SCAN_START - 1
+  const old = rowsFromThorchain([action('ETH.ETH', 'BCH.BCH', { date: String(BigInt(before) * 1000000n), in: [{ address: '0xabc', txID: '56'.repeat(32), coins: [{ asset: 'ETH.ETH', amount: '1' }] }] })])
+  assert.deepEqual(walletRows({ router: [{ ...order, createdAt: before }], feed: [], local: [], thorchain: old }), [])
+  assert.equal(scanRows([{ ...order, createdAt: before }], []).length, 0)
+  assert.equal(scanRows([order], []).length, 1)
 })

@@ -210,9 +210,14 @@ export const rowFromRun = (run: Run): ScanRow => {
   }
 }
 
+// The day of Cash Bridge's first transfer (UTC). Earlier transfers, even of the same wallets, are not Cash Bridge's,
+// so the scanner and its totals start here. A row without a time (a verified run) is listed by its own date.
+export const SCAN_START = Date.UTC(2026, 10, 14)
+const sinceStart = (row: ScanRow) => row.time === undefined || row.time >= SCAN_START
+
 // Router orders first (newest first), then the verified runs, newest last-added first; a run the Router feed also lists is kept once.
 export const scanRows = (orders: FeedOrder[], runs: Run[]) => {
-  const live = orders.map(rowFromOrder).sort((a, b) => (b.time ?? 0) - (a.time ?? 0))
+  const live = orders.map(rowFromOrder).filter(sinceStart).sort((a, b) => (b.time ?? 0) - (a.time ?? 0))
   const seen = new Set(live.flatMap(row => row.legs.map(leg => normalHash(leg.hash))))
   return [
     ...live,
@@ -241,7 +246,7 @@ export const uniqueRows = (rows: ScanRow[]) => {
 export const walletRows = ({ router, feed, local, thorchain }: { router: FeedOrder[]; feed: ScanRow[]; local: ScanRow[]; thorchain: ScanRow[] }) => {
   const hashes = new Set([...local, ...thorchain].flatMap(row => row.legs.map(leg => normalHash(leg.hash))))
   const linked = feed.filter(row => row.legs.some(leg => hashes.has(normalHash(leg.hash))))
-  return uniqueRows([...router.map(rowFromOrder), ...linked, ...local, ...thorchain]).sort(
+  return uniqueRows([...router.map(rowFromOrder), ...linked, ...local, ...thorchain].filter(sinceStart)).sort(
     (a, b) => (b.time ?? -1) - (a.time ?? -1)
   )
 }
