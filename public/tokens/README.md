@@ -9,3 +9,8 @@ belong to their owners; no licence is stated at the source.
 - `../providers/cauldron.png`: Cauldron DEX, the favicon of https://app.cauldron.quest (https://app.cauldron.quest/favicon.png),
   fetched on 2026-10-27.
 - `usdc.svg`, `usdt.svg`: plain coin marks drawn here for the scanner (each issuer's colour and symbol), not the issuers' own artwork.
+- `abg.webp`, `noear.webp`, `gnear.svg`, `itlx.svg`, `cnear.webp`: NEAR Intents tokens CoinGecko does not list. Each is the
+  icon the token declares in its own `ft_metadata` on NEAR (`abg-966.meme-cooking.near`, `noear-324.meme-cooking.near`,
+  `gnear-229.meme-cooking.near`, `itlx.intellex_xyz.near`, `cnear.assetize.near`). `cnear.webp` is scaled down to 64 px;
+  `itlx.svg` is the declared mark padded to a square. Every other NEAR Intents token shows CoinGecko's image for the
+  `coingeckoId` the 1Click catalog gives it (`src/lib/token-logos.ts`).
