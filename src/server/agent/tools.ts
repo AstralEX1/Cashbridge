@@ -13,7 +13,7 @@ import { quoteToken } from '@/lib/cauldron'
 import { FEATURED_TOKENS, fetchCauldronTokens, readTokenSlug, searchCauldronTokens, type CauldronToken } from '@/lib/cauldron-tokens'
 import { isDollarStable } from '@/lib/dollar-stable'
 import { resolveQuoteError } from '@/lib/errors'
-import { FORWARD_DEADLINE_MS, getNearQuote, getNearStatus, interpretNearStatus, isNearChain, nearExplorerUrl, nearSlippageBps, submitNearDeposit, type NearRoute, type NearQuoteRequest } from '@/lib/near-intents'
+import { FORWARD_DEADLINE_MS, findNearToken, getNearQuote, getNearStatus, getNearTokens, interpretNearStatus, isNearChain, nearExplorerUrl, nearSlippageBps, submitNearDeposit, type NearRoute, type NearQuoteRequest } from '@/lib/near-intents'
 import { REFUND_AFTER_SECONDS, REFUND_FEE_CAP, SALE_FLOOR_TOLERANCE_BPS, shapeShiftSaleSats } from '@/lib/router-contract'
 import { buildTokenSend, routedDeposit } from '@/lib/router-sale-legs'
 import { getShapeShiftBridgeRoute, getShapeShiftQuote, getShapeShiftStatus, interpretShapeShiftStatus, shapeShiftAssetId, type ShapeShiftRoute } from '@/lib/shapeshift'
@@ -197,7 +197,12 @@ const assetDecimals = async (asset: string) => {
   const contract = asset.split('-')[1]
   if (!contract && ['BTC', 'LTC', 'DOGE', 'BCH', 'DASH', 'ZEC'].includes(chain)) return 8
   if (!contract && (EVMChains as readonly string[]).includes(chain)) return 18
-  return poolDecimals(asset)
+  // THORChain has no pool for a NEAR-only token (ARB.USDC, SUI.SUI, TON.TON); NEAR Intents lists its decimals.
+  return poolDecimals(asset).catch(async error => {
+    const decimals = BridgeConfig.nearIntents ? findNearToken(await getNearTokens().catch(() => []), asset)?.decimals : undefined
+    if (decimals === undefined) throw error
+    return decimals
+  })
 }
 
 const shapeShiftQuote = async (

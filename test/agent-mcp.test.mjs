@@ -19,6 +19,7 @@ const VAULT = '0x1111111111111111111111111111111111111111'
 const ROUTER = '0x2222222222222222222222222222222222222222'
 const SOURCE = '0x3333333333333333333333333333333333333333'
 const USDC = 'BASE.USDC-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913'
+const shapeRates = []
 const DEPOSIT = new Interface(['function depositWithExpiry(address vault, address asset, uint256 amount, string memo, uint256 expiration)'])
 const recipient = bindingFromPubkey(pubkey, 0)
 const routerKey = bindingFromPubkey(otherPubkey, 1).pubkey
@@ -102,7 +103,8 @@ before(async () => {
         { assetId: 'nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near', decimals: 6, blockchain: 'base', symbol: 'USDC', price: 1, contractAddress: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' },
         { assetId: 'nep141:bch.omft.near', decimals: 8, blockchain: 'bch', symbol: 'BCH', price: 400, contractAddress: null },
         { assetId: 'nep141:eth.omft.near', decimals: 18, blockchain: 'eth', symbol: 'ETH', price: 3000, contractAddress: null },
-        { assetId: 'nep141:btc.omft.near', decimals: 8, blockchain: 'btc', symbol: 'BTC', price: 90000, contractAddress: null }
+        { assetId: 'nep141:btc.omft.near', decimals: 8, blockchain: 'btc', symbol: 'BTC', price: 90000, contractAddress: null },
+        { assetId: 'nep141:sui.omft.near', decimals: 9, blockchain: 'sui', symbol: 'SUI', price: 1.5, contractAddress: null }
       ])
     if (url.startsWith('https://1click.chaindefuser.com/v0/status?depositAddress=')) {
       const address = decodeURIComponent(url.split('=')[1])
@@ -138,13 +140,19 @@ before(async () => {
         quote: { ...(!body.dry && { depositAddress: body.originAsset === 'nep141:bch.omft.near' ? nearBchDeposit : NEAR_DEPOSIT }), amountIn: body.amount, amountInFormatted: '25', minAmountIn: body.amount, amountOut: '6000000', amountOutFormatted: '0.06', minAmountOut: '5900000', deadline: new Date(Date.parse(body.deadline) + 3 * 86400_000).toISOString(), timeEstimate: 40 }
       })
     }
-    if (url.startsWith('https://gateway.liquify.com/chain/thorchain_api/thorchain/pool/')) return Response.json({ asset: decodeURIComponent(url.split('/').pop()), decimals: 6 })
+    if (url.startsWith('https://gateway.liquify.com/chain/thorchain_api/thorchain/pool/')) {
+      const asset = decodeURIComponent(url.split('/').pop())
+      // THORChain has no pool for a NEAR-only coin.
+      return asset.startsWith('SUI.') ? new Response('{}', { status: 404 }) : Response.json({ asset, decimals: 6 })
+    }
     if (url.endsWith('/thorchain/inbound_addresses'))
       return Response.json([{ chain: 'BASE', address: VAULT, router: ROUTER, halted: false }, { chain: 'BCH', address: recipient.cashAddress, halted: false }])
-    if (url.startsWith('https://api.shapeshift.com/v1/swap/rates'))
+    if (url.startsWith('https://api.shapeshift.com/v1/swap/rates')) {
+      shapeRates.push(new URL(url).searchParams)
       return Response.json({
         rates: [{ swapperName: 'TestSwapper', buyAmountCryptoBaseUnit: '7000000', sellAmountCryptoBaseUnit: '25000000', estimatedExecutionTimeMs: 120000, supportsExternalPayment: true }]
       })
+    }
     if (url === 'https://api.shapeshift.com/v1/swap/quote') {
       const body = JSON.parse(init.body)
       shapeQuote = body
@@ -338,6 +346,14 @@ test('a CashToken goes through a Router order whose deposit is its contract', as
   const status = await call('get_bridge_status', { order_id: order.id, order_token: order.token })
   assert.equal(status.structuredContent.state, 'ready')
   assert.match(status.structuredContent.meaning, /buying the token/)
+})
+
+test('a NEAR-only coin THORChain has no pool for is sized for ShapeShift by its NEAR Intents decimals', async () => {
+  shapeRates.length = 0
+  const quote = await call('get_bridge_quote', { from_asset: 'SUI.SUI', to_asset: 'BCH.BCH', amount: '2' })
+  assert.equal(quote.isError, undefined, quote.content[0].text)
+  assert.ok(quote.structuredContent.routes.some(r => r.route === 'shapeshift'), JSON.stringify(quote.structuredContent))
+  assert.equal(shapeRates.at(-1).get('sellAmountCryptoBaseUnit'), '2000000000')
 })
 
 test('plain BCH compares THORChain with NEAR Intents, and a NEAR deposit is a plain transfer', async () => {
