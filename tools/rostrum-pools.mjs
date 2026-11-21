@@ -1,7 +1,7 @@
 // Read-only live check of the Rostrum pool feed against the indexer and the chain: how many PUSD pools each
 // lists, how many of them are still unspent on a Fulcrum server, and whether the feed pushes updates.
 // Nothing is signed or broadcast. Usage (from the repo root, on a machine that can reach the servers):
-//   node --no-warnings --import ./test/register-ts-alias.mjs test/rostrum-pools.mjs [seconds to listen, default 30]
+//   node --no-warnings --import ./test/register-ts-alias.mjs tools/rostrum-pools.mjs [seconds to listen, default 30]
 import { BridgeConfig } from '@/config'
 import { checkOutpointsLive } from '@/lib/bch'
 import { poolFeed } from '@/lib/cauldron-rostrum'

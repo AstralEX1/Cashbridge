@@ -1,7 +1,7 @@
 // Read-only check of a second-leg build against the pools: which pools the local trade spends, at
 // what price, whether each pool's own covenant accepts the trade (VM evaluation of that input), and
 // whether every pool input is still unspent on chain. Nothing is signed or broadcast. Usage (from the repo root):
-//   node --no-warnings --import ./test/register-ts-alias.mjs test/pool-compare.mjs <bitcoincash:address>
+//   node --no-warnings --import ./test/register-ts-alias.mjs tools/pool-compare.mjs <bitcoincash:address>
 import { binToHex, createVirtualMachineBch2026 } from '@bitauth/libauth'
 import { BridgeConfig } from '@/config'
 import { addressToLockingBytecode, decodeTx, scriptHash, WsRpc } from '@/lib/bch'
