@@ -17,7 +17,7 @@ const eslintConfig = defineConfig([
       'react-hooks/preserve-manual-memoization': 'warn'
     }
   },
-  globalIgnores(['.next/**', 'out/**', 'build/**', 'next-env.d.ts', 'rujira.js/**'])
+  globalIgnores(['.next/**', 'out/**', 'build/**', 'next-env.d.ts'])
 ])
 
 export default eslintConfig
