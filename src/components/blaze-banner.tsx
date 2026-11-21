@@ -41,11 +41,11 @@ export function BlazeBanner() {
         <Link href="/docs/bounty">Bounty checklist</Link>
         {emberAddress && (
           <span className="blaze-ember">
-            EMBER2026 votes:{' '}
+            Donations &amp; EMBER2026:{' '}
             {copy === 'failed' ? (
               <span className="blaze-address">{emberAddress}</span>
             ) : (
-              <button type="button" onClick={copyAddress} title={emberAddress} aria-label={`Copy EMBER2026 address ${emberAddress}`}>
+              <button type="button" onClick={copyAddress} title={emberAddress} aria-label={`Copy donation and EMBER2026 address ${emberAddress}`}>
                 {copy === 'copied' ? 'Copied' : shortAddress(emberAddress)}
               </button>
             )}

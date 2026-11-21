@@ -22,8 +22,8 @@ export const AppConfig = {
 // BCH BLAZE 2026 entry banner at the top of the home page. An empty link hides its item.
 export const BlazeConfig = {
   deckUrl: 'https://docs.google.com/presentation/d/1XSNgnP1huDaj9bteZzeZsYN8pXcRH4THqivWplrAinQ/edit?usp=sharing',
-  // CashTokens address that receives EMBER2026 community votes.
-  emberAddress: ''
+  // CashTokens address that receives donations and EMBER2026 community votes.
+  emberAddress: 'bitcoincash:zp8a8c8verwpg7zf680t4v2frnhu2gs0p5wta0l8y0'
 }
 
 // The aggregator API key stays on the server, so the SDK and src/lib/api.ts talk to our own
