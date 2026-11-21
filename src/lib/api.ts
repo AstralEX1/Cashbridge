@@ -62,57 +62,6 @@ export const getDexScreenerTokens = async (
   }
 }
 
-export interface AlchemyTokenBalance {
-  contractAddress: string
-  tokenBalance: string
-  symbol: string
-  name: string
-  decimals: number
-  logo?: string
-}
-
-export const getAlchemyTokenBalances = async (address: string, rpcUrl: string): Promise<AlchemyTokenBalance[]> => {
-  try {
-    const balanceRes = await axios.post(
-      rpcUrl,
-      { jsonrpc: '2.0', method: 'alchemy_getTokenBalances', params: [address, 'erc20'], id: 1 },
-      { timeout: 10_000 }
-    )
-
-    const tokenBalances: Array<{ contractAddress: string; tokenBalance: string }> = balanceRes.data?.result?.tokenBalances || []
-    const nonZero = tokenBalances.filter(t => {
-      try {
-        return BigInt(t.tokenBalance) > 0n
-      } catch {
-        return false
-      }
-    })
-    if (nonZero.length === 0) return []
-
-    const metaRes = await Promise.all(
-      nonZero.map(t =>
-        axios
-          .post(rpcUrl, { jsonrpc: '2.0', method: 'alchemy_getTokenMetadata', params: [t.contractAddress], id: 1 }, { timeout: 10_000 })
-          .then(r => r.data?.result)
-          .catch(() => null)
-      )
-    )
-
-    return nonZero
-      .map((t, i) => ({
-        contractAddress: t.contractAddress,
-        tokenBalance: t.tokenBalance,
-        symbol: (metaRes[i]?.symbol as string) || '',
-        name: (metaRes[i]?.name as string) || '',
-        decimals: (metaRes[i]?.decimals as number) ?? 18,
-        logo: (metaRes[i]?.logo as string) || undefined
-      }))
-      .filter(t => t.symbol)
-  } catch {
-    return []
-  }
-}
-
 // A stalled provider would otherwise hold a tracking poll open forever; a timeout fails into the next attempt.
 const timeout = 15_000
 const thornode = axios.create({ baseURL: 'https://gateway.liquify.com/chain/thorchain_api', timeout })
@@ -357,89 +306,6 @@ export const getMayaMimir = async (): Promise<Record<string, number>> => {
   return mayanode.get('/mayachain/mimir').then(res => res.data)
 }
 
-export interface ThorNodeInfo {
-  node_address: string
-  status: string
-  node_operator_address: string
-  total_bond: string
-  current_award: string
-  ip_address: string
-  version: string
-  slash_points: number
-  jail?: { release_height: number; reason: string }
-  bond_providers: {
-    providers: { bond_address: string; bond: string }[]
-    node_operator_fee: string
-  }
-}
-
-export const getThorNodeInfo = async (address: string): Promise<ThorNodeInfo> => {
-  return thornode.get(`/thorchain/node/${address}`).then(res => res.data)
-}
-
-export interface BondProviderNodes {
-  address: string
-  nodes: { address: string; bond: string; status: string }[]
-  totalBonded: string
-}
-
-export const getBondProviderNodes = async (address: string): Promise<BondProviderNodes> => {
-  return midgard.get(`/v2/bonds/${address}`).then(res => res.data)
-}
-
-export interface BondAction {
-  type: 'bond' | 'unbond' | 'rebond'
-  status: string
-  in: { address: string; coins: { amount: string }[] }[]
-  out: { coins: { amount: string }[] }[]
-  metadata: {
-    bond?: { nodeAddress: string; memo?: string }
-    rebond?: { nodeAddress: string; newBondAddress: string }
-  }
-}
-
-// A truncated history would misstate rewards, so more than this is an error
-const BOND_ACTIONS_MAX_PAGES = 20
-
-// Midgard also matches an address named in the memo, so this includes actions signed by others
-export const getBondActions = async (address: string): Promise<BondAction[]> => {
-  const actions: BondAction[] = []
-  let nextPageToken: string | undefined
-  for (let page = 0; page < BOND_ACTIONS_MAX_PAGES; page++) {
-    const { data } = await midgard.get('/v2/actions', { params: { address, type: 'bond,unbond,rebond', limit: 50, nextPageToken } })
-    actions.push(...data.actions)
-    nextPageToken = data.actions.length ? data.meta?.nextPageToken : undefined
-    if (!nextPageToken) return actions
-  }
-  throw new Error('Bond history too long')
-}
-
-// current_award accrues from the last churn
-export const getLastChurnHeight = async (): Promise<number> => {
-  const { data } = await midgard.get('/v2/churns')
-  const height = parseInt(data?.[0]?.height)
-  // A 0 fallback would show every APR as ~0%
-  if (!(height > 0)) throw new Error('No churn height')
-  return height
-}
-
-export const getTcyStaker = async (address: string): Promise<{ address: string; amount: string }> => {
-  return thornode.get(`/thorchain/tcy_staker/${address}`).then(res => res.data)
-}
-
-export interface TcyClaimer {
-  asset: string
-  l1_address: string
-  amount: string
-}
-
-export const getTcyClaimer = async (address: string): Promise<TcyClaimer[]> => {
-  return thornode
-    .get(`/thorchain/tcy_claimer/${address}`)
-    .then(res => res.data?.tcy_claimer ?? [])
-    .catch(() => [])
-}
-
 export const getInboundAddresses = () => {
   return USwapApi.thornode.getInboundAddresses()
 }
@@ -499,6 +365,3 @@ export const getTxStatus = async (hash: string): Promise<TxStatusResponse> => {
   return thornode.get(`/thorchain/tx/status/${encodeURIComponent(thorTxId(hash))}`).then(res => res.data ?? {})
 }
 
-export const getLimitSwaps = async (sender: string): Promise<LimitSwapQueueItem[]> => {
-  return thornode.get('/thorchain/queue/limit_swaps', { params: { sender, limit: 1000 } }).then(res => res.data?.limit_swaps ?? [])
-}

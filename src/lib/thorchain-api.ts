@@ -2,7 +2,6 @@ import axios from 'axios'
 
 // A stalled provider would otherwise hold a poll open forever.
 const thornode = axios.create({ baseURL: 'https://gateway.liquify.com/chain/thorchain_api', timeout: 15_000 })
-const midgard = axios.create({ baseURL: 'https://gateway.liquify.com/chain/thorchain_midgard', timeout: 15_000 })
 
 export interface ThorNameAlias {
   chain: string
@@ -47,16 +46,6 @@ export const getThorName = async (name: string): Promise<ThorName | null> => {
   }
 }
 
-// Midgard reverse-lookup: every THORName whose owner matches the address.
-export const getThorNamesOwned = async (address: string): Promise<string[]> => {
-  try {
-    const res = await midgard.get(`/v2/thorname/owner/${address}`)
-    return Array.isArray(res.data) ? res.data : []
-  } catch {
-    return []
-  }
-}
-
 export interface ThorNetwork {
   tns_register_fee_rune?: string
   tns_fee_per_block_rune?: string
@@ -65,12 +54,6 @@ export interface ThorNetwork {
 
 export const getThorNetwork = async (): Promise<ThorNetwork> => {
   return thornode.get('/thorchain/network').then(res => res.data ?? {})
-}
-
-export const getThorLastBlock = async (): Promise<number> => {
-  const data = await thornode.get('/thorchain/lastblock').then(res => res.data)
-  const first = Array.isArray(data) ? data[0] : data
-  return first?.thorchain ?? 0
 }
 
 export interface ThorPool {
@@ -97,76 +80,3 @@ export const torPoolPrices = (pools?: ThorPool[], network?: ThorNetwork) => {
   }
 }
 
-// A single LP position from Midgard's member view. All numeric fields are
-// strings in 1e8 base units (the THORChain convention for both RUNE and assets).
-export interface ThorMemberPool {
-  pool: string
-  liquidityUnits: string
-  runeAdded: string
-  assetAdded: string
-  runeWithdrawn: string
-  assetWithdrawn: string
-  runeDeposit: string
-  assetDeposit: string
-  runePending: string
-  assetPending: string
-  runeAddress: string
-  assetAddress: string
-}
-
-// Midgard reverse-lookup of every LP position held by any of the given
-// addresses. Both sides are searched: a THOR (RUNE) address finds symmetric and
-// RUNE-only positions, an asset-chain address finds asset-only (asymmetric) ones,
-// which have no RUNE address. Midgard takes a comma-separated list; a position
-// matched by more than one address is returned once.
-// 404 / empty body when none of the addresses has a position ⇒ empty list.
-export const getThorMember = async (addresses: string[]): Promise<ThorMemberPool[]> => {
-  if (!addresses.length) return []
-  try {
-    const res = await midgard.get(`/v2/member/${addresses.map(encodeURIComponent).join(',')}`)
-    const pools: ThorMemberPool[] = Array.isArray(res.data?.pools) ? res.data.pools : []
-    const seen = new Set<string>()
-    return pools.filter(p => {
-      const key = [p.pool, p.runeAddress, p.assetAddress].join('|').toLowerCase()
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-  } catch {
-    return []
-  }
-}
-
-// THORNode RUNEPool position for a provider. Amounts are strings in 1e8 base
-// units of RUNE; `pnl` can be negative.
-export interface RuneProvider {
-  rune_address: string
-  units: string
-  value: string
-  pnl: string
-  deposit_amount: string
-  withdraw_amount: string
-}
-
-export const getRuneProvider = async (address: string): Promise<RuneProvider | null> => {
-  try {
-    const res = await thornode.get(`/thorchain/rune_provider/${address}`)
-    return res.data ?? null
-  } catch {
-    return null
-  }
-}
-
-export interface ThorInboundAddress {
-  chain: string
-  address: string
-  router?: string
-  halted: boolean
-  chain_lp_actions_paused?: boolean
-  gas_rate?: string
-  dust_threshold?: string
-}
-
-export const getThorInboundAddresses = async (): Promise<ThorInboundAddress[]> => {
-  return thornode.get('/thorchain/inbound_addresses').then(res => res.data)
-}
