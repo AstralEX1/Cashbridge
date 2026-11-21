@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { RUNS } from '../src/lib/mainnet-runs.ts'
 import { explorerIcon, hashLookups, matchesQuery, rowFromOrder, rowFromRun, rowsFromThorchain, SCAN_START, scanRows, walletRows } from '../src/lib/scanner.ts'
@@ -29,6 +30,11 @@ test('every verified mainnet run becomes a completed scanner row with both ends 
     assert.equal(row.legs.length, run.links.length)
     for (const leg of row.legs) assert.match(leg.url, /^https:\/\//)
   }
+})
+
+test('the README lists every verified mainnet run with all of its links', () => {
+  const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8')
+  for (const run of RUNS) for (const [label, url] of run.links) assert.ok(readme.includes(`(${url})`), `${run.amounts}: ${label}`)
 })
 
 test('a Router order shows source, THORChain, BCH and payout legs with chain-specific links', () => {
