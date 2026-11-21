@@ -6,6 +6,7 @@ import { test } from 'node:test'
 import { BridgeConfig } from '../src/config.ts'
 import { bestRoute, fundsTokenSale } from '../src/hooks/use-quote.ts'
 import { nearQuoteBody, NEAR_BCH } from '../src/lib/near-intents.ts'
+import { GAS_UNITS, gasCost, routeGasUnits } from '../src/lib/source-gas.ts'
 
 const quoteSource = readFileSync(new URL('../src/hooks/use-quote.ts', import.meta.url), 'utf8')
 const compareSource = readFileSync(new URL('../src/components/swap/route-compare.tsx', import.meta.url), 'utf8')
@@ -74,6 +75,34 @@ test('bestRoute still prefers the higher payout and THORChain on a tie', () => {
   assert.equal(bestRoute({ near: { expectedBuyAmount: '2' } }), 'near')
 })
 
+// A dry THORChain quote names its router as the target and the vault as the inbound address, and a spender for a token.
+const thorToken = { targetAddress: '0xD37BbE5744D730a1d98d8DC97c42F0Ca46aD7146', inboundAddress: '0x489db109a54f37ffe5464b86c0668ce84dd9cb02', meta: { approvalAddress: '0xD37BbE5744D730a1d98d8DC97c42F0Ca46aD7146' } }
+const thorNative = { targetAddress: '0xD37BbE5744D730a1d98d8DC97c42F0Ca46aD7146', inboundAddress: '0xf577a1669eafca8c4de5226d7e28c1a41f7d4d57', meta: {} }
+
+test('each route is charged the gas of what its wallet signs, the same rule for every bridge', () => {
+  assert.equal(routeGasUnits(thorToken, { token: true }), GAS_UNITS.approve + GAS_UNITS.call.token)
+  assert.equal(routeGasUnits(thorToken, { token: true, approved: true }), GAS_UNITS.call.token)
+  assert.equal(routeGasUnits(thorNative, { token: false }), GAS_UNITS.call.native)
+  // NEAR Intents and ShapeShift: a dry quote has no deposit address, a live one the same address twice; both are one transfer.
+  assert.equal(routeGasUnits({}, { token: true }), GAS_UNITS.transfer.token)
+  assert.equal(routeGasUnits({ targetAddress: '0xAbC', inboundAddress: '0xabc' }, { token: false }), 21_000n)
+  // 100k gas at 2 gwei with ETH at $3,000 and BCH at $500: $0.60, 0.0012 BCH.
+  const cost = gasCost(100_000n, 2_000_000_000n, 3000, 500)
+  assert.ok(Math.abs(cost.usd - 0.6) < 1e-9 && Math.abs(cost.buy - 0.0012) < 1e-12)
+  assert.equal(gasCost(100_000n, 1n, undefined, 500), undefined)
+})
+
+test('bestRoute ranks the payout net of each route\'s gas, and only when every route is priced', () => {
+  const routes = { thorchain: { expectedBuyAmount: '0.0500' }, near: { expectedBuyAmount: '0.0495' } }
+  assert.equal(bestRoute(routes), 'thorchain')
+  assert.equal(bestRoute(routes, { thorchain: { buy: 0.0008 }, near: { buy: 0.0002 } }), 'near')
+  assert.equal(bestRoute(routes, { thorchain: { buy: 0.0003 }, near: { buy: 0.0002 } }), 'thorchain')
+  // One route without a price: gross amounts decide, as before.
+  assert.equal(bestRoute(routes, { thorchain: { buy: 0.0008 } }), 'thorchain')
+  assert.match(quoteSource, /const best = bestRoute\(routes, gas\)/)
+  assert.match(compareSource, /gas\[key\]/)
+})
+
 test('Automatic prepare keeps a selected NEAR or ShapeShift route on it (no silent THOR fallback), and one refund-time rule covers every bridge', () => {
   const nearBranch = prepareSource.match(/if \(provider === ProviderName\.NEAR \|\| provider === SHAPESHIFT_PROVIDER\) \{([\s\S]*?)\n  \}\n\n  const quotes = await getQuotes/)?.[1]
   assert.ok(nearBranch, 'NEAR prepare must return before getQuotes')
@@ -94,5 +123,5 @@ test('a forward route whose BCH cannot fund the token sale is not offered', () =
 })
 
 test('Any network route cards name the asset bought, not BCH', () => {
-  assert.match(compareSource, /openNetworks \? bought\?\.ticker : reverse \? payout\?\.ticker : 'BCH'/)
+  assert.match(compareSource, /openNetworks \? buyAsset\?\.ticker : reverse \? payout\?\.ticker : 'BCH'/)
 })
