@@ -63,6 +63,9 @@ export default function Page() {
           <strong>In your browser.</strong> Transfer records, wallet reconnection data, Manual / Cashbridge Router choice. No accounts; Manual history lives only there.
         </li>
         <li>
+          <strong>The page key.</strong> A contract order your page can settle keeps its one-use key in this browser while the order runs. A leaked key could at most sell at your minimum or send the BCH back to you. The page erases it once the order is done and no BCH is left at the contract, and every page runs only scripts served with its own nonce (a strict Content Security Policy), so injected code cannot read it.
+        </li>
+        <li>
           <strong>On the server.</strong> Quote and status requests may pass through Cash Bridge&apos;s server. Router orders are stored by the service with the addresses you gave it.
         </li>
         <li>
