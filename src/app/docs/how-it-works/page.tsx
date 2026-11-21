@@ -1,8 +1,13 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { DocsDemoFlow } from '@/components/docs/docs-demo-flow'
 import { DocsDemoQuotes } from '@/components/docs/docs-demo-quotes'
-import { Callout, DocsArticle, Flow, SchemaCompare } from '@/components/docs/docs-ui'
+import { Callout, DocsArticle } from '@/components/docs/docs-ui'
+import { BridgeCards, BuiltOn, LayerMap, ModeCompare, StatusMap, TimeStrip, WhenItFails } from '@/components/docs/how-figures'
+import { RouteExplorer } from '@/components/docs/route-explorer'
+import { BeamDiagram } from '@/components/landing/beam-diagram'
+import { CHAINS, ROUTES } from '@/components/landing/network'
+import { FEATURED_TOKENS } from '@/lib/cauldron-tokens'
+import '@/components/landing/landing.css'
 
 export const metadata: Metadata = {
   title: 'How it works',
@@ -14,177 +19,54 @@ export default function Page() {
     <DocsArticle
       href="/docs/how-it-works"
       title="How it works"
-      lead="A transfer is a short chain of ordinary transactions. Cash Bridge quotes THORChain, NEAR Intents and ShapeShift when available, plans the steps, and follows them — in Manual mode with your wallets, or through the Cashbridge Router with per-order contracts."
+      lead="A bridge carries the value to or from Bitcoin Cash as native BCH, and Cauldron turns that BCH into a CashToken such as PUSD, or back. Cash Bridge quotes, builds, checks and follows every step."
     >
-      <DocsDemoFlow />
+      <div className="docs-beam">
+        <BeamDiagram
+          chains={CHAINS.slice(0, 5).map(([icon, name]) => ({ name, icon: `/networks/${icon}.svg` }))}
+          more={CHAINS.length - 5}
+          routes={ROUTES}
+          tokens={[
+            { name: 'BCH', icon: '/networks/bch.svg' },
+            ...FEATURED_TOKENS.slice(0, 3).map(token => ({ name: token.ticker, icon: token.icon })),
+            { name: 'Any CashToken' }
+          ]}
+        />
+      </div>
 
-      <h2 id="schemas">Protocol schemas</h2>
-      <p>
-        Use these diagrams as the source of truth for custody. Interactive storyboards above scrub the same modes; the schemas below stay fixed for reading.
-      </p>
+      <h2 id="who-does-what">Who does what</h2>
+      <LayerMap />
 
-      <h3 id="schema-modes">Manual vs Cashbridge Router</h3>
-      <SchemaCompare
-        label="Manual versus Cashbridge Router forward routes"
-        left={{
-          title: 'Manual',
-          note: 'Only your wallets hold keys. No Cashbridge covenant.',
-          nodes: [
-            { title: 'Source wallet', note: 'Signs deposit', kind: 'wallet' },
-            { title: 'THOR / NEAR', note: 'Pays your BCH address', kind: 'onchain' },
-            { title: 'BCH wallet', note: 'Optional Cauldron swap', kind: 'wallet' }
-          ]
-        }}
-        right={{
-          title: 'Cashbridge Router',
-          note: 'apiVersion=2 purchase covenant · not legacy P2PKH.',
-          nodes: [
-            { title: 'Source wallet', note: 'Signs once', kind: 'wallet' },
-            { title: 'THOR / NEAR', note: 'Pays order address', kind: 'onchain' },
-            { title: 'Purchase contract', note: 'convert / giveBack / expire', kind: 'contract' },
-            { title: 'Router service', note: 'Builds allowed unlock', kind: 'service' }
-          ]
-        }}
-      />
+      <h2 id="explore">Every route, step by step</h2>
+      <p>Pick a direction, a mode and a bridge. The coin shows what moves; the pen marks each signature you make.</p>
+      <RouteExplorer />
 
-      <h3 id="schema-bridges">THORChain vs NEAR Intents</h3>
-      <SchemaCompare
-        label="THORChain versus NEAR Intents first legs"
-        left={{
-          title: 'THORChain',
-          note: 'Vault deposit with a memo that names the BCH destination (wallet or order contract).',
-          nodes: [
-            { title: 'Source wallet', note: 'Vault + memo', kind: 'wallet' },
-            { title: 'THORChain', note: 'Swaps to native BCH', kind: 'onchain' },
-            { title: 'BCH destination', note: 'Wallet or covenant', kind: 'onchain' }
-          ]
-        }}
-        right={{
-          title: 'NEAR Intents',
-          note: 'Plain one-use deposit address — no memo, no Cashbridge contract on that leg.',
-          nodes: [
-            { title: 'Source wallet', note: 'Plain transfer', kind: 'wallet' },
-            { title: 'NEAR deposit', note: '1Click address', kind: 'onchain' },
-            { title: 'BCH destination', note: 'Checked on Bitcoin Cash', kind: 'onchain' }
-          ]
-        }}
-      />
+      <h2 id="modes">Two modes</h2>
+      <ModeCompare />
 
-      <h3 id="schema-sale">Sale covenant (Router reverse)</h3>
-      <Flow
-        label="Router sale covenant"
-        nodes={[
-          { title: 'BCH wallet', note: 'Sends CashToken', kind: 'wallet' },
-          { title: 'Sale contract', note: 'sell / return / expire', kind: 'contract' },
-          { title: 'Router service', note: 'Sell ≥ min BCH + bridge deposit', kind: 'service' },
-          { title: 'THORChain · NEAR · ShapeShift', note: 'Cross-chain payout', kind: 'onchain' }
-        ]}
-      />
-      <p>
-        The sale&apos;s BCH goes to THORChain&apos;s vault with the destination memo, or to a NEAR Intents or ShapeShift deposit address the Router checks at 1Click before it takes the order. ShapeShift takes an exact amount, so its sale contract sends the rest back to your BCH address as plain BCH. After <code>refundAfter</code> (three hours from order creation), anyone may return the tokens on the same terms. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.
-      </p>
-
-      <h2 id="building-blocks">The building blocks</h2>
-      <h3>Your wallets</h3>
-      <p>
-        Every user-facing transaction is signed in a wallet you control. Cash Bridge builds the request and checks it; your wallet decides whether to sign. Cash Bridge never sees a private key. See <Link href="/docs/wallets">Wallets</Link>.
-      </p>
-      <h3>THORChain</h3>
-      <p>
-        <a href="https://thorchain.org" target="_blank" rel="noopener noreferrer">
-          THORChain
-        </a>{' '}
-        swaps native assets across chains via liquidity pools. You send an asset to a vault with a memo that names the BCH destination; THORChain pays native BCH. If a swap cannot complete past your slippage limit, it refunds the source asset to the sender.
-      </p>
-      <h3>NEAR Intents</h3>
-      <p>
-        <a href="https://docs.near-intents.org" target="_blank" rel="noopener noreferrer">
-          NEAR Intents
-        </a>{' '}
-        is the second bridge for the BCH path. Its 1Click service gives each transfer a one-use deposit address on the source chain. You send a plain transfer — no memo — and market makers pay the asset asked for to the destination. There is no Cashbridge contract on the NEAR leg. When several bridges quote, the form shows their outputs and takes the best one; you can pick another.
-      </p>
+      <h2 id="bridges">Three bridges</h2>
+      <BridgeCards />
       <DocsDemoQuotes />
-      <p>
-        NEAR Intents carries Manual transfers both ways and Any network pairs. For the Cashbridge Router, it can carry the <strong>forward</strong> first leg when the service admits NEAR orders: 1Click still uses a plain deposit address, and its BCH payout targets the Router order address. Router <strong>sales</strong> can pay out through it too, when the service admits routed sales.
-      </p>
-      <h3>ShapeShift</h3>
-      <p>
-        <a href="https://shapeshift.com" target="_blank" rel="noopener noreferrer">
-          ShapeShift
-        </a>
-        &apos;s public swap API quotes the BCH path both ways and <strong>Any network</strong> pairs. Cash Bridge keeps deposit-address swappers so you sign a plain transfer in the source wallet — the same style of send as NEAR Intents. Its BCH quotes are NEAR Intents swaps, so before one is used Cash Bridge reads that swap from 1Click and requires it to pay your recipient and refund your wallet. That is what lets the Cashbridge Router follow it: a ShapeShift first leg into a CashToken, or a sale paid out through ShapeShift.
-      </p>
-      <h3>Cauldron</h3>
-      <p>
-        <a href="https://cauldron.quest" target="_blank" rel="noopener noreferrer">
-          Cauldron
-        </a>{' '}
-        is an on-chain market for BCH and CashTokens. A swap is a Bitcoin Cash transaction that spends pool coins and pays you the token (or BCH). Cash Bridge builds that transaction from live pools and checks each pool is still unspent before you (or the Router) spend.
-      </p>
-      <h3>Cashbridge Router</h3>
-      <p>
-        An optional service mode. For contract orders, THORChain or NEAR pays BCH into a per-order P2SH purchase covenant; the Router may convert to your token or refund BCH under those terms. Sale covenants cover reverse CashToken flows when offered. Details in <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link> and <Link href="/docs/security">Security and custody</Link>.
-      </p>
 
-      <h2 id="forward">Bridging to Bitcoin Cash (Manual)</h2>
-      <Flow
-        label="Manual route from another chain to PUSD"
-        nodes={[
-          { title: 'Source wallet', note: 'Signs the transfer', kind: 'wallet' },
-          { title: 'THORChain or NEAR', note: 'Pays native BCH', kind: 'onchain' },
-          { title: 'Your BCH wallet', note: 'Receives the BCH', kind: 'wallet' },
-          { title: 'Cauldron', note: 'Swaps BCH for PUSD (you sign)', kind: 'onchain' },
-          { title: 'Your BCH wallet', note: 'Holds the PUSD', kind: 'wallet' }
-        ]}
-      />
-      <p>
-        The first leg always ends in native BCH. If you asked for BCH you are done. If you asked for a CashToken, a second transaction — signed in your BCH wallet — swaps on Cauldron. Confirm labels them <strong>1/2 Bridge</strong> and <strong>2/2 Swap</strong>. Amounts before you start are estimates; the second leg is re-quoted on the BCH you actually receive.
-      </p>
+      <h2 id="speed">Where the time goes</h2>
+      <TimeStrip />
 
-      <h2 id="reverse">Bridging back (Manual)</h2>
-      <Flow
-        label="Manual route from PUSD to another chain"
-        nodes={[
-          { title: 'Your BCH wallet', note: 'Signs the Cauldron sale', kind: 'wallet' },
-          { title: 'Cauldron', note: 'Token → BCH', kind: 'onchain' },
-          { title: 'Your BCH wallet', note: 'Signs the bridge deposit', kind: 'wallet' },
-          { title: 'THORChain or NEAR', note: 'Cross-chain payout', kind: 'onchain' },
-          { title: 'Destination wallet', note: 'Receives on its chain', kind: 'wallet' }
-        ]}
-      />
+      <h2 id="failures">When something goes wrong</h2>
+      <WhenItFails />
       <p>
-        Going the other way, the BCH wallet signs both steps (the Cauldron sale is skipped when you start from BCH). See <Link href="/docs/guides/bridge-from-bch">Bridge back from Bitcoin Cash</Link>.
-      </p>
-
-      <h2 id="router">With the Cashbridge Router</h2>
-      <Flow
-        label="Forward route with the Cashbridge Router"
-        nodes={[
-          { title: 'Source wallet', note: 'Signs once', kind: 'wallet' },
-          { title: 'THORChain or NEAR', note: 'Pays the order address', kind: 'onchain' },
-          { title: 'Order contract', note: 'P2SH purchase covenant', kind: 'contract' },
-          { title: 'Cashbridge Router', note: 'Buys token on Cauldron', kind: 'service' },
-          { title: 'Your address', note: 'Receives the token or BCH', kind: 'wallet' }
-        ]}
-      />
-      <p>
-        Contract orders fix the minimum, recipient and fallback in the script. The Router verifies the deposit, then converts or refunds under those rules. After <code>refundAfter</code> (three hours from order creation), anyone can return BCH to the fallback. You still have several on-chain transactions — one signature is not atomic settlement.
-      </p>
-
-      <h2 id="speed">How long it takes</h2>
-      <p>Confirm shows an estimate per step; a first transfer commonly takes a few minutes. Most of that is the cross-chain bridge. Bitcoin Cash steps are quick.</p>
-      <p>
-        Cash Bridge does not wait for Bitcoin Cash blocks before starting the next BCH step when configured for mempool acceptance. A transfer counts as done as soon as its payout is in the network; neither the page nor the scanner waits for confirmations.
+        Every way a coin can leave a contract is on <Link href="/docs/smart-contracts">Smart contracts</Link>. A transfer that seems stuck:{' '}
+        <Link href="/docs/stuck">Transaction got stuck?</Link>
       </p>
 
       <h2 id="status">Where status comes from</h2>
-      <p>
-        Cash Bridge reads chains directly (EVM nodes, Electrum for Bitcoin Cash). THORChain and NEAR status fill gaps such as refunds. A slow status page does not hold a verified chain step back.
-      </p>
-
+      <StatusMap />
       <Callout kind="note">
-        Transfer records live in your browser. Router orders continue after the tab closes; Manual steps still need your wallet. See <Link href="/docs/guides/track-a-transfer">Track a transfer</Link>.
+        Transfer records live in your browser, and the <Link href="/scanner">scanner</Link> finds a wallet&apos;s transfers from any device. See{' '}
+        <Link href="/docs/guides/track-a-transfer">Track a transfer</Link>.
       </Callout>
+
+      <h2 id="building-blocks">Built on</h2>
+      <BuiltOn />
     </DocsArticle>
   )
 }
