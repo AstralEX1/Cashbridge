@@ -10,7 +10,8 @@ import { isDollarStable } from '@/lib/dollar-stable'
 import { getUSwap } from '@/lib/wallets'
 import { WalletAccount } from '@/store/wallets-store'
 
-const ETH_RPC_URL = process.env.NEXT_PUBLIC_ALCHEMY_ETH_RPC_URL || 'https://eth.llamarpc.com'
+// alchemy_getTokenBalances is Alchemy's own method: without an Alchemy URL there is nothing to ask (no public node serves it).
+const ETH_RPC_URL = process.env.NEXT_PUBLIC_ALCHEMY_ETH_RPC_URL
 
 // Spam tokens airdropped into user wallets. Prefer the address list: a ticker match also hides
 // any legitimate token that happens to share the symbol.
@@ -95,7 +96,7 @@ export const useWalletBalances = () => {
 
           // For Ethereum, supplement with Alchemy to discover meme coins not in the curated API list
           const alchemyLogoMap = new Map<string, string>()
-          if (account.network === Chain.Ethereum) {
+          if (account.network === Chain.Ethereum && ETH_RPC_URL) {
             const alchemyBalances = await getAlchemyTokenBalances(wallet.address, ETH_RPC_URL)
             const existingAddresses = new Set(
               balances.map(b => b.address?.toLowerCase()).filter(Boolean)

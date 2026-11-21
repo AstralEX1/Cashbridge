@@ -1,5 +1,5 @@
 import { Chain, type EVMChain, EVMChains } from '@tcswap/core'
-import { getProvider } from '@tcswap/toolboxes/evm'
+import { getProvider } from '@/lib/evm-rpc'
 
 // Chains a reverse bridge may pay out on: those whose payout this app confirms on the chain itself.
 // EVM through the router's TransferOut event, the others through their own nodes (payout-check.ts).

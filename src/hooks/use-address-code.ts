@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Chain, EVMChain, EVMChains } from '@tcswap/core'
-import { getProvider } from '@tcswap/toolboxes/evm'
+import { getProvider } from '@/lib/evm-rpc'
 
 // An EIP-7702 delegated account stores a 23-byte designator - 0xef0100 followed by the address it
 // delegates to - where a plain EOA stores no code at all.
