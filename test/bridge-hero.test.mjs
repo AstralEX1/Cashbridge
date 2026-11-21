@@ -6,9 +6,6 @@ import {
   bridgeHeroEligible,
   bridgeLands,
   bridgeStart,
-  CASH,
-  COIN,
-  REST_Y,
   cancelHold,
   newHero,
   nextBlock,
@@ -154,60 +151,38 @@ test('a long run keeps scoring when every bridge is right', () => {
   }
 })
 
-test('a hop while crossing grabs the coin over the gap; rolling under it does not', () => {
+test('crossing a gap picks up its coin; a bridge that stops short of it does not', () => {
   const base = newHero(42)
   const { near, far } = gapTo(base)
-  const coin = { x: bridgeStart(base) + near / 2, y: REST_Y - 26 }
-  const ready = { ...base, cash: [coin] }
-  // No hop: the hero rolls under the coin and it stays behind.
-  const under = play(ready, (near + far) / 2)
-  assert.equal(under.collected, 0)
-  // Hop just before the coin: the hero rises into it.
-  let state = release({ ...press(ready), bridge: (near + far) / 2 })
-  while (state.phase !== 'rolling') state = stepHero(state, 1 / 60)
-  while (state.coinX < coin.x - 36) state = stepHero(state, 1 / 60)
-  state = press(state)
-  assert.ok(state.hopV > 0)
-  assert.equal(press(stepHero(state, 1 / 60)).hopV, stepHero(state, 1 / 60).hopV, 'no second hop in the air')
-  for (let i = 0; i < 600 && (state.phase !== 'ready' || state.hop > 0); i++) state = stepHero(state, 1 / 60)
-  assert.equal(state.collected, 1)
-  assert.equal(state.score, 1)
-  assert.equal(state.hop, 0, 'the hero lands again')
-  assert.ok(!state.cash.includes(coin))
-})
-
-test('a hop only happens while crossing', () => {
-  const ready = newHero(8)
-  assert.equal(press(ready).phase, 'growing')
-  assert.equal(press(ready).hopV, 0)
-  const falling = release(press(ready))
-  assert.equal(press(falling), falling)
-})
-
-test('reduced motion takes the coin of each gap crossed', () => {
-  const base = newHero(42)
-  const { near, far } = gapTo(base)
-  const ready = { ...base, cash: [{ x: bridgeStart(base) + near / 2, y: REST_Y - 26 }] }
+  const coinAt = bridgeStart(base) + near * 0.7
+  const ready = { ...base, cash: coinAt }
+  const crossed = play(ready, (near + far) / 2)
+  assert.equal(crossed.collected, 1)
+  assert.equal(crossed.score, 1)
+  // Reduced motion rolls the whole way in one step and still picks it up.
   assert.equal(play(ready, (near + far) / 2, true).collected, 1)
-  assert.equal(play(ready, near - 1, true).collected, 0)
+  // A bridge far too short ends before the coin: the hero falls without it.
+  const short = play(ready, near * 0.2)
+  assert.equal(short.phase, 'over')
+  assert.equal(short.collected, 0)
 })
 
-test('coins appear over most gaps and sit out of reach of a plain roll', () => {
+test('coins sit on the way across most gaps, never on a block', () => {
   let state = newHero(77)
-  let gaps = 0
   let withCoin = 0
-  for (let round = 0; round < 60; round++) {
+  const rounds = 60
+  for (let round = 0; round < rounds; round++) {
     const { near, far } = gapTo(state)
-    for (const c of state.cash.filter(c => c.x > bridgeStart(state))) {
+    if (state.cash !== undefined) {
       withCoin++
-      assert.ok(c.x < state.blocks.at(-1).x, 'over the gap')
-      assert.ok(REST_Y - c.y > COIN + CASH, 'needs a hop')
+      assert.ok(state.cash > bridgeStart(state) && state.cash < state.blocks.at(-1).x, 'over the gap')
     }
-    gaps++
+    const before = state.collected
+    const had = state.cash !== undefined
     state = play(state, (near + far) / 2)
+    assert.equal(state.collected, before + Number(had), 'every coin on a crossed gap is taken')
   }
-  assert.ok(withCoin > gaps * 0.4 && withCoin < gaps * 0.8, `${withCoin} of ${gaps}`)
-  assert.ok(state.cash.length <= 2, 'old coins are dropped once off screen')
+  assert.ok(withCoin > rounds * 0.4 && withCoin < rounds * 0.8, `${withCoin} of ${rounds}`)
 })
 
 test('the wallet keeps the record, coins and characters, and survives bad storage', () => {

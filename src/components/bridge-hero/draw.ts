@@ -64,6 +64,6 @@ export const drawHero = (ctx: CanvasRenderingContext2D, state: HeroState, scale:
   }
   if (state.laid) drawBridge(ctx, state.laid.x - cam, state.laid.length, 90, world.edge)
   drawBridge(ctx, bridgeStart(state) - cam, state.bridge, state.angle, world.edge)
-  for (const cash of state.cash) drawCash(ctx, cash.x - cam, cash.y, look.time)
-  drawCharacter(ctx, look.character, state.coinX - cam, REST_Y - state.hop + state.coinY, state.roll)
+  if (state.cash !== undefined) drawCash(ctx, state.cash - cam, REST_Y, look.time)
+  drawCharacter(ctx, look.character, state.coinX - cam, REST_Y + state.coinY, state.roll)
 }
