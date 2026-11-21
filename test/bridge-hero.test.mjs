@@ -6,15 +6,18 @@ import {
   bridgeHeroEligible,
   bridgeLands,
   bridgeStart,
+  CASH,
+  COIN,
+  REST_Y,
   cancelHold,
   newHero,
   nextBlock,
   press,
-  readBest,
   release,
-  saveBest,
   stepHero
 } from '../src/components/bridge-hero/game.ts'
+import { CHARACTERS, WALLET_KEY, addRun, buyOrSelect, readWallet, saveWallet } from '../src/components/bridge-hero/wallet.ts'
+import { BLOCKS_PER_WORLD, THEMES, startWorld, worldAt } from '../src/components/bridge-hero/scene.ts'
 
 // Plays one round to rest: grows the bridge to `length`, drops it, and runs frames until it settles.
 const play = (state, length, still = false) => {
@@ -151,12 +154,109 @@ test('a long run keeps scoring when every bridge is right', () => {
   }
 })
 
-test('local best tolerates unavailable, corrupt and full storage', () => {
-  assert.equal(readBest(() => '42'), 42)
-  for (const value of [null, 'oops', '-2', 'Infinity', '1.5', '9007199254740992']) assert.equal(readBest(() => value), 0)
-  assert.equal(readBest(() => { throw new Error('Blocked storage') }), 0)
-  let saved
-  saveBest(12, value => { saved = value })
-  assert.equal(saved, '12')
-  assert.doesNotThrow(() => saveBest(12, () => { throw new Error('Quota exceeded') }))
+test('a hop while crossing grabs the coin over the gap; rolling under it does not', () => {
+  const base = newHero(42)
+  const { near, far } = gapTo(base)
+  const coin = { x: bridgeStart(base) + near / 2, y: REST_Y - 26 }
+  const ready = { ...base, cash: [coin] }
+  // No hop: the hero rolls under the coin and it stays behind.
+  const under = play(ready, (near + far) / 2)
+  assert.equal(under.collected, 0)
+  // Hop just before the coin: the hero rises into it.
+  let state = release({ ...press(ready), bridge: (near + far) / 2 })
+  while (state.phase !== 'rolling') state = stepHero(state, 1 / 60)
+  while (state.coinX < coin.x - 36) state = stepHero(state, 1 / 60)
+  state = press(state)
+  assert.ok(state.hopV > 0)
+  assert.equal(press(stepHero(state, 1 / 60)).hopV, stepHero(state, 1 / 60).hopV, 'no second hop in the air')
+  for (let i = 0; i < 600 && (state.phase !== 'ready' || state.hop > 0); i++) state = stepHero(state, 1 / 60)
+  assert.equal(state.collected, 1)
+  assert.equal(state.score, 1)
+  assert.equal(state.hop, 0, 'the hero lands again')
+  assert.ok(!state.cash.includes(coin))
+})
+
+test('a hop only happens while crossing', () => {
+  const ready = newHero(8)
+  assert.equal(press(ready).phase, 'growing')
+  assert.equal(press(ready).hopV, 0)
+  const falling = release(press(ready))
+  assert.equal(press(falling), falling)
+})
+
+test('reduced motion takes the coin of each gap crossed', () => {
+  const base = newHero(42)
+  const { near, far } = gapTo(base)
+  const ready = { ...base, cash: [{ x: bridgeStart(base) + near / 2, y: REST_Y - 26 }] }
+  assert.equal(play(ready, (near + far) / 2, true).collected, 1)
+  assert.equal(play(ready, near - 1, true).collected, 0)
+})
+
+test('coins appear over most gaps and sit out of reach of a plain roll', () => {
+  let state = newHero(77)
+  let gaps = 0
+  let withCoin = 0
+  for (let round = 0; round < 60; round++) {
+    const { near, far } = gapTo(state)
+    for (const c of state.cash.filter(c => c.x > bridgeStart(state))) {
+      withCoin++
+      assert.ok(c.x < state.blocks.at(-1).x, 'over the gap')
+      assert.ok(REST_Y - c.y > COIN + CASH, 'needs a hop')
+    }
+    gaps++
+    state = play(state, (near + far) / 2)
+  }
+  assert.ok(withCoin > gaps * 0.4 && withCoin < gaps * 0.8, `${withCoin} of ${gaps}`)
+  assert.ok(state.cash.length <= 2, 'old coins are dropped once off screen')
+})
+
+test('the wallet keeps the record, coins and characters, and survives bad storage', () => {
+  const store = new Map()
+  const read = key => store.get(key) ?? null
+  const write = (key, value) => store.set(key, value)
+  const fresh = readWallet(read)
+  assert.deepEqual(fresh, { best: 0, coins: 0, owned: ['cash'], selected: 'cash' })
+  // The record from before the wallet existed carries over.
+  store.set('cashbridge:bridge-hero:best', '7')
+  assert.equal(readWallet(read).best, 7)
+  let wallet = addRun(readWallet(read), 3, 20)
+  assert.equal(wallet.best, 7, 'a lower score never lowers the record')
+  wallet = addRun(wallet, 12, 0)
+  assert.equal(wallet.best, 12)
+  saveWallet(wallet, write)
+  assert.deepEqual(readWallet(read), wallet)
+  for (const bad of ['oops', '[]', '{"coins":-5,"owned":["dragon"],"selected":"dragon","best":"9"}', '{"coins":1.5}']) {
+    store.set(WALLET_KEY, bad)
+    const back = readWallet(read)
+    assert.equal(back.coins, 0)
+    assert.deepEqual(back.owned, ['cash'])
+    assert.equal(back.selected, 'cash')
+  }
+  assert.doesNotThrow(() => readWallet(() => { throw new Error('Blocked storage') }))
+  assert.doesNotThrow(() => saveWallet(wallet, () => { throw new Error('Quota exceeded') }))
+})
+
+test('characters cost coins once, then switch for free', () => {
+  const gold = CHARACTERS.find(c => c.id === 'gold')
+  const poor = { best: 0, coins: gold.price - 1, owned: ['cash'], selected: 'cash' }
+  assert.equal(buyOrSelect(poor, 'gold'), poor)
+  const rich = { ...poor, coins: gold.price + 5 }
+  const bought = buyOrSelect(rich, 'gold')
+  assert.deepEqual(bought, { best: 0, coins: 5, owned: ['cash', 'gold'], selected: 'gold' })
+  const back = buyOrSelect(bought, 'cash')
+  assert.equal(back.coins, 5)
+  assert.equal(buyOrSelect(back, 'gold').coins, 5, 'owned: no second charge')
+  assert.equal(CHARACTERS[0].price, 0)
+})
+
+test('a run starts in its source chain world and moves on every few blocks', () => {
+  assert.equal(startWorld('SOL'), 1)
+  assert.equal(startWorld('NEAR'), 2)
+  assert.equal(startWorld('BASE'), 3)
+  assert.equal(startWorld('DOGE'), 0)
+  assert.equal(startWorld(undefined), 0)
+  assert.equal(worldAt(1, BLOCKS_PER_WORLD - 1), 1)
+  assert.equal(worldAt(1, BLOCKS_PER_WORLD), 2)
+  assert.equal(worldAt(THEMES.length - 1, BLOCKS_PER_WORLD), 0)
+  for (const theme of THEMES) for (const color of [...theme.sky, theme.orb.color, theme.cloud]) assert.match(color, /^#[0-9a-f]{6}$/, 'alpha is appended to these')
 })

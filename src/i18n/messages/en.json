@@ -1077,8 +1077,14 @@
     "best": "Best {score}",
     "again": "Try again",
     "close": "Close game",
-    "note": "Just for fun. Your transfer keeps going.",
+    "note": "Just for fun: coins only buy characters in this game. Your transfer keeps going.",
     "crossed": "{score} crossed",
-    "missed": "Missed. {score} crossed"
+    "missed": "Missed. {score} crossed",
+    "hop": "Tap while crossing to grab coins",
+    "coins": "{count} coins",
+    "shop": "Characters",
+    "closeShop": "Close characters",
+    "buy": "Buy {name} for {price} coins",
+    "newRecord": "New record!"
   }
 }
