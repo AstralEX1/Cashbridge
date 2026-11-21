@@ -16,6 +16,8 @@ import { getNearQuote, nearSlippageBps, type NearRoute } from '@/lib/near-intent
 import { formatBaseUnits, secondLegSellAmount, toBaseUnits } from '@/lib/bridge'
 import { shapeShiftSaleSats } from '@/lib/router-contract'
 import { getShapeShiftQuote, type ShapeShiftRoute } from '@/lib/shapeshift'
+import { useSourceGas } from '@/hooks/use-source-gas'
+import type { SourceGas } from '@/lib/source-gas'
 
 // The routes' quotes for the same transfer; any may be missing. ShapeShift is quoted on open-network pairs only.
 export interface BridgeRoutes {
@@ -35,6 +37,8 @@ type UseQuote = {
   quote?: QuoteResponseRoute
   routes?: BridgeRoutes
   best?: RouteKey
+  // Each route's deposit gas on the paying chain (EVM), in USD and in the bought asset; `best` is net of it.
+  gas: Partial<Record<RouteKey, SourceGas>>
   // True when NEAR Intents or ShapeShift is quoted beside THORChain for this mode (drives the route compare UI).
   nearAllowed: boolean
   shapeshiftAllowed: boolean
@@ -211,7 +215,8 @@ export const useQuote = (): UseQuote => {
   const newError = error instanceof USwapError ? resolveQuoteError(error) : error
 
   const saleError = reverse && bchToken ? sale.error : null
-  const best = bestRoute(routes)
+  const gas = useSourceGas(routes && { thorchain: routes.thorchain, near: routes.near, shapeshift: routes.shapeshift })
+  const best = bestRoute(routes, gas)
   // NEAR-only legs have no THORChain route to fall back to (and must not deposit into one).
   const quote =
     routes &&
@@ -229,6 +234,7 @@ export const useQuote = (): UseQuote => {
     quote: error || waiting ? undefined : quote,
     routes: error ? undefined : routes,
     best: nearOnly ? (routes?.near ? 'near' : undefined) : best,
+    gas: error ? {} : gas,
     nearAllowed,
     shapeshiftAllowed,
     pricingQuote: error ? undefined : quote,
@@ -244,13 +250,14 @@ export const timedLikeNear = <T extends ShapeShiftRoute>(shape: T | undefined, n
 // Whether a forward first leg's BCH leaves anything to sell for the token after the second leg's reserve.
 export const fundsTokenSale = (route?: { expectedBuyAmount: string }) => !route || secondLegSellAmount(toBaseUnits(route.expectedBuyAmount, 8)) > 0n
 
-// The route paying most of the bought asset; THORChain, then NEAR, win a tie.
-export const bestRoute = (routes?: BridgeRoutes): RouteKey | undefined => {
+// The route paying most of the bought asset net of its deposit's gas (`gas`, in the bought asset); THORChain, then NEAR,
+// win a tie. Gas counts only when every quoted route has a figure, so a missing price never decides on its own.
+export const bestRoute = (routes?: BridgeRoutes, gas: Partial<Record<RouteKey, Pick<SourceGas, 'buy'>>> = {}): RouteKey | undefined => {
+  const quoted = (['thorchain', 'near', 'shapeshift'] as const).filter(key => routes?.[key])
+  const priced = quoted.every(key => gas[key])
+  const net = (key: RouteKey) => Number(routes![key]!.expectedBuyAmount) - (priced ? gas[key]!.buy : 0)
   let best: RouteKey | undefined
-  for (const key of ['thorchain', 'near', 'shapeshift'] as const) {
-    const route = routes?.[key]
-    if (route && (!best || new USwapNumber(route.expectedBuyAmount).gt(new USwapNumber(routes![best]!.expectedBuyAmount)))) best = key
-  }
+  for (const key of quoted) if (!best || net(key) > net(best)) best = key
   return best
 }
 
