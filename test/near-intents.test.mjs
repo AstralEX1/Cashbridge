@@ -404,3 +404,29 @@ test('TON native catalogue entries match SDK gas balances and both TON and legac
   assert.equal(balance.isGasAsset, true)
   assert.equal(balance.getValue('string'), '1.5')
 })
+
+test('1Click rows show the coin’s own logo: CoinGecko by catalog id, then per-token fixes, then the old marks', async () => {
+  const { nearTokenLogo, thorchainTokenLogo } = await import('../src/lib/token-logos.ts')
+  const { existsSync } = await import('node:fs')
+  const row = (blockchain, symbol, contractAddress, coingeckoId, assetId = `nep141:${blockchain}-${contractAddress ?? symbol}.omft.near`) => ({
+    assetId, decimals: 18, blockchain, symbol, price: 1, contractAddress, coingeckoId
+  })
+  const [opEth, trump, cnear, unknownCoin, unknownNative] = assetsFromNearTokens([
+    row('op', 'ETH', undefined, 'ethereum'),
+    row('sol', 'TRUMP', '6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN', 'official-trump'),
+    row('near', 'cNEAR', 'cnear.assetize.near', undefined, 'nep141:cnear.assetize.near'),
+    row('base', 'NEWCOIN', '0x0000000000000000000000000000000000000001', 'not-on-the-list'),
+    row('arb', 'ETH', undefined, undefined)
+  ])
+  assert.match(opEth.logoURI, /coingecko\.com\/coins\/images\/279\//, 'ETH on Optimism is the ETH coin, not the OP network mark')
+  assert.match(trump.logoURI, /coingecko\.com\/coins\/images\/53746\//)
+  assert.equal(cnear.logoURI, '/tokens/cnear.webp')
+  assert.equal(unknownCoin.logoURI, undefined, 'no guess: the icon falls back to the ticker letter')
+  assert.equal(unknownNative.logoURI, '/networks/arb.svg')
+  for (const id of ['nep141:abg-966.meme-cooking.near', 'nep141:noear-324.meme-cooking.near', 'nep141:gnear-229.meme-cooking.near', 'nep141:itlx.intellex_xyz.near', 'nep141:cnear.assetize.near']) {
+    const logo = nearTokenLogo({ assetId: id })
+    assert.ok(logo && existsSync(new URL(`../public${logo}`, import.meta.url)), `${id} has its file in public/`)
+  }
+  assert.match(thorchainTokenLogo('ETH.VTHOR-0x815C23eCA83261b6Ec689b60Cc4a58b54BC24D8D', 'https://gone.example/vthor.png'), /static\.thorswap\.net/)
+  assert.equal(thorchainTokenLogo('ETH.ETH', 'https://kept.example/eth.png'), 'https://kept.example/eth.png')
+})

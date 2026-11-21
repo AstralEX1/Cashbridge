@@ -6,6 +6,7 @@ import { Asset } from '@/components/swap/asset'
 import { AppConfig, BridgeConfig } from '@/config'
 import { getMidgardPools } from '@/lib/api'
 import { getNearTokens, mergeNearAssets } from '@/lib/near-intents'
+import { thorchainTokenLogo } from '@/lib/token-logos'
 import type { NearUnquotable } from '@/lib/near-quotable'
 import { useIsPrivateSwap } from '@/store/private-swap-store'
 import { isNetworkAsset, useSwapStore } from '@/store/swap-store'
@@ -129,7 +130,7 @@ export const useAssets = (): { assets?: Asset[]; isLoading: boolean } => {
           identifier,
           isSecuredAsset: isSecured || undefined,
           isTradeAsset: isTrade || undefined,
-          logoURI: token.logoURI,
+          logoURI: thorchainTokenLogo(token.identifier, token.logoURI),
           name: token.name,
           providers,
           shortCode: token.shortCode,

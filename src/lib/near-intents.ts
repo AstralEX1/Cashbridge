@@ -3,6 +3,7 @@ import type { QuoteResponseRoute } from '@tcswap/helpers/api'
 import type { Asset } from '@/components/swap/asset'
 import { nearIntentsApiUrl } from '@/config'
 import { formatBaseUnits, toBaseUnits } from '@/lib/bridge'
+import { nearTokenLogo } from '@/lib/token-logos'
 import type { NearLeg } from '@/store/transaction-store'
 
 // NEAR Intents' 1Click API (docs.near-intents.org, OpenAPI at 1click.chaindefuser.com/docs/v0/openapi.yaml): the
@@ -178,8 +179,8 @@ export const assetsFromNearTokens = (tokens: OneClickToken[]): Asset[] => {
       chainId: getChainConfig(chain).chainId,
       decimals: token.decimals,
       identifier,
-      // 1Click ships no logos: natives reuse the network mark, dollar stables the plain coin marks.
-      logoURI: contract ? STABLE_MARKS[ticker.toUpperCase()] : `/networks/${chain.toLowerCase()}.svg`,
+      // 1Click ships no logos (see token-logos); failing that, natives reuse the network mark, dollar stables the plain coin marks.
+      logoURI: nearTokenLogo(token) ?? (contract ? STABLE_MARKS[ticker.toUpperCase()] : `/networks/${chain.toLowerCase()}.svg`),
       name: ticker,
       providers: [ProviderName.NEAR],
       ticker
@@ -275,6 +276,7 @@ export interface OneClickToken {
   symbol: string
   price: number
   contractAddress?: string | null
+  coingeckoId?: string | null
 }
 
 export interface OneClickQuote {
