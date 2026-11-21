@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { apiError, methodNotAllowed } from '@/lib/api-error'
 import { rateLimit } from '@/lib/rate-limit'
 import { isSameOrigin } from '@/lib/same-origin'
+import { IPFS_GATEWAYS } from '@/lib/endpoints'
 
 // Same-origin proxy for BCMR / Cauldron token icons that live on IPFS. Browsers block
 // public gateways with Cross-Origin-Resource-Policy; serving the bytes from this host keeps
 // <img> loads working without relaxing CORP on a third-party gateway.
-const UPSTREAMS = ['https://ipfs.tapswap.cash/ipfs', 'https://ipfs.io/ipfs', 'https://gateway.pinata.cloud/ipfs']
+const UPSTREAMS = IPFS_GATEWAYS
 const UPSTREAM_TIMEOUT_MS = 12_000
 const MAX_BYTES = 512 * 1024
 const ALLOWED_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml', 'image/avif'])

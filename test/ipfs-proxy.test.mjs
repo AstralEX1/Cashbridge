@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { NextRequest } from 'next/server.js'
 import { GET } from '../src/app/api/ipfs/[...path]/route.ts'
+import { IPFS_GATEWAYS } from '../src/lib/endpoints.ts'
 
 const originalFetch = globalThis.fetch
 after(() => { globalThis.fetch = originalFetch })
@@ -33,8 +34,9 @@ test('oversized icon streams are cancelled before the entire file is buffered', 
     cancel() { cancellations++ }
   }, { highWaterMark: 0 }), { headers: { 'content-type': 'image/png' } })
   assert.equal((await call()).status, 502)
-  assert.equal(cancellations, 3, 'each fallback must stop its oversized stream')
-  assert.ok(pulls <= 15, `downloaded ${pulls} chunks despite the 512-KiB limit`)
+  assert.equal(cancellations, IPFS_GATEWAYS.length, 'each fallback must stop its oversized stream')
+  // 512 KiB is four 128-KiB chunks; the fifth crosses the limit.
+  assert.ok(pulls <= 5 * IPFS_GATEWAYS.length, `downloaded ${pulls} chunks despite the 512-KiB limit`)
 })
 
 test('a broken upstream body falls back to the next gateway', async () => {
