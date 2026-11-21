@@ -274,8 +274,8 @@ const CASES: [ReactNode, string, ReactNode][] = [
     <Server key="r" size={18} />,
     'The Router is down',
     <>
-      Once the refund time passes (set about three hours after the order), anyone can send the coins back to you with the contract&apos;s <code>expire</code>; your
-      page does it for a sale it started.
+      Once the refund time passes (set about three hours after the order), anyone can send the coins back to you with the contract&apos;s <code>expire</code>, and
+      the bridge page does it for you whenever it is open in your browser.
     </>
   ]
 ]
