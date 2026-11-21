@@ -26,8 +26,8 @@ export default function Page() {
           <tr>
             <td>Source or destination chain</td>
             <td>
-              MetaMask, Rabby, Brave Wallet, OKX, Phantom, Trust Wallet, Exodus, Keplr, Vultisig, TronLink, Ledger, Trezor, and any wallet app over WalletConnect. Sui: Slush. Cardano: Lace,
-              Eternl, Yoroi. TON: Telegram Wallet, Tonkeeper and the rest over TON Connect. NEAR: HOT, Meteor, Intear, MyNearWallet and the rest over NEAR Connect
+              MetaMask, Rabby, Brave Wallet, OKX, Phantom, Trust Wallet, Exodus, Bitget Wallet, OneKey, Keplr, Cosmostation, Vultisig, TronLink, Ledger, Trezor, and any wallet app over
+              WalletConnect. Sui: Slush, Suiet, Nightly, OneKey. Solana: Phantom, Solflare, Backpack, Nightly. Bitcoin: UniSat, Leather, Bitget Wallet. Cardano: Lace, Eternl, Yoroi. TON: Telegram Wallet, Tonkeeper and the rest over TON Connect. NEAR: HOT, Meteor, Intear, MyNearWallet and the rest over NEAR Connect
             </td>
             <td>Browser extension, hardware wallet, WalletConnect, TON Connect or NEAR Connect with a QR code or a link</td>
           </tr>
