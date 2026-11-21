@@ -95,7 +95,7 @@ follows the order for the sale and deposit, then finds the payout on the destina
 
 With `AUTO_BRIDGE_SALE_ROUTES` left on (the site offers it unless `NEXT_PUBLIC_ROUTER_SALE_ROUTES=false`), the sale's BCH
 can go to a NEAR Intents or ShapeShift deposit address instead of THORChain's vault. The order names the route, and the memo
-is the fixed `cashbridge` marker, an OP_RETURN with no instructions (that 1Click credits such a deposit is untested with real funds). Before taking the order, the Router reads 1Click's status of the
+is the fixed `cashbridge` marker, an OP_RETURN with no instructions (1Click credited such a deposit in the NEAR Intents sale run in [Proof on mainnet](../README.md#proof-on-mainnet)). Before taking the order, the Router reads 1Click's status of the
 address: it must be waiting for a deposit of native BCH, pay the order's destination, refund the user's BCH address, and stay
 open past the Router's own window. Otherwise the order is refused ("get a fresh quote"). The same check runs again before the
 deposit; once the deposit is sent, the order follows 1Click's status to paid, refunded (to the user's BCH address) or review.
@@ -109,8 +109,8 @@ deposit; once the deposit is sent, the order follows 1Click's status to paid, re
 
 `test/router-sale.test.mjs` and `test/router-sale-exact.test.mjs` run the contracts in the BCH VM on a real Cauldron sale,
 and `test/auto-bridge-sale.test.mjs` runs the Router's side against a fake network that VM-checks every broadcast. The
-NEAR Intents and ShapeShift sale paths are tested this way only; no mainnet run has been made through them yet, so their
-behaviour with real funds is a hypothesis until one is.
+NEAR Intents sale path also has a mainnet run in [Proof on mainnet](../README.md#proof-on-mainnet). The ShapeShift sale path is
+tested this way only, so its behaviour with real funds is a hypothesis until a mainnet run is made.
 
 Deploy order: a Router without this support refuses routed sales (409), and the page would show that error to a user who
 picks NEAR Intents or ShapeShift for a Router sale. Update the Router before or with the site, or set

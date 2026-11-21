@@ -223,7 +223,7 @@ export default function Page() {
         <summary>Does the Cashbridge Router hold my BCH?</summary>
         <div>
           <p>
-            When the service returns a contract order (<code>apiVersion=2</code>), BCH sits in a per-order P2SH covenant that can only pay your token minimum or refund your fallback. Legacy P2PKH orders used temporary service custody — that is what the published Router proof row shows, not the newer covenants. Details in <Link href="/docs/security">Security and custody</Link>.
+            When the service returns a contract order (<code>apiVersion=2</code>), BCH sits in a per-order P2SH covenant that can only pay your token minimum or refund your fallback. Legacy P2PKH orders used temporary service custody; the two oldest Router rows in Proof on mainnet show that model, and the later rows show the covenants. Details in <Link href="/docs/security">Security and custody</Link>.
           </p>
         </div>
       </details>

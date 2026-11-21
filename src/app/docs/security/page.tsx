@@ -39,12 +39,12 @@ export default function Page() {
 
       <h3 id="sale-contracts">Sale contracts (reverse)</h3>
       <p>
-        When Router sales are offered, a reverse CashToken transfer uses a sale covenant: your wallet sends the token in; the Router may sell for ≥ min BCH and deposit to the bridge address fixed in the contract (THORChain&apos;s vault with the memo, or a NEAR Intents or ShapeShift deposit address the Router checks at 1Click first), or return the tokens; after <code>refundAfter</code> (same median-time rule) anyone may return them. The NEAR Intents and ShapeShift sale paths have been tested against simulated networks only, not yet with real funds. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.
+        When Router sales are offered, a reverse CashToken transfer uses a sale covenant: your wallet sends the token in; the Router may sell for ≥ min BCH and deposit to the bridge address fixed in the contract (THORChain&apos;s vault with the memo, or a NEAR Intents or ShapeShift deposit address the Router checks at 1Click first), or return the tokens; after <code>refundAfter</code> (same median-time rule) anyone may return them. The THORChain and NEAR Intents sale paths each have a mainnet run in <Link href="/docs/mainnet">Proof on mainnet</Link>; the ShapeShift sale path has been tested against simulated networks only. See <Link href="/docs/guides/cashbridge-router">Use the Cashbridge Router</Link>.
       </p>
 
       <h3 id="legacy">Legacy P2PKH orders</h3>
       <p>
-        Older Router orders (and the published mainnet Router proof row) used a P2PKH order address — temporary service custody of BCH, not the purchase covenant. That row proves a mainnet run with a single source-wallet signature under that legacy model; it does not prove funded settlement of the P2SH covenants.
+        Older Router orders used a P2PKH order address: temporary service custody of BCH, with no purchase covenant. The two oldest Router rows in <Link href="/docs/mainnet">Proof on mainnet</Link> used this model; the later Router rows there settled through the P2SH contracts.
       </p>
 
       <h2 id="near">NEAR Intents and custody</h2>

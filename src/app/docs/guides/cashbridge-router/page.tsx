@@ -69,7 +69,7 @@ export default function Page() {
           </tr>
           <tr>
             <td>Legacy P2PKH orders</td>
-            <td>Historical / fallback model: temporary service custody of BCH. The published Router proof row used this model — it is not contract settlement.</td>
+            <td>Historical / fallback model: temporary service custody of BCH. The two oldest Router rows in Proof on mainnet used this model; the later rows are contract settlements.</td>
           </tr>
         </tbody>
       </table>
