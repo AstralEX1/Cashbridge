@@ -1147,7 +1147,15 @@ const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => 
       <WaitingButton>{t('progress.bridgingAction')}</WaitingButton>
     ) : null
 
-  const title = completed ? t('progress.completeTitle') : ready ? t('progress.readyTitle') : secondStarted ? t('progress.swapping') : t('progress.processing')
+  const title = completed
+    ? t('progress.completeTitle')
+    : ended
+      ? t('progress.finished')
+      : ready
+        ? t('progress.readyTitle')
+        : secondStarted
+          ? t('progress.swapping')
+          : t('progress.processing')
 
   return (
     <Dialog
