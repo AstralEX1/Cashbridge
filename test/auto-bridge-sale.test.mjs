@@ -79,6 +79,7 @@ const network = () => {
     },
     thorStatus: async () => state.status,
     nearStatus: async address => state.near?.(address),
+    nearSubmit: async (address, hash) => ((state.notices ??= []).push([address, hash]), true),
     observe: async id => ({ seen: txs.has(id), confirmations: confirmations.get(id) ?? 0 }),
     inbound: async () => state.inbounds,
     mimir: async () => state.mimir ?? {},
@@ -296,12 +297,19 @@ test('a NEAR Intents sale deposits the whole sale to the 1Click address and sett
     assert.ok(tx.outputs[0].valueSatoshis >= 300000n - 2000n)
     assert.equal(binToHex(tx.outputs[1].lockingBytecode), binToHex(memoScript(ROUTE_MEMO)))
     assert.ok(net.state.sent.some(a => a.txid === deposited.txid), 'verified in the VM and relayed')
+    // 1Click still waits for the deposit: the Router tells it the hash, again a minute later, and stops once it moves on.
+    await run()
+    await run(2_030_000)
+    assert.deepEqual(net.state.notices, [[vault.cashAddress, deposited.txid]])
+    await run(2_061_000)
+    assert.equal(net.state.notices.length, 2)
     setQuote(oneClick('near', { status: 'PROCESSING' }))
     await run()
     assert.equal(get().state, 'streaming')
     setQuote(oneClick('near', { status: 'SUCCESS', payouts: ['0x' + 'ab'.repeat(32)] }))
     await run()
     assert.equal(get().state, 'completed')
+    assert.equal(net.state.notices.length, 2, 'no notice once 1Click has the deposit')
   } finally {
     store.close()
   }

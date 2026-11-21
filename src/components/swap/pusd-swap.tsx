@@ -23,7 +23,7 @@ import { useQuote } from '@/hooks/use-quote'
 import { useRates } from '@/hooks/use-rates'
 import { getMidgardActions, getTrack, getTxStatus } from '@/lib/api'
 import { checkUnspent, findThorchainOutbound, getTransactionState, historyIncludes, verifyPayments, verifyThorchainOutbound } from '@/lib/bch'
-import { getNearStatus, interpretNearStatus, nearExplorerUrl } from '@/lib/near-intents'
+import { getNearStatus, interpretNearStatus, nearExplorerUrl, nudgeNearDeposit } from '@/lib/near-intents'
 import { sourceTransactionId } from '@/lib/source-transaction'
 import { getTransferStatus } from '@/lib/transfer-status'
 import { firstLegFromChain, formatStepTime, type SourceReceipt, stepTime } from '@/lib/bridge-tracking'
@@ -185,6 +185,7 @@ const sourceReceipt = async (tx: BridgeTx): Promise<SourceReceipt | undefined> =
 const syncNearFirstLeg = async (tx: BridgeTx, near: NearLeg, update: ReturnType<typeof useUpdateBridge>) => {
   const op = tx.bridge
   const [source, status] = await Promise.all([sourceReceipt(tx).catch(() => undefined), getNearStatus(near.depositAddress).catch(() => undefined)])
+  nudgeNearDeposit(status, near.depositAddress, tx.hash)
   const view = status && interpretNearStatus(status)
   const outbound = view?.kind === 'paid' ? await verifyPayments(view.txids, op.binding.lockingBytecode, BigInt(near.minAmountOut)).catch(() => undefined) : undefined
   const fromChain = firstLegFromChain(op, { source, outbound })

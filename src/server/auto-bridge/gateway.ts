@@ -4,7 +4,7 @@ import { toBaseUnits } from '@/lib/bridge'
 import { BroadcastRejected, BroadcastUnknown, broadcastViaCauldron } from '@/lib/cauldron'
 import type { TxStatusResponse } from '@/lib/api'
 import type { InboundAddress } from '@/lib/thorchain-deposit'
-import { nearAuthHeaders, ONE_CLICK_URL, type NearStatusResponse } from '@/lib/near-intents'
+import { nearAuthHeaders, ONE_CLICK_URL, submitNearDeposit, type NearStatusResponse } from '@/lib/near-intents'
 import type { Attempt } from '@/server/auto-bridge/types'
 import type { Gateway } from '@/server/auto-bridge/worker'
 import { readCredential } from '@/server/auto-bridge/config'
@@ -275,6 +275,9 @@ export class BchGateway implements Gateway {
     if (response.status === 404) return undefined
     if (!response.ok) throw new Error('NEAR Intents status unavailable')
     return response.json()
+  }
+  nearSubmit(depositAddress: string, txHash: string) {
+    return submitNearDeposit(depositAddress, txHash)
   }
   async observe(id: string) {
     try {

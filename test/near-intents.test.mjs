@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import { hexToBin } from '@bitauth/libauth'
 import { checkPayment, bindingFromPubkey, decodeTx, txidOf } from '../src/lib/bch.ts'
 import { Chain, ProviderName } from '@tcswap/helpers'
-import { catalogBalance, assetsFromNearTokens, findNearToken, getNearQuote, interpretNearStatus, isNearRoute, mergeNearAssets, nearAssetIdentifier, nearLegOf, nearQuoteBody, nearRoute, nearSlippageBps, NEAR_BCH } from '../src/lib/near-intents.ts'
+import { catalogBalance, assetsFromNearTokens, findNearToken, nudgeNearDeposit, nearTxHash, getNearQuote, interpretNearStatus, isNearRoute, mergeNearAssets, nearAssetIdentifier, nearLegOf, nearQuoteBody, nearRoute, nearSlippageBps, NEAR_BCH } from '../src/lib/near-intents.ts'
 import { isAssetInMode, isNearOnlyAsset } from '../src/hooks/use-assets.ts'
 import { bestRoute } from '../src/hooks/use-quote.ts'
 import { isBridgeRoute } from '../src/lib/api.ts'
@@ -429,4 +429,20 @@ test('1Click rows show the coin’s own logo: CoinGecko by catalog id, then per-
   }
   assert.match(thorchainTokenLogo('ETH.VTHOR-0x815C23eCA83261b6Ec689b60Cc4a58b54BC24D8D', 'https://gone.example/vthor.png'), /static\.thorswap\.net/)
   assert.equal(thorchainTokenLogo('ETH.ETH', 'https://kept.example/eth.png'), 'https://kept.example/eth.png')
+})
+
+test('the 1Click deposit notice repeats once a minute while 1Click still waits for the deposit, in the chain\'s hash form', () => {
+  const sent = []
+  const submit = async (...notice) => (sent.push(notice), true)
+  const pending = { status: 'PENDING_DEPOSIT' }
+  assert.equal(nudgeNearDeposit(pending, 'dep-a', undefined, submit, 0), false, 'no hash yet')
+  assert.equal(nudgeNearDeposit({ status: 'KNOWN_DEPOSIT_TX' }, 'dep-a', 'h', submit, 0), false, '1Click has it')
+  assert.equal(nudgeNearDeposit(pending, 'dep-a', 'h', submit, 1000), true)
+  assert.equal(nudgeNearDeposit(pending, 'dep-a', 'h', submit, 30_000), false, 'not again within a minute')
+  assert.equal(nudgeNearDeposit(pending, 'dep-b', 'h2', submit, 30_000), true, 'each deposit address on its own')
+  assert.equal(nudgeNearDeposit(pending, 'dep-a', 'h', submit, 61_000), true)
+  assert.deepEqual(sent, [['dep-a', 'h'], ['dep-b', 'h2'], ['dep-a', 'h']])
+  assert.equal(nearTxHash(`0x${'12'.repeat(20)}`, 'ab'.repeat(32)), `0x${'ab'.repeat(32)}`)
+  assert.equal(nearTxHash('bitcoincash:qrmu5j4fqddjpgttkwl8p820vynrwy969vs0gmpelz', 'ab'.repeat(32)), 'ab'.repeat(32))
+  assert.equal(nearTxHash('cosmos1deposit', `${'ab'.repeat(32)}-2`), 'ab'.repeat(32))
 })

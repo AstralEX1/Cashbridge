@@ -745,6 +745,7 @@ const nearEnvironment = (contractOrders = false) => {
   const signer = wallet(),
     store = new OrderStore(':memory:', signer.xpub, limits, undefined, undefined, contractOrders, false, true)
   const order = store.create(randomUUID(), capability(), intent, '200', 100)
+  const notices = []
   const depositAddress = `0x${'12'.repeat(20)}`
   store.update(order.id, order.version, { nearDepositAddress: depositAddress })
   const payout = binToHex(
@@ -784,6 +785,7 @@ const nearEnvironment = (contractOrders = false) => {
       return undefined
     },
     nearStatus: async address => (address === depositAddress ? near : undefined),
+    nearSubmit: async (address, hash) => (notices.push([address, hash]), true),
     observe: async id => observed.get(id) ?? { seen: false, confirmations: 0 },
     broadcast: async attempt => {
       observed.set(attempt.txid, { seen: true, confirmations: 0 })
@@ -793,6 +795,7 @@ const nearEnvironment = (contractOrders = false) => {
   return {
     store,
     order,
+    notices,
     raw,
     payout,
     payoutId,
@@ -810,6 +813,10 @@ test('a NEAR Intents order is funded by the BCH payout its signed quote sends to
   try {
     await env.run(1000)
     assert.equal(env.state(), 'awaiting_deposit')
+    assert.deepEqual(env.notices, [], 'no hash to tell 1Click yet')
+    env.store.update(env.order.id, env.store.get(env.order.id).version, { sourceHash: 'cd'.repeat(32) })
+    await env.run(1500)
+    assert.deepEqual(env.notices, [[`0x${'12'.repeat(20)}`, `0x${'cd'.repeat(32)}`]], 'the waiting deposit is reported with its EVM hash')
     env.setNear(near => ({ ...near, status: 'PROCESSING' }))
     await env.run(2000)
     assert.equal(env.state(), 'streaming')

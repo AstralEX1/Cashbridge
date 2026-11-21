@@ -9,7 +9,7 @@ import { REFUND_FEE_CAP } from '@/lib/router-contract'
 import { OrderError, orderCategory, positiveAmount, type OrderIntent } from '@/server/auto-bridge/types'
 import { SALE_KEYS, SALE_ROUTE_KEYS, isScanAddress, type SaleIntent } from '@/lib/auto-bridge-contract'
 import { addressToLockingBytecode } from '@/lib/bch'
-import { getNearStatus, getNearTokens, nearTokenFor, submitNearDeposit, type NearStatusResponse, type OneClickToken } from '@/lib/near-intents'
+import { getNearStatus, getNearTokens, nearTokenFor, nearTxHash, submitNearDeposit, type NearStatusResponse, type OneClickToken } from '@/lib/near-intents'
 import { SALE_ROUTE_OPEN_MS, saleRouteProblem } from '@/server/auto-bridge/sale-route'
 import type { OrderStore } from '@/server/auto-bridge/store'
 
@@ -30,9 +30,6 @@ export type NearService = {
   submit?: (depositAddress: string, txHash: string) => Promise<boolean>
 }
 const defaultNear: NearService = { status: depositAddress => getNearStatus(depositAddress), tokens: getNearTokens, submit: submitNearDeposit }
-// The hash as the source chain writes it: stored EVM hashes lose their 0x, and an EVM deposit address is 0x + 40 hex.
-const nearTxHash = (depositAddress: string, hash: string) =>
-  /^0x[0-9a-f]{40}$/i.test(depositAddress) && /^[0-9a-f]{64}$/.test(hash) ? `0x${hash}` : hash.replace(/-\d+$/, '')
 const headers = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }
 const reply = (body: unknown, status = 200) => NextResponse.json(body, { status, headers })
 const errorReply = (error: unknown) =>

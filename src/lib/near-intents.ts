@@ -531,6 +531,27 @@ export const submitNearDeposit = (depositAddress: string, txHash: string) =>
     error => (console.warn('NEAR Intents deposit notice failed', error), false)
   )
 
+// 1Click can leave a BCH deposit at PENDING_DEPOSIT until it is told the hash, so the notice is repeated, at most once a
+// minute per deposit address, for as long as 1Click still waits for the deposit.
+const noticed = new Map<string, number>()
+export const nudgeNearDeposit = (
+  status: Pick<NearStatusResponse, 'status'> | undefined,
+  depositAddress: string,
+  txHash: string | undefined,
+  submit: (depositAddress: string, txHash: string) => Promise<boolean> | undefined = submitNearDeposit,
+  now = Date.now()
+) => {
+  const last = noticed.get(depositAddress)
+  if (!txHash || status?.status !== 'PENDING_DEPOSIT' || (last !== undefined && now >= last && now - last < 60_000)) return false
+  noticed.set(depositAddress, now)
+  void submit(depositAddress, txHash)?.catch(() => false)
+  return true
+}
+
+// The hash as the source chain writes it: stored EVM hashes lose their 0x, and an EVM deposit address is 0x + 40 hex.
+export const nearTxHash = (depositAddress: string, hash: string) =>
+  /^0x[0-9a-f]{40}$/i.test(depositAddress) && /^[0-9a-f]{64}$/.test(hash) ? `0x${hash}` : hash.replace(/-\d+$/, '')
+
 // The public page of a swap, by its deposit address.
 export const nearExplorerUrl = (depositAddress: string) => `https://explorer.near-intents.org/transactions/${encodeURIComponent(depositAddress)}`
 

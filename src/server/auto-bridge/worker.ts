@@ -4,7 +4,7 @@ import { addressToLockingBytecode, checkOutbound, checkPayment, decodeTx, isTxid
 import { inboundMatchesBinding, interpretTxStatus } from '@/lib/bridge'
 import { BroadcastRejected, buildTokenTrade, type BuildIntent, type BuildResult } from '@/lib/cauldron'
 import { checkInbound, thorchainPayoutsHalted, type InboundAddress } from '@/lib/thorchain-deposit'
-import { interpretNearStatus, NEAR_BCH, type NearStatusResponse } from '@/lib/near-intents'
+import { interpretNearStatus, NEAR_BCH, nearTxHash, nudgeNearDeposit, type NearStatusResponse } from '@/lib/near-intents'
 import { SALE_ROUTE_DEPOSIT_MS, saleRouteProblem } from '@/server/auto-bridge/sale-route'
 import { OrderStore } from '@/server/auto-bridge/store'
 import { isTerminal, orderCategory, type Attempt, type Order, type SaleCoin } from '@/server/auto-bridge/types'
@@ -26,6 +26,7 @@ export interface Gateway {
   mimir?(): Promise<Record<string, number>>
   // 1Click's status of a NEAR Intents deposit address; undefined when 1Click does not know it.
   nearStatus?(depositAddress: string): Promise<NearStatusResponse | undefined>
+  nearSubmit?(depositAddress: string, txHash: string): Promise<boolean>
 }
 export interface Policy {
   minConfirmations: number
@@ -524,6 +525,7 @@ async function nearFunding(store: OrderStore, gateway: Gateway, order: Order, cl
     return
   }
   if (view.kind === 'pending') {
+    if (order.sourceHash) nudgeNearDeposit(status, order.nearDepositAddress!, nearTxHash(order.nearDepositAddress!, order.sourceHash), (a, h) => gateway.nearSubmit?.(a, h), clock())
     if (status.status !== 'PENDING_DEPOSIT' && order.state !== 'streaming') store.update(order.id, order.version, { state: 'streaming' }, clock())
     return
   }
@@ -696,6 +698,7 @@ export async function processSale(
       if (coins.length) return giveBack('Returning a coin sent to the contract after the deposit.')
       // shortcut: 1Click's status only decides when the order stops; the page proves the payout on the destination chain.
       const status = await gateway.nearStatus?.(order.sale.vaultAddress).catch(() => undefined)
+      nudgeNearDeposit(status, order.sale.vaultAddress, deposit.txid, (a, h) => gateway.nearSubmit?.(a, h), clock())
       const view = status && interpretNearStatus(status)
       if (view?.kind === 'paid') progress({ state: 'completed', error: undefined })
       else if (view?.kind === 'refunded') progress({ state: 'refunded', error: undefined })

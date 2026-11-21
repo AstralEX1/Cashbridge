@@ -13,7 +13,7 @@ import { BroadcastRejected, broadcastBchTransaction, parseP2pkhUnlock, prepareTo
 import type { CauldronToken } from '@/lib/cauldron-tokens'
 import { buildDeposit, type BuiltDeposit, checkDepositMemo, checkInbound, DepositError, type InboundAddress, matchPayout, pickBchFunding, TRANSFER_FAILED_TOPIC, TRANSFER_OUT_TOPIC } from '@/lib/thorchain-deposit'
 import { cosmosPayout, type ChainPayout, evmTransferPayout, type PayoutExpectation, solanaPayout, thorchainPayout, tronPayout, utxoPayout, xrpPayout } from '@/lib/payout-check'
-import { getNearQuote, getNearStatus, interpretNearStatus, nearLegOf, nearSlippageBps } from '@/lib/near-intents'
+import { getNearQuote, getNearStatus, interpretNearStatus, nearLegOf, nearSlippageBps, nudgeNearDeposit } from '@/lib/near-intents'
 import { getShapeShiftBridgeRoute } from '@/lib/shapeshift'
 import { blockHeight, destinationChainOf, isEvmChain } from '@/lib/payout-chains'
 import { BLOCKCHAIR_CHAINS } from '@/lib/blockchair'
@@ -383,7 +383,9 @@ export const nearReverseOutcome = async (op: BridgeOperation): Promise<NearRever
   const near = op.near
   const reverse = op.reverse
   if (!near || !reverse) return undefined
-  const view = interpretNearStatus(await getNearStatus(near.depositAddress))
+  const status = await getNearStatus(near.depositAddress)
+  nudgeNearDeposit(status, near.depositAddress, reverse.deposit?.txid)
+  const view = interpretNearStatus(status)
   if (view.kind === 'refunded') return { refundSats: view.amount, reason: view.reason }
   if (view.kind === 'failed') return { error: view.reason }
   if (view.kind === 'pending') return view.detail ? { error: view.detail } : undefined
