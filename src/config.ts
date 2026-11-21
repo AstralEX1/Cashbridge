@@ -8,7 +8,8 @@ export const AppConfig = {
   title: 'Cash Bridge | Bridge to Bitcoin Cash and PUSD',
   description:
     'Bridge assets to Bitcoin Cash and CashTokens through THORChain, NEAR Intents, ShapeShift and Cauldron. Manual signing, or Cashbridge Router contract orders that settle under a per-order covenant.',
-  baseUrl: process.env.NEXT_PUBLIC_SITE_URL || 'https://cashbridge.space',
+  // The bare domain answers with a 308 to www, which a POST without -L (curl, some MCP clients) does not follow.
+  baseUrl: (process.env.NEXT_PUBLIC_SITE_URL || 'https://www.cashbridge.space').replace('://cashbridge.space', '://www.cashbridge.space'),
   // The bridge's first leg is THORChain alone (see BridgeConfig).
   providers: [ProviderName.THORCHAIN],
   // The PRIVATE tab quotes this provider alone; its assets are listed only there.

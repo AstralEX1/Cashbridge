@@ -1,6 +1,7 @@
 // The MCP endpoint for AI agents, against stand-ins for the aggregator, THORNode and the Cashbridge Router: it never
 // hands out a transaction that does not match its quote, and a Router order is checked against its contract.
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { mkdtempSync } from 'node:fs'
@@ -235,6 +236,20 @@ test('a status or report call without an id names every id it accepts', async ()
   const report = await call('report_source_transaction', { source_tx: 'ab'.repeat(32) })
   assert.equal(report.isError, true)
   assert.match(report.content[0].text, /order_id \+ order_token, near_deposit_address, or shapeshift_quote_id/)
+})
+
+// The bare domain 308s to www, and a POST without -L stops at the redirect: every printed URL is the www one.
+test('printed URLs use the www host, also when the site URL is set to the bare domain', async () => {
+  const bare = /https:\/\/cashbridge\.space/
+  const { MCP_URL, SKILL_INSTALL_COMMAND } = await import('../src/server/agent/kit.ts')
+  const card = await (await mcpGet(new NextRequest('https://www.cashbridge.space/mcp'))).json()
+  const { GET } = await import('../src/app/llms.txt/route.ts')
+  const llms = await (await GET()).text()
+  assert.equal(MCP_URL, 'https://www.cashbridge.space/mcp')
+  assert.equal(card.transport.endpoint, MCP_URL)
+  for (const printed of [SKILL_INSTALL_COMMAND, JSON.stringify(card), llms]) assert.doesNotMatch(printed, bare)
+  const baseUrl = execFileSync(process.execPath, ['--no-warnings', '--import', './test/register-ts-alias.mjs', '--input-type=module', '-e', "process.stdout.write((await import('./src/config.ts')).AppConfig.baseUrl)"], { env: { ...process.env, NEXT_PUBLIC_SITE_URL: 'https://cashbridge.space' } }).toString()
+  assert.equal(baseUrl, 'https://www.cashbridge.space')
 })
 
 test('each client gets 60 requests per window, then 429 with Retry-After', async () => {
