@@ -12,6 +12,7 @@ import {
   type StandardEventsFeature,
   type SuiWalletFeatures,
   type Wallet,
+  type WalletAccount,
   type WalletWithFeatures
 } from '@mysten/wallet-standard'
 import { toBaseUnits } from '@/lib/bridge'
@@ -19,24 +20,49 @@ import { catalogBalance, nearCatalogAsset, nearCatalogAssets } from '@/lib/near-
 
 // Sui wallets announce themselves over the Wallet Standard (docs.sui.io/standards/wallet-standard): a dapp asks the
 // registry for wallets on `sui:mainnet`, connects with `standard:connect` and has the wallet sign and submit with
-// `sui:signAndExecuteTransaction` (older wallets: `…TransactionBlock`, which the helper bridges).
+// `sui:signAndExecuteTransaction` (older wallets: `…TransactionBlock`, which the helper bridges). Every Sui wallet goes
+// through this one connector; a multi-chain wallet's own row (OneKey) hands its Sui account here.
 export const SLUSH = 'SLUSH' as string as WalletOption
+export const SUIET = 'SUIET' as string as WalletOption
+export const NIGHTLY = 'NIGHTLY' as string as WalletOption
 
-// Mysten's wallet registered as "Sui Wallet" before its 2025 rename to Slush.
-const SLUSH_NAMES = ['Slush', 'Sui Wallet']
+// What each wallet registers as, from its maker's own code; the first name is the label. Slush's extension carries the
+// id Mysten's dapp kit matches (@mysten/slush-wallet) and the names its wallet defaults list (@mysten/dapp-kit); the id
+// comes first, as OneKey can also register under Slush's names. Suiet: @suiet/wallet-sdk. Nightly: nightly-labs/connect
+// (selector-sui). OneKey: OneKeyHQ/cross-inpage-provider (onekey-sui-provider).
+export const SUI_WALLETS: Partial<Record<WalletOption, { id?: string; names: string[] }>> = {
+  [SLUSH]: { id: 'com.mystenlabs.suiwallet', names: ['Slush', 'Sui Wallet'] },
+  [SUIET]: { names: ['Suiet'] },
+  [NIGHTLY]: { names: ['Nightly'] },
+  [WalletOption.ONEKEY]: { names: ['OneKey Wallet'] }
+}
 
 type SuiStandardWallet = WalletWithFeatures<StandardConnectFeature & StandardEventsFeature & Partial<StandardDisconnectFeature & SuiWalletFeatures>>
 
-const isSlush = (wallet: Wallet): wallet is SuiStandardWallet =>
-  SLUSH_NAMES.includes(wallet.name) && wallet.chains.includes(SUI_MAINNET_CHAIN) && StandardConnect in wallet.features && StandardEvents in wallet.features
+// Like dapp-kit's default filter, a wallet that cannot sign on Sui mainnet is no Sui wallet here.
+const isSuiWallet = (wallet: Wallet): wallet is SuiStandardWallet =>
+  wallet.chains.includes(SUI_MAINNET_CHAIN) &&
+  StandardConnect in wallet.features &&
+  StandardEvents in wallet.features &&
+  ('sui:signAndExecuteTransaction' in wallet.features || 'sui:signAndExecuteTransactionBlock' in wallet.features)
 
-export const findSlush = () => (typeof window === 'undefined' ? undefined : getWallets().get().find(isSlush))
+export const findSuiWallet = (option: WalletOption) => {
+  const known = SUI_WALLETS[option]
+  if (!known || typeof window === 'undefined') return undefined
+  const wallets = getWallets().get().filter(isSuiWallet)
+  return (
+    (known.id ? wallets.find(wallet => (wallet as { id?: string }).id === known.id) : undefined) ??
+    wallets.find(wallet => known.names.includes(wallet.name))
+  )
+}
 
 // Extensions register a moment after load, which a restore on page load can beat.
-const waitForSlush = async () => {
-  for (let waited = 0; waited < 1_000 && !findSlush(); waited += 100) await new Promise(resolve => setTimeout(resolve, 100))
-  return findSlush()
+const waitForWallet = async (option: WalletOption) => {
+  for (let waited = 0; waited < 1_000 && !findSuiWallet(option); waited += 100) await new Promise(resolve => setTimeout(resolve, 100))
+  return findSuiWallet(option)
 }
+
+const onMainnet = (account: WalletAccount) => account.chains.includes(SUI_MAINNET_CHAIN)
 
 // Public full nodes answer gRPC-web only: JSON-RPC was switched off in July 2026
 // (docs.sui.io/develop/accessing-data/json-rpc-migration).
@@ -45,21 +71,25 @@ const suiClient = async () => {
   return new SuiGrpcClient({ network: 'mainnet', baseUrl: 'https://fullnode.mainnet.sui.io:443' })
 }
 
-export const slushWallet = createWallet({
-  name: 'connectSlush',
+export const suiWallet = createWallet({
+  name: 'connectSuiWallet',
   supportedChains: [Chain.Sui],
   walletType: SLUSH,
   connect:
-    ({ addChain, walletType }) =>
-    async (chains: Chain[], config?: { restoreOnly?: boolean }) => {
-      if (!chains.includes(Chain.Sui)) throw new Error('Slush only supports Sui')
-      const wallet = await waitForSlush()
-      if (!wallet) throw new Error('Slush is not installed')
+    ({ addChain }) =>
+    async (chains: Chain[], config?: { restoreOnly?: boolean; walletType?: WalletOption }) => {
+      const walletType = config?.walletType ?? SLUSH
+      const label = SUI_WALLETS[walletType]?.names[0] ?? 'This wallet'
+      if (!chains.includes(Chain.Sui)) throw new Error(`${label} connects only Sui here`)
+      const wallet = await waitForWallet(walletType)
+      if (!wallet) throw new Error(`${label} with Sui is not installed`)
 
-      // `silent` answers with the accounts already granted to this site, without a prompt.
-      const { accounts } = await wallet.features[StandardConnect].connect({ silent: !!config?.restoreOnly })
-      const account = accounts.find(a => a.chains.includes(SUI_MAINNET_CHAIN)) ?? accounts[0]
-      if (!account) throw new Error('Slush shared no Sui account')
+      // A restore takes the accounts the wallet already lists for this site, then asks with `silent`, as dapp-kit's
+      // autoconnect does: docs.sui.io marks `silent` for deprecation in favour of accounts filled on load.
+      const granted = config?.restoreOnly ? wallet.accounts.find(onMainnet) : undefined
+      const accounts = granted ? [granted] : (await wallet.features[StandardConnect].connect({ silent: !!config?.restoreOnly })).accounts
+      const account = accounts.find(onMainnet)
+      if (!account) throw new Error(`${label} shared no Sui mainnet account`)
       const address = account.address
 
       const getBalance = async () => {

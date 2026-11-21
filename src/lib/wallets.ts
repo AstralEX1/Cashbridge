@@ -16,7 +16,8 @@ import { trezorWallet } from '@tcswap/wallets/trezor'
 import { tronlinkWallet } from '@/lib/tronlink'
 import { ETERNL, eternlWallet, LACE, laceWallet, YOROI, yoroiWallet } from '@/lib/cardano-wallet'
 import { NEARCONNECT, nearconnectWallet } from '@/lib/near-connect-wallet'
-import { SLUSH, slushWallet } from '@/lib/sui-wallet'
+import { BACKPACK, SOLANA_WALLET_NAMES, solanaStandardWallet, SOLFLARE } from '@/lib/solana-wallet'
+import { NIGHTLY, SLUSH, SUI_WALLETS, SUIET, suiWallet } from '@/lib/sui-wallet'
 import { TONCONNECT, tonconnectWallet } from '@/lib/ton-wallet'
 import { vultisigWallet } from '@tcswap/wallets/vultisig'
 import { preloadWalletconnect, walletconnectWallet } from '@tcswap/wallets/walletconnect'
@@ -38,7 +39,8 @@ const defaultPlugins = {
 }
 
 // Sui, TON and Cardano have no browser-wallet connector in the SDK; ours send the NEAR Intents deposit. The SDK's NEAR
-// one is built on the deprecated Wallet Selector, so NEAR wallets connect through NEAR Connect.
+// one is built on the deprecated Wallet Selector, so NEAR wallets connect through NEAR Connect. Solana wallets without
+// an SDK connector sign through the Wallet Standard (src/lib/solana-wallet.ts).
 const defaultWallets = {
   ...braveWallet,
   ...eternlWallet,
@@ -50,7 +52,8 @@ const defaultWallets = {
   ...nearconnectWallet,
   ...okxWallet,
   ...phantomWallet,
-  ...slushWallet,
+  ...solanaStandardWallet,
+  ...suiWallet,
   ...tonconnectWallet,
   ...trezorWallet,
   ...tronlinkWallet,
@@ -118,8 +121,25 @@ export function getUSwap() {
   return instance
 }
 
+const STANDARD_CHAINS = [
+  [Chain.Sui, SUI_WALLETS, 'connectSuiWallet'],
+  [Chain.Solana, SOLANA_WALLET_NAMES, 'connectSolanaWallet']
+] as const
+
 export async function connectWallet(option: WalletOption, chains: Chain[], config?: any): Promise<boolean> {
   const uSwap = getUSwap()
+
+  // Sui, and Solana in wallets the SDK has no Solana connector for, go through the Wallet Standard; a multi-chain
+  // wallet's other chains through its own connector. One after the other, so a wallet shows one prompt at a time.
+  for (const [chain, names, connect] of STANDARD_CHAINS) {
+    if (!chains.includes(chain) || !names[option]) continue
+    const others = chains.filter(c => c !== chain)
+    const own = uSwap[connect]([chain], { walletType: option, restoreOnly: config?.restoreOnly })
+    if (others.length === 0) return own
+    const ownConnected = await own.catch(error => (console.warn(`Failed to connect to ${chain}:`, error), false))
+    return (await connectWallet(option, others, config)) || ownConnected
+  }
+
   const connectEach = async (connect: (chain: Chain[]) => Promise<boolean>) => {
     let successCount = 0
     for (const chain of chains) {
@@ -177,8 +197,6 @@ export async function connectWallet(option: WalletOption, chains: Chain[], confi
     case WalletOption.TREZOR:
       return connectEach(c => uSwap.connectTrezor(c, config?.derivationPath))
     // `restoreOnly`: a restore on page load reconnects a granted session without a prompt or the TON Connect modal.
-    case SLUSH:
-      return uSwap.connectSlush(chains, { restoreOnly: config?.restoreOnly })
     case TONCONNECT:
       return uSwap.connectTonConnect(chains, { restoreOnly: config?.restoreOnly, tonWallet: config?.tonWallet })
     case NEARCONNECT:
@@ -300,7 +318,19 @@ export function watchEvmAccounts(option: WalletOption, onChange: (addresses: str
 }
 
 // Restored from a stored session or an earlier grant only: on page load these never show a QR code or a prompt.
-export const RESTORE_ONLY = new Set<WalletOption>([WalletOption.WALLETCONNECT, SLUSH, TONCONNECT, NEARCONNECT, LACE, ETERNL, YOROI])
+export const RESTORE_ONLY = new Set<WalletOption>([
+  WalletOption.WALLETCONNECT,
+  SLUSH,
+  SUIET,
+  NIGHTLY,
+  SOLFLARE,
+  BACKPACK,
+  TONCONNECT,
+  NEARCONNECT,
+  LACE,
+  ETERNL,
+  YOROI
+])
 
 export async function getAccounts(
   option: WalletOption,
@@ -392,7 +422,11 @@ export const supportedChains = {
   [WalletOption.VULTISIG]: vultisigWallet.connectVultisig.supportedChains,
   [WalletOption.WALLETCONNECT]: walletconnectWallet.connectWalletconnect.supportedChains,
   [WalletOption.WALLET_SELECTOR]: [Chain.Near],
-  [SLUSH]: slushWallet.connectSlush.supportedChains,
+  [SLUSH]: suiWallet.connectSuiWallet.supportedChains,
+  [SUIET]: suiWallet.connectSuiWallet.supportedChains,
+  [NIGHTLY]: [...suiWallet.connectSuiWallet.supportedChains, ...solanaStandardWallet.connectSolanaWallet.supportedChains],
+  [SOLFLARE]: solanaStandardWallet.connectSolanaWallet.supportedChains,
+  [BACKPACK]: solanaStandardWallet.connectSolanaWallet.supportedChains,
   [TONCONNECT]: tonconnectWallet.connectTonConnect.supportedChains,
   [NEARCONNECT]: nearconnectWallet.connectNearConnect.supportedChains,
   [LACE]: laceWallet.connectLace.supportedChains,

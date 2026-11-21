@@ -6,7 +6,8 @@ import type {} from '@tcswap/wallet-extensions'
 import { BridgeConfig } from '@/config'
 import { CIP30_IDS, cip30Entry, ETERNL, LACE, YOROI } from '@/lib/cardano-wallet'
 import { NEARCONNECT } from '@/lib/near-connect-wallet'
-import { findSlush, SLUSH } from '@/lib/sui-wallet'
+import { BACKPACK, findSolanaWallet, SOLFLARE } from '@/lib/solana-wallet'
+import { findSuiWallet, NIGHTLY, SLUSH, SUIET } from '@/lib/sui-wallet'
 import { TONCONNECT, type TonWallet } from '@/lib/ton-wallet'
 import { supportedChains } from '@/lib/wallets'
 
@@ -150,6 +151,38 @@ export const WALLETS: WalletParams[] = [
     supportedChains: supportedChains[SLUSH]
   },
   {
+    key: 'suiet',
+    type: WalletType.browser,
+    label: 'Suiet',
+    option: SUIET,
+    link: 'https://suiet.app',
+    supportedChains: supportedChains[SUIET]
+  },
+  {
+    key: 'nightly',
+    type: WalletType.browser,
+    label: 'Nightly',
+    option: NIGHTLY,
+    link: 'https://nightly.app',
+    supportedChains: supportedChains[NIGHTLY]
+  },
+  {
+    key: 'solflare',
+    type: WalletType.browser,
+    label: 'Solflare',
+    option: SOLFLARE,
+    link: 'https://solflare.com',
+    supportedChains: supportedChains[SOLFLARE]
+  },
+  {
+    key: 'backpack',
+    type: WalletType.browser,
+    label: 'Backpack',
+    option: BACKPACK,
+    link: 'https://backpack.app',
+    supportedChains: supportedChains[BACKPACK]
+  },
+  {
     key: 'lace',
     type: WalletType.browser,
     label: 'Lace',
@@ -285,7 +318,15 @@ export const isWalletAvailable = (option: WalletOption) => {
     case WalletOption.ONEKEY:
       return window?.$onekey?.ethereum
     case SLUSH:
-      return findSlush()
+    case SUIET:
+      return findSuiWallet(option)
+    case NIGHTLY:
+      return findSuiWallet(option) || findSolanaWallet(option)
+    // Solflare's extension sets `window.solflare` (its in-app browser `SolflareApp`) and registers once we ask it to.
+    case SOLFLARE:
+      return solflareInjected() || findSolanaWallet(option)
+    case BACKPACK:
+      return findSolanaWallet(option)
     case TONCONNECT:
     case NEARCONNECT:
       return true
@@ -297,6 +338,11 @@ export const isWalletAvailable = (option: WalletOption) => {
     default:
       return false
   }
+}
+
+const solflareInjected = () => {
+  const w = window as unknown as { solflare?: { isSolflare?: boolean }; SolflareApp?: unknown }
+  return !!(w.solflare?.isSolflare || w.SolflareApp)
 }
 
 export const chainLabel = (c: Chain | string): string => {
