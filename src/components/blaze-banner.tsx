@@ -38,7 +38,6 @@ export function BlazeBanner() {
         <a href={AppConfig.repoUrl} target="_blank" rel="noreferrer">
           Source code
         </a>
-        <Link href="/docs/bounty">Bounty checklist</Link>
         {emberAddress && (
           <span className="blaze-ember">
             Donations &amp; EMBER2026:{' '}
