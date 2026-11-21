@@ -33,7 +33,10 @@ export const DOCS_SECTIONS: DocsSection[] = [
   },
   {
     title: 'Help',
-    pages: [{ href: '/docs/faq', title: 'FAQ and troubleshooting' }]
+    pages: [
+      { href: '/docs/stuck', title: 'Transaction got stuck?' },
+      { href: '/docs/faq', title: 'FAQ and troubleshooting' }
+    ]
   }
 ]
 

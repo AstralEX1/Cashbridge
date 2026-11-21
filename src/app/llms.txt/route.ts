@@ -32,6 +32,7 @@ ${AGENT_RULES.map(rule => `- ${rule}`).join('\n')}
 - [How it works](${site}/docs/how-it-works)
 - [Fees and limits](${site}/docs/fees)
 - [Security and custody](${site}/docs/security)
+- [Transaction got stuck?](${site}/docs/stuck)
 - [Source code](${AppConfig.repoUrl})
 `
   return new Response(body, { headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=3600' } })

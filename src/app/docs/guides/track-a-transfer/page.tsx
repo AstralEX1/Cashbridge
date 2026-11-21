@@ -93,7 +93,7 @@ export default function Page() {
       </p>
 
       <p>
-        Stuck or unsure? <Link href="/docs/faq">FAQ and troubleshooting</Link> has the common cases.
+        Stuck? <Link href="/docs/stuck">Transaction got stuck?</Link> says what each transfer waits for, and <Link href="/docs/faq">FAQ and troubleshooting</Link> has the common cases.
       </p>
     </DocsArticle>
   )
