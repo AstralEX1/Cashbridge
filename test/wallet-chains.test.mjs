@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { register } from 'node:module'
 import { Chain, WalletOption } from '@tcswap/core'
 
 import { getWallets } from '@mysten/wallet-standard'
@@ -7,6 +8,15 @@ import { getAccounts, RESTORE_ONLY, supportedChains } from '../src/lib/wallets.t
 import { NIGHTLY, SLUSH, SUIET } from '../src/lib/sui-wallet.ts'
 import { BACKPACK, SOLFLARE } from '../src/lib/solana-wallet.ts'
 import { LEATHER, UNISAT } from '../src/lib/bitcoin-wallets.ts'
+
+// The SDK's UTXO toolbox only loads in a bundler; this stand-in hands back the signer it was built with.
+const toolbox = 'export const getUtxoToolbox = async (chain, { signer }) => ({ toolboxChain: chain, signer })'
+register(
+  `data:text/javascript,${encodeURIComponent(`export async function resolve(specifier, context, next) {
+  if (specifier === '@tcswap/toolboxes/utxo') return { url: 'data:text/javascript,' + encodeURIComponent(${JSON.stringify(toolbox)}), shortCircuit: true }
+  return next(specifier, context)
+}`)}`
+)
 
 // Loaded as on a server; the window appears afterwards, so the connectors can look for the wallets registered below.
 globalThis.window = Object.assign(new EventTarget(), { location: { origin: 'http://localhost', reload: () => {} } })
@@ -88,4 +98,12 @@ test('one wallet row connects its Sui and Solana accounts through the Wallet Sta
     { address: `0x${'ef'.repeat(32)}`, network: Chain.Sui, provider: NIGHTLY },
     { address: solanaAddress, network: Chain.Solana, provider: NIGHTLY }
   ])
+})
+
+test('Bitget connects a Native SegWit Bitcoin account but turns away a 3… one, whose inputs it could not sign', async () => {
+  let address = '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy'
+  window.bitkeep = { unisat: { requestAccounts: async () => [address], signPsbt: async () => '' } }
+  await assert.rejects(getAccounts(WalletOption.BITGET, [Chain.Bitcoin]), /Native SegWit \(bc1q\) or Taproot \(bc1p\)/)
+  address = 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq'
+  assert.deepEqual(await getAccounts(WalletOption.BITGET, [Chain.Bitcoin]), [{ address, network: Chain.Bitcoin, provider: WalletOption.BITGET }])
 })

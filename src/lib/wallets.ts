@@ -381,7 +381,7 @@ export async function getAccounts(
       const raw = uSwap.getWallet(option, chain)?.address
       const address = Array.isArray(raw) ? raw[0] : raw
       if (!address) return null
-      const mismatch = btcPathMismatch(chain, address, config?.derivationPath)
+      const mismatch = btcPathMismatch(chain, address, config?.derivationPath) ?? bitgetBtcAddressType(option, chain, address)
       if (mismatch) {
         uSwap.disconnectChain(chain)
         throw new Error(mismatch)
@@ -407,6 +407,12 @@ function btcPathMismatch(chain: Chain, address: string, derivationPath?: number[
     `Your wallet returned a ${BTC_ADDRESS_TYPE_LABEL[actual]} address for the ${BTC_ADDRESS_TYPE_LABEL[expected]} derivation path. ` +
     `Update your device's Bitcoin app to the latest version, or connect using ${BTC_ADDRESS_TYPE_LABEL[actual]} instead.`
   )
+}
+
+// Bitget signs the toolbox's PSBT as it is, and its inputs carry only `witnessUtxo`: no redeem script for a 3… account.
+function bitgetBtcAddressType(option: WalletOption, chain: Chain, address: string): string | null {
+  if (option !== WalletOption.BITGET || chain !== Chain.Bitcoin || /^bc1[qp]/.test(address)) return null
+  return 'Switch Bitget Wallet to a Native SegWit (bc1q) or Taproot (bc1p) Bitcoin address and connect again'
 }
 
 // The chains the hardware steps (connect-wallet/ledger.tsx, trezor.tsx) carry derivation paths for. No Zcash: the SDK
