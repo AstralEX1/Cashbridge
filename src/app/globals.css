@@ -764,3 +764,11 @@ body > div[style*='z-index:40'] {
     transition: none;
   }
 }
+
+/* Mirror Lucide's direction icons in right-to-left text. Not :dir(), which the CSS build turns into a language list without arz and lah. */
+[dir='rtl'] :is(.lucide-chevron-right, .lucide-chevron-left, .lucide-arrow-right) {
+  scale: -1 1;
+}
+[dir='rtl'] [dir='ltr'] :is(.lucide-chevron-right, .lucide-chevron-left, .lucide-arrow-right) {
+  scale: none;
+}
