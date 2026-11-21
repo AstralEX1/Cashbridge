@@ -142,8 +142,8 @@ before(async () => {
     }
     if (url.startsWith('https://gateway.liquify.com/chain/thorchain_api/thorchain/pool/')) {
       const asset = decodeURIComponent(url.split('/').pop())
-      // THORChain has no pool for a NEAR-only coin.
-      return asset.startsWith('SUI.') ? new Response('{}', { status: 404 }) : Response.json({ asset, decimals: 6 })
+      // THORChain has no pool for a NEAR-only coin, nor for RUNE itself.
+      return asset.startsWith('SUI.') || asset === 'THOR.RUNE' ? new Response('{}', { status: 404 }) : Response.json({ asset, decimals: 6 })
     }
     if (url.endsWith('/thorchain/inbound_addresses'))
       return Response.json([{ chain: 'BASE', address: VAULT, router: ROUTER, halted: false }, { chain: 'BCH', address: recipient.cashAddress, halted: false }])
@@ -348,12 +348,17 @@ test('a CashToken goes through a Router order whose deposit is its contract', as
   assert.match(status.structuredContent.meaning, /buying the token/)
 })
 
-test('a NEAR-only coin THORChain has no pool for is sized for ShapeShift by its NEAR Intents decimals', async () => {
+test('a coin THORChain has no pool for is still sized for ShapeShift: NEAR Intents decimals, and 8 for RUNE', async () => {
   shapeRates.length = 0
   const quote = await call('get_bridge_quote', { from_asset: 'SUI.SUI', to_asset: 'BCH.BCH', amount: '2' })
   assert.equal(quote.isError, undefined, quote.content[0].text)
   assert.ok(quote.structuredContent.routes.some(r => r.route === 'shapeshift'), JSON.stringify(quote.structuredContent))
   assert.equal(shapeRates.at(-1).get('sellAmountCryptoBaseUnit'), '2000000000')
+
+  // RUNE has no pool, and NEAR Intents does not list it.
+  const rune = await call('get_bridge_quote', { from_asset: 'THOR.RUNE', to_asset: 'BCH.BCH', amount: '3' })
+  assert.ok(!JSON.stringify(rune).includes('did not give the decimals'), JSON.stringify(rune))
+  assert.equal(shapeRates.at(-1).get('sellAmountCryptoBaseUnit'), '300000000')
 })
 
 test('plain BCH compares THORChain with NEAR Intents, and a NEAR deposit is a plain transfer', async () => {

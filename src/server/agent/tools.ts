@@ -195,7 +195,8 @@ const assetDecimals = async (asset: string) => {
   if (asset === BridgeConfig.buyAsset || asset.toUpperCase().startsWith('BCH.')) return 8
   const chain = asset.split('.')[0].toUpperCase()
   const contract = asset.split('-')[1]
-  if (!contract && ['BTC', 'LTC', 'DOGE', 'BCH', 'DASH', 'ZEC'].includes(chain)) return 8
+  // RUNE has no pool of its own; like the UTXO coins it counts 8 decimals.
+  if (!contract && ['BTC', 'LTC', 'DOGE', 'BCH', 'DASH', 'ZEC', 'THOR'].includes(chain)) return 8
   if (!contract && (EVMChains as readonly string[]).includes(chain)) return 18
   // THORChain has no pool for a NEAR-only token (ARB.USDC, SUI.SUI, TON.TON); NEAR Intents lists its decimals.
   return poolDecimals(asset).catch(async error => {
