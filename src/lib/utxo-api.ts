@@ -80,7 +80,13 @@ function esplora(base: string): Explorer {
     },
     async coins(addr) {
       const list: { txid: string; vout: number; value: number; status: { confirmed: boolean; block_height?: number } }[] =
-        (await askJson(`${base}/address/${encodeURIComponent(addr)}/utxo`)) ?? []
+        (await askJson(`${base}/address/${encodeURIComponent(addr)}/utxo`).catch(error => {
+          // Esplora lists at most 500 coins and answers a 400 for an address holding more ("Too many unspent
+          // transaction outputs (>500)" on mempool.space, "Too many unspent outputs" on Blockstream). That is
+          // its own limit, not a bad address, so an explorer without it is asked next.
+          if (error instanceof Rejected && /too many unspent/i.test(error.message)) throw new Error(`${base}: ${error.message}`)
+          throw error
+        })) ?? []
       return list.map(u => ({ hash: u.txid, index: u.vout, value: u.value, blockId: u.status.confirmed ? (u.status.block_height ?? -1) : -1 }))
     },
     async tx(hash) {
@@ -326,7 +332,8 @@ export function outputScriptHex(addr: string, network: Network): string | undefi
 export const UTXO_CHAINS: Record<string, { network?: Network; explorers: Explorer[] }> = {
   bitcoin: {
     network: networks.bitcoin,
-    explorers: [esplora('https://mempool.space/api'), esplora('https://blockstream.info/api'), blockbook('https://btc1.trezor.io')]
+    // Bitcore and BlockCypher list an address's coins past Esplora's 500 (Bitcore its first 1000).
+    explorers: [esplora('https://mempool.space/api'), esplora('https://blockstream.info/api'), bitcore('BTC'), blockCypher('btc'), blockbook('https://btc1.trezor.io')]
   },
   litecoin: {
     network: LITECOIN,

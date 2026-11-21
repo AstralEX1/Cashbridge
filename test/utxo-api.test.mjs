@@ -194,6 +194,25 @@ test('an explorer that is down, rate-limited or failing hands the call to the ne
   assert.equal(body.data[btc].address.balance, 12, 'the third explorer answered')
 })
 
+test('an address with more coins than Esplora lists is read from Bitcore, not refused', async () => {
+  const bitcore = 'https://api.bitcore.io/api/BTC/mainnet'
+  upstreams({
+    [`${MEMPOOL}/address/${btc}`]: json(esploraAddress),
+    [`${MEMPOOL}/address/${btc}/utxo`]: text('Too many unspent transaction outputs (>500). Contact support to raise limits.', 400),
+    [`${BLOCKSTREAM}/address/${btc}`]: json(esploraAddress),
+    [`${BLOCKSTREAM}/address/${btc}/utxo`]: text('Too many unspent outputs', 400),
+    [`${bitcore}/address/${btc}/balance`]: json({ confirmed: 420_000, unconfirmed: 0, balance: 420_000 }),
+    [`${bitcore}/address/${btc}/?unspent=true&limit=1000`]: json([{ mintTxid: hashA, mintIndex: 0, mintHeight: 900_000, value: 420_000, spentTxid: '' }])
+  })
+  const { status, body } = await call(['bitcoin', 'dashboards', 'address', btc], { query: '?limit=1' })
+  assert.equal(status, 200)
+  assert.equal(body.data[btc].address.balance, 420_000)
+  assert.deepEqual(body.data[btc].utxo, [{ block_id: 900_000, index: 0, transaction_hash: hashA, value: 420_000 }])
+
+  const outputs = await call(['bitcoin', 'outputs'], { query: `?q=recipient(${btc}),is_spent(false)&limit=10` })
+  assert.deepEqual(outputs.body.data.map(o => [o.transaction_hash, o.script_hex]), [[hashA, btcScript]])
+})
+
 test('a CDN block page is the explorer turning us away, so the next explorer is asked', async () => {
   const blocked = () => new Response('<!DOCTYPE html>\n<html class="no-js" lang="en-US"><title>Attention Required! | Cloudflare</title></html>', { status: 403, headers: { 'content-type': 'text/html' } })
   upstreams({
