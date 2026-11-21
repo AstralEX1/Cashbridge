@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function ScannerPage() {
   return (
-    <div className="landing">
+    <div className="landing" lang="en" dir="ltr">
       <SiteHeader />
       <main className="scanner">
         <ScannerView />
