@@ -1,4 +1,5 @@
 import { getExplorerTxUrl, type Chain } from '@tcswap/core'
+import { getChainConfig } from '@tcswap/helpers'
 import type { FeedOrder, OrderState } from '@/lib/auto-bridge-contract'
 import { formatBaseUnits } from '@/lib/bridge'
 import { FEATURED_TOKENS } from '@/lib/cauldron-tokens'
@@ -36,8 +37,11 @@ export interface ScanRow {
   legs: ScanLeg[]
 }
 
-// Chains with a logo in public/networks.
-const CHAIN_ICONS = new Set(['arb', 'avax', 'base', 'bch', 'bsc', 'btc', 'doge', 'eth', 'gaia', 'ltc', 'near', 'op', 'pol', 'sol', 'thor', 'tron', 'xrp', 'zec'])
+// Chains with a logo in public/networks (test/network-icons.test.mjs keeps this in step with the folder).
+const CHAIN_ICONS = new Set([
+  'ada', 'arb', 'aurora', 'avax', 'base', 'bch', 'bera', 'bsc', 'btc', 'dash', 'doge', 'eth', 'gaia', 'gno', 'kuji', 'ltc', 'maya', 'megaeth',
+  'monad', 'near', 'noble', 'op', 'osmo', 'pol', 'sol', 'sui', 'tao', 'thor', 'ton', 'tron', 'xlayer', 'xlm', 'xmr', 'xrd', 'xrp', 'zec'
+])
 export const chainIcon = (chain: string) => (CHAIN_ICONS.has(chain.toLowerCase()) ? `/networks/${chain.toLowerCase()}.svg` : undefined)
 
 const CHAIN_NAMES: Record<string, string> = {
@@ -56,17 +60,19 @@ const CHAIN_NAMES: Record<string, string> = {
   SOL: 'Solana',
   THOR: 'THORChain',
   TRON: 'TRON',
+  TON: 'TON',
   XRP: 'XRP Ledger',
   ZEC: 'Zcash'
 }
-export const chainName = (chain: string) => CHAIN_NAMES[chain.toUpperCase()] ?? chain
+export const chainName = (chain: string) => CHAIN_NAMES[chain.toUpperCase()] ?? getChainConfig(chain.toUpperCase() as Chain)?.name ?? chain
 
 // Coins with a mark in public/, and the chain each native coin belongs to.
 const TICKER_ICONS: Record<string, string> = {
-  BTC: 'btc', ETH: 'eth', BNB: 'bsc', AVAX: 'avax', SOL: 'sol', DOGE: 'doge', LTC: 'ltc', XRP: 'xrp', TRX: 'tron', ATOM: 'gaia', RUNE: 'thor', ZEC: 'zec', BCH: 'bch'
+  BTC: 'btc', ETH: 'eth', BNB: 'bsc', AVAX: 'avax', SOL: 'sol', DOGE: 'doge', LTC: 'ltc', XRP: 'xrp', TRX: 'tron', ATOM: 'gaia', RUNE: 'thor', ZEC: 'zec', BCH: 'bch',
+  ADA: 'ada', TON: 'ton', SUI: 'sui', NEAR: 'near', DASH: 'dash', MON: 'monad', BERA: 'bera', OKB: 'xlayer', XDAI: 'gno', POL: 'pol', CACAO: 'maya', XLM: 'xlm', XMR: 'xmr', TAO: 'tao'
 }
 const DOLLARS: Record<string, string> = { USDC: '/tokens/usdc.svg', USDT: '/tokens/usdt.svg' }
-const NATIVE_CHAIN: Record<string, string> = { BNB: 'BSC', TRX: 'TRON', ATOM: 'GAIA', RUNE: 'THOR' }
+const NATIVE_CHAIN: Record<string, string> = { BNB: 'BSC', TRX: 'TRON', ATOM: 'GAIA', RUNE: 'THOR', MON: 'MONAD', OKB: 'XLAYER', XDAI: 'GNO', CACAO: 'MAYA' }
 const mark = (ticker: string, chain: string, icon?: string): Pick<ScanSide, 'icon' | 'badge'> => {
   const t = ticker.toUpperCase()
   const own = icon ?? DOLLARS[t] ?? (TICKER_ICONS[t] && chainIcon(TICKER_ICONS[t]))
@@ -94,7 +100,18 @@ const EXPLORERS: [RegExp, string][] = [
   [/blockchair\.com\/bitcoin\/|mempool\.space/, 'btc'],
   [/litecoin/, 'ltc'],
   [/dogecoin/, 'doge'],
-  [/zcash/, 'zec']
+  [/zcash/, 'zec'],
+  [/blockchair\.com\/dash\//, 'dash'],
+  [/tonscan|tonviewer/, 'ton'],
+  [/suiscan|suivision/, 'sui'],
+  [/cexplorer|cardanoscan/, 'ada'],
+  [/nearblocks/, 'near'],
+  [/monvision|monadexplorer/, 'monad'],
+  [/x-layer/, 'xlayer'],
+  [/berascan/, 'bera'],
+  [/gnosisscan/, 'gno'],
+  [/aurorascan|aurora\.dev/, 'aurora'],
+  [/mayascan/, 'maya']
 ]
 export const explorerIcon = (url: string) => {
   const found = EXPLORERS.find(([pattern]) => pattern.test(url))

@@ -9,6 +9,7 @@ import { ALL_CHAINS } from '../src/components/connect-wallet/config.tsx'
 import { PRIVATE_SWAP_CHAINS } from '../src/hooks/use-assets.ts'
 import { nearMappedChains } from '../src/lib/near-intents.ts'
 import { shapeShiftMappedPrefixes } from '../src/lib/shapeshift.ts'
+import { chainIcon, explorerIcon, sourceTxUrl } from '../src/lib/scanner.ts'
 import { supportedChains } from '../src/lib/wallets.ts'
 
 const networks = join(dirname(fileURLToPath(import.meta.url)), '../public/networks')
@@ -34,5 +35,13 @@ test('ShapeShift mapped prefixes each have a network SVG', () => {
 test('wallet and private-tab chains each have a network SVG', () => {
   for (const chain of [...new Set([...ALL_CHAINS, ...PRIVATE_SWAP_CHAINS])]) {
     assert.equal(existsSync(icon(chain)), true, `missing /networks/${String(chain).toLowerCase()}.svg`)
+  }
+})
+
+test('the scanner shows each chain and its explorer link with that chain mark', () => {
+  for (const chain of [...new Set([...ALL_CHAINS, ...nearMappedChains()])]) {
+    const mark = chainIcon(chain)
+    assert.ok(mark && existsSync(join(networks, mark.replace('/networks/', ''))), `no scanner mark for ${chain}`)
+    assert.equal(explorerIcon(sourceTxUrl(chain, 'ab'.repeat(32))), mark, `explorer link for ${chain} shows no ${chain} mark`)
   }
 })
