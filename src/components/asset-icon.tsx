@@ -5,13 +5,14 @@ import { cn } from '@/lib/utils'
 
 export function AssetIcon({ asset, className, showNetworkIcons = true }: { asset: Asset | undefined; className?: string; showNetworkIcons?: boolean }) {
   const [loaded, setLoaded] = useState(false)
+  const [brokenLogo, setBrokenLogo] = useState<string>()
   const l1Chain = asset?.isSecuredAsset ? asset.identifier.split('-')[0] : asset?.chain
 
   return (
     <div className={cn('relative flex h-8 w-8 rounded-full', className)}>
       {asset && (
         <>
-          {asset.logoURI && (
+          {asset.logoURI && brokenLogo !== asset.logoURI ? (
             <img
               className={cn('shrink-0 rounded-full', { 'opacity-0': !loaded })}
               src={asset.logoURI}
@@ -19,8 +20,13 @@ export function AssetIcon({ asset, className, showNetworkIcons = true }: { asset
               width={32}
               height={32}
               onLoad={() => setLoaded(true)}
-              onError={() => setLoaded(false)}
+              onError={() => setBrokenLogo(asset.logoURI)}
             />
+          ) : (
+            // No logo, or one that fails to load: the ticker's first letter, never an empty gap.
+            <span aria-hidden="true" className="grid size-full shrink-0 place-items-center rounded-full bg-[#d5dfdd] text-[0.75em] font-bold text-[#0f1820]">
+              {asset.ticker.slice(0, 1).toUpperCase()}
+            </span>
           )}
           {showNetworkIcons && l1Chain && !isNativeAsset(l1Chain, asset.ticker) && (
             <Image
