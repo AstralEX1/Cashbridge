@@ -136,6 +136,30 @@ export const WALLETS: WalletParams[] = [
     supportedChains: supportedChains[WalletOption.OKX]
   },
   {
+    key: 'bitget',
+    type: WalletType.browser,
+    label: 'Bitget Wallet',
+    option: WalletOption.BITGET,
+    link: 'https://web3.bitget.com',
+    supportedChains: supportedChains[WalletOption.BITGET]
+  },
+  {
+    key: 'onekey',
+    type: WalletType.browser,
+    label: 'OneKey',
+    option: WalletOption.ONEKEY,
+    link: 'https://onekey.so',
+    supportedChains: supportedChains[WalletOption.ONEKEY]
+  },
+  {
+    key: 'cosmostation',
+    type: WalletType.browser,
+    label: 'Cosmostation',
+    option: WalletOption.COSMOSTATION,
+    link: 'https://www.cosmostation.io',
+    supportedChains: supportedChains[WalletOption.COSMOSTATION]
+  },
+  {
     key: 'tronlink',
     type: WalletType.browser,
     label: 'TronLink',
@@ -331,9 +355,11 @@ export const isWalletAvailable = (option: WalletOption) => {
     case WalletOption.OKX_MOBILE:
       return okxMobileEnabled()
     case WalletOption.BITGET:
-      return window?.bitkeep?.ethereum
+      return window?.bitkeep
     case WalletOption.ONEKEY:
-      return window?.$onekey?.ethereum
+      return window?.$onekey
+    case WalletOption.COSMOSTATION:
+      return window?.cosmostation
     case SLUSH:
     case SUIET:
       return findSuiWallet(option)

@@ -5,12 +5,15 @@ import { SolanaPlugin } from '@tcswap/plugins/solana'
 import { MayachainPlugin, ThorchainPlugin } from '@tcswap/plugins/thorchain'
 import { NearPlugin } from '@tcswap/plugins/near'
 import { ShapeShiftPlugin } from '@/lib/shapeshift-plugin'
+import { bitgetWallet } from '@tcswap/wallets/bitget'
 import { braveWallet, getBraveEVMProvider, getBraveSolanaProvider, watchBraveAccounts } from '@tcswap/wallets/brave'
+import { cosmostationWallet } from '@tcswap/wallets/cosmostation'
 import { evmWallet } from '@tcswap/wallets/evm-extensions'
 import { exodusWallet } from '@tcswap/wallets/exodus'
 import { keplrWallet } from '@tcswap/wallets/keplr'
 import { ledgerWallet } from '@tcswap/wallets/ledger'
 import { okxWallet } from '@tcswap/wallets/okx'
+import { onekeyWallet } from '@tcswap/wallets/onekey'
 import { phantomWallet } from '@tcswap/wallets/phantom'
 import { trezorWallet } from '@tcswap/wallets/trezor'
 import { tronlinkWallet } from '@/lib/tronlink'
@@ -43,7 +46,9 @@ const defaultPlugins = {
 // one is built on the deprecated Wallet Selector, so NEAR wallets connect through NEAR Connect. Solana wallets without
 // an SDK connector sign through the Wallet Standard (src/lib/solana-wallet.ts).
 const defaultWallets = {
+  ...bitgetWallet,
   ...braveWallet,
+  ...cosmostationWallet,
   ...eternlWallet,
   ...evmWallet,
   ...exodusWallet,
@@ -53,6 +58,7 @@ const defaultWallets = {
   ...ledgerWallet,
   ...nearconnectWallet,
   ...okxWallet,
+  ...onekeyWallet,
   ...phantomWallet,
   ...solanaStandardWallet,
   ...suiWallet,
@@ -180,6 +186,12 @@ export async function connectWallet(option: WalletOption, chains: Chain[], confi
       }
     case WalletOption.KEPLR:
       return connectEach(c => uSwap.connectKeplr(c))
+    case WalletOption.COSMOSTATION:
+      return connectEach(c => uSwap.connectCosmostation(c))
+    case WalletOption.BITGET:
+      return connectEach(c => uSwap.connectBitget(c))
+    case WalletOption.ONEKEY:
+      return connectEach(c => uSwap.connectOnekeyWallet(c))
     case WalletOption.OKX:
     case WalletOption.OKX_MOBILE:
       return connectEach(c => uSwap.connectOkx(c))
@@ -279,6 +291,10 @@ function restoreProvider(option: WalletOption): AccountsProvider | undefined {
       return w.okxwallet
     case WalletOption.EXODUS:
       return w.exodus?.ethereum ?? (w.ethereum?.isExodus ? w.ethereum : undefined)
+    case WalletOption.BITGET:
+      return w.bitkeep?.ethereum
+    case WalletOption.ONEKEY:
+      return w.$onekey?.ethereum
   }
 }
 
@@ -288,7 +304,9 @@ export const RESTORE_CHECKED = new Set<WalletOption>([
   WalletOption.TRUSTWALLET_WEB,
   WalletOption.BRAVE,
   WalletOption.OKX,
-  WalletOption.EXODUS
+  WalletOption.EXODUS,
+  WalletOption.BITGET,
+  WalletOption.ONEKEY
 ])
 const RESTORE_PROVIDER_WAIT_MS = 1_000
 
@@ -411,7 +429,11 @@ const BTC_ADDRESS_TYPE_LABEL = {
 } as const
 
 export const supportedChains = {
+  // Bitget's Solana and Cosmos providers answer in shapes its connector does not read (web3.bitget.com/en/docs).
+  [WalletOption.BITGET]: bitgetWallet.connectBitget.supportedChains.filter(chain => chain !== Chain.Solana && chain !== Chain.Cosmos),
   [WalletOption.BRAVE]: braveWallet.connectBrave.supportedChains,
+  // Its EVM chains go to `window.ethereum`, which is whichever wallet holds it, not Cosmostation.
+  [WalletOption.COSMOSTATION]: cosmostationWallet.connectCosmostation.supportedChains.filter(chain => !EVMChains.includes(chain as EVMChain)),
   [WalletOption.COINBASE_WEB]: evmWallet.connectEVMWallet.supportedChains,
   [WalletOption.EIP6963]: evmWallet.connectEVMWallet.supportedChains,
   [WalletOption.EXODUS]: exodusWallet.connectExodus.supportedChains,
@@ -423,6 +445,11 @@ export const supportedChains = {
   [WalletOption.RABBY]: evmWallet.connectEVMWallet.supportedChains,
   [WalletOption.OKX]: okxWallet.connectOkx.supportedChains,
   [WalletOption.OKX_MOBILE]: evmWallet.connectEVMWallet.supportedChains,
+  // Its Bitcoin path speaks sats-connect and its Solana path reads `$onekey.sol`; OneKey's providers are Unisat-style and `$onekey.solana`.
+  [WalletOption.ONEKEY]: [
+    ...onekeyWallet.connectOnekeyWallet.supportedChains.filter(chain => chain !== Chain.Bitcoin && chain !== Chain.Solana),
+    Chain.Sui
+  ],
   // Its Bitcoin connector takes the first account (the ordinals one in Phantom's docs) and has no signer to send with.
   [WalletOption.PHANTOM]: phantomWallet.connectPhantom.supportedChains.filter(chain => chain !== Chain.Bitcoin),
   [WalletOption.TREZOR]: trezorWallet.connectTrezor.supportedChains,

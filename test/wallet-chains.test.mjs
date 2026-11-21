@@ -15,6 +15,15 @@ test('Phantom is offered for Ethereum, Monad and Solana but not for Bitcoin, whe
   assert.deepEqual(supportedChains[WalletOption.PHANTOM], [Chain.Ethereum, Chain.Monad, Chain.Solana])
 })
 
+test('multi-chain extensions are offered only for the chains their connectors can send on', () => {
+  for (const chain of [Chain.Solana, Chain.Cosmos]) assert.equal(supportedChains[WalletOption.BITGET].includes(chain), false)
+  assert.equal(supportedChains[WalletOption.BITGET].includes(Chain.Bitcoin), true)
+  for (const chain of [Chain.Bitcoin, Chain.Solana]) assert.equal(supportedChains[WalletOption.ONEKEY].includes(chain), false)
+  assert.equal(supportedChains[WalletOption.ONEKEY].includes(Chain.Sui), true)
+  assert.equal(supportedChains[WalletOption.COSMOSTATION].includes(Chain.Ethereum), false)
+  assert.equal(supportedChains[WalletOption.COSMOSTATION].includes(Chain.Cosmos), true)
+})
+
 test('TON Connect is offered for TON and restores without a wallet prompt', () => {
   assert.deepEqual(supportedChains.TONCONNECT, [Chain.Ton])
   assert.equal(RESTORE_ONLY.has('TONCONNECT'), true)
