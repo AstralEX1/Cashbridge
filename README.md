@@ -43,6 +43,7 @@ Cash Bridge is an entry for the BCH BLAZE 2026 [Stablecoin Bridge bounty](https:
 | Stretch: "route through large popular and existing multicoin providers like ShapeShift, ThorChain etc." | THORChain, NEAR Intents and ShapeShift, each quoted wherever it carries the pair |
 | "ParyonUSD … first priority integration & demo" | PUSD is the default destination, identified by its category id |
 | Mainnet Track: a BCH mainnet transaction | Every transfer, with explorer links. See [Proof on mainnet](#proof-on-mainnet) |
+| Mainnet Track: a demo from before the hackathon, for a pre-existing project | Before 14 November 2026 we had connected the THORChain API, run the first swaps by hand from a local build and bought the domain. The [pre-BLAZE demo](https://www.cashbridge.space/docs/demo) lists those mainnet transactions |
 
 ## Use Cash Bridge
 

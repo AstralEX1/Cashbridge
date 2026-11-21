@@ -53,7 +53,8 @@ export function BlazeBanner() {
         )}
       </div>
       <p className="blaze-note">
-        Pre-existing project: our partnership and integration with THORChain began before the BLAZE build period opened on 14 November 2026.
+        Pre-existing project: before BLAZE opened on 14 November 2026, we had connected the THORChain API, run the first swaps by hand from a local build and bought the domain.{' '}
+        <Link href="/docs/demo">Pre-BLAZE demo</Link>
       </p>
     </aside>
   )

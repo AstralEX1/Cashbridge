@@ -102,6 +102,11 @@ const LINES: { asks: string; answer: ReactNode; check: ReactNode }[] = [
     asks: 'Mainnet Track: a banner with the deck, the repository and a CashTokens address',
     answer: `The banner at the top of every page links the presentation and the source code${BlazeConfig.emberAddress ? ' and shows the CashTokens address' : ''}.`,
     check: <Link href="/">Home page</Link>
+  },
+  {
+    asks: 'Mainnet Track: a pre-existing project shows a demo from before the hackathon',
+    answer: 'The banner says what existed before 14 November 2026 and links the pre-BLAZE demo, which lists those mainnet transactions.',
+    check: <Link href="/docs/demo">Pre-BLAZE demo</Link>
   }
 ]
 

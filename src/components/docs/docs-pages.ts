@@ -10,6 +10,7 @@ export const DOCS_SECTIONS: DocsSection[] = [
       { href: '/docs', title: 'Introduction' },
       { href: '/docs/how-it-works', title: 'How it works' },
       { href: '/docs/mainnet', title: 'Proof on mainnet' },
+      { href: '/docs/demo', title: 'Pre-BLAZE demo' },
       { href: '/docs/bounty', title: 'The bounty, line by line' }
     ]
   },

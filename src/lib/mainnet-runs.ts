@@ -204,3 +204,109 @@ export const RUNS: Run[] = [
     ]
   }
 ]
+
+export type PreBlazeRun = Run & { story: string }
+
+// Mainnet tests from before BCH BLAZE 2026, run by hand from a local build. Shown on /docs/demo only, never
+// in the scanner.
+export const PRE_BLAZE_RUNS: PreBlazeRun[] = [
+  {
+    date: '26 Oct 2026',
+    route: 'ETH (Base) → BCH',
+    amounts: '0.001 ETH → 0.00742334 BCH',
+    story:
+      'The first mainnet test of the THORChain API connection. The build fetched a quote, and the Base wallet sent 0.001 ETH to THORChain’s Base router with a swap memo naming the BCH address and a minimum of 735,031 sats. THORChain paid out 742,334 sats.',
+    links: [
+      ['ETH deposit', base('0x42f46e18e87c5928d19d319f5c15a33f8800a4899685c7f6f959d54143defaf8')],
+      ['THORChain swap', thor('0x42f46e18e87c5928d19d319f5c15a33f8800a4899685c7f6f959d54143defaf8')],
+      ['BCH payout', bch('c671e6d9db989ea3822ec8503a8ba9479c9c0e54a013b1c7bc50fa837edee631')]
+    ]
+  },
+  {
+    date: '27 Oct 2026',
+    route: 'USDC (Base) → BCH',
+    amounts: '5 USDC → 0.01683509 BCH',
+    story: 'The first stablecoin deposit, through the same THORChain router. The memo asked for at least 1,666,791 sats; THORChain paid 1,683,509.',
+    links: [
+      ['USDC deposit', base('0x47bc0fe6aacda4cc19d1cbc0ac09da271c5ea671c2bfd04a45521ab263ef97a7')],
+      ['THORChain swap', thor('0x47bc0fe6aacda4cc19d1cbc0ac09da271c5ea671c2bfd04a45521ab263ef97a7')],
+      ['BCH payout', bch('3d71cf6ae0a6eb645f3f504c1fdf2534fef8c716d6306857eebd6699d207b720')]
+    ]
+  },
+  {
+    date: '27 Oct 2026',
+    route: 'ETH (Base) → BCH → PUSD',
+    amounts: '0.00607009 ETH → 0.04873362 BCH → 13.75 PUSD',
+    story:
+      'The first full route to PUSD. THORChain paid the BCH (the memo’s minimum was 4,825,323 sats), and then the build bought PUSD from Cauldron pools in a second transaction, signed in the BCH wallet.',
+    links: [
+      ['ETH deposit', base('0xd562c70fc80cc0dfd4d260fcee94733707325273190cb3b6c40f398c35918604')],
+      ['THORChain swap', thor('0xd562c70fc80cc0dfd4d260fcee94733707325273190cb3b6c40f398c35918604')],
+      ['BCH payout', bch('907e32b5e197958c67df000b049aa45c43d85592072d40702faca5134d69cd1d')],
+      ['PUSD purchase', bch('8d0f8289403a76b59ba4b9b4f587c5ebe847a13d6c1ffc464251a666ef57d187')]
+    ]
+  },
+  {
+    date: '28 Oct 2026',
+    route: 'PUSD → BCH → USDC (Base)',
+    amounts: '13.75 PUSD → 0.04619023 BCH → 13.504362 USDC',
+    story:
+      'The first trip back. The BCH wallet sold the 13.75 PUSD on Cauldron, then sent the BCH to THORChain’s BCH vault with a memo asking for USDC on Base. THORChain paid 13.504362 USDC, and its payout memo names the BCH deposit.',
+    links: [
+      ['PUSD sale', bch('d8e593b5cf2bcea297628610f178770f5fde2e64e199d7fccf63703322fa37c6')],
+      ['BCH deposit', bch('08b0670088830cf4ec545883662f23343306c714f3239b7cd3731873d0741944')],
+      ['THORChain swap', thor('08b0670088830cf4ec545883662f23343306c714f3239b7cd3731873d0741944')],
+      ['USDC payout', base('0x6e123199a21ecd46c947ea6ad0a38b96b9fedbe8b05ec59cb058061cdde33976')]
+    ]
+  },
+  {
+    date: '28 Oct 2026',
+    route: 'ETH (Base) → BCH → PUSD',
+    amounts: '0.0005463 ETH → 0.00346192 BCH → 1.01 PUSD',
+    story: 'The same route to PUSD with a much smaller amount, ending in 1.01 PUSD.',
+    links: [
+      ['ETH deposit', base('0xa13cbbc9ccfb7306d5c29cfaa2e05f1b202e6d03e067540dda9aeb64e090026d')],
+      ['THORChain swap', thor('0xa13cbbc9ccfb7306d5c29cfaa2e05f1b202e6d03e067540dda9aeb64e090026d')],
+      ['BCH payout', bch('0e8198c92905fe501e93ba9ec019db10cfe6c4cdddd269622603400a9fbc73fa')],
+      ['PUSD purchase', bch('058dbce0666f360aa578c8489467e5d9103b0e6d9f448fedeb076f2ff8e8c7b5')]
+    ]
+  },
+  {
+    date: '28 Oct 2026',
+    route: 'USDC (Base) → BCH',
+    amounts: '1 USDC → 0.00252294 BCH',
+    story: 'One USDC to a second BCH address. The memo asked for at least 249,594 sats; THORChain paid 252,294.',
+    links: [
+      ['USDC deposit', base('0xaf7978a30710f8508da32d6dfcfab00ec9f53747ade67bc53a2bb1da4546731a')],
+      ['THORChain swap', thor('0xaf7978a30710f8508da32d6dfcfab00ec9f53747ade67bc53a2bb1da4546731a')],
+      ['BCH payout', bch('aca76d300c7362d36bd2520ce16a8407fde103258b9e9fbb7859989d1b8055dc')]
+    ]
+  },
+  {
+    date: '29 Oct 2026',
+    route: 'USDC (Base) → BCH',
+    amounts: '5 USDC → 0.01697737 BCH',
+    story:
+      'A run from a fresh test wallet, so it starts with the USDC approval for THORChain’s router and then the deposit. THORChain paid 1,697,737 sats to the test wallet’s BCH address.',
+    links: [
+      ['USDC approval', base('0x74057b1163cf078c7d045e92b4bc8c9605d834f60f8e4926ac35c86da8f65ae8')],
+      ['USDC deposit', base('0x33b7e852fbf3da2ee6b069add21a1dc594317b69b91afd4bb1531e86bcec4849')],
+      ['THORChain swap', thor('0x33b7e852fbf3da2ee6b069add21a1dc594317b69b91afd4bb1531e86bcec4849')],
+      ['BCH payout', bch('669ce123307d935ce4469000c87fb600d815d6a2d4411d94aff34ce6524242c2')]
+    ]
+  },
+  {
+    date: '31 Oct 2026',
+    route: 'BCH → PUSD → BCH → USDC (Base)',
+    amounts: '0.01676938 BCH → 4.87 PUSD → 0.01676541 BCH → 4.83236 USDC',
+    story:
+      'A round trip on the test wallet: it bought 4.87 PUSD on Cauldron, sold it back for BCH, and sent that BCH through THORChain to USDC on Base.',
+    links: [
+      ['PUSD purchase', bch('4c5c9d945f3b2005044f7513f6f9ab722ece6850080eaf01e76aab553b9148f2')],
+      ['PUSD sale', bch('dc8505fcf095782d5e3f71ae3bb62d19287d02b017adbbfb3e1bfa22fda98f27')],
+      ['BCH deposit', bch('997a00e92f93041fdf82b6a2920b9ffd0d456bcaba0415fc2d0fc75111f0e0fb')],
+      ['THORChain swap', thor('997a00e92f93041fdf82b6a2920b9ffd0d456bcaba0415fc2d0fc75111f0e0fb')],
+      ['USDC payout', base('0x7287ac8770ab991197c36d5ab3704bdcf0ebb0fe7d25aacea7c5d22d90261591')]
+    ]
+  }
+]
