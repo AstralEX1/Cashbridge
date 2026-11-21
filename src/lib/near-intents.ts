@@ -161,6 +161,14 @@ const nearAssetKey = (chain: Chain, identifier: string) =>
 // Malformed / duplicate catalog rows are dropped (first valid wins; Solana/TRON duplicates are exact-contract).
 const STABLE_MARKS: Record<string, string> = { USDC: '/tokens/usdc.svg', USDT: '/tokens/usdt.svg' }
 
+// The NEAR Intents and ShapeShift deposits size the amount with the SDK's static token list (`AssetValue.from` with no
+// async lookup), which counts a token it lacks in the chain's own decimals: 18 for MONAD.USDC, 24 for a NEAR token.
+const SDK_CASE_SENSITIVE: Chain[] = [Chain.Solana, Chain.Tron, Chain.Near, Chain.Sui]
+const registerDecimals = (chain: Chain, identifier: string, decimal: number) => {
+  const key = (SDK_CASE_SENSITIVE.includes(chain) ? identifier : identifier.toUpperCase()) as never
+  if (!AssetValue.staticAssets.has(key)) AssetValue.staticAssets.set(key, { decimal, identifier })
+}
+
 export const assetsFromNearTokens = (tokens: OneClickToken[]): Asset[] => {
   const assets = new Map<string, Asset>()
   if (!Array.isArray(tokens)) return []
@@ -173,6 +181,7 @@ export const assetsFromNearTokens = (tokens: OneClickToken[]): Asset[] => {
     const contract = catalogContract(token)
     if (contract === false) continue
     const ticker = contract ? token.symbol.trim() : nativeTicker(token)
+    if (contract) registerDecimals(chain, identifier, token.decimals)
     assets.set(key, {
       address: contract || undefined,
       chain,

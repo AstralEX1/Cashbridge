@@ -446,3 +446,14 @@ test('the 1Click deposit notice repeats once a minute while 1Click still waits f
   assert.equal(nearTxHash('bitcoincash:qrmu5j4fqddjpgttkwl8p820vynrwy969vs0gmpelz', 'ab'.repeat(32)), 'ab'.repeat(32))
   assert.equal(nearTxHash('cosmos1deposit', `${'ab'.repeat(32)}-2`), 'ab'.repeat(32))
 })
+
+test('a catalog token the SDK token list lacks is sent in its catalog decimals, not the chain default', async () => {
+  const { AssetValue } = await import('@tcswap/helpers')
+  const monadUsdc = { assetId: 'nep141:monad-0x754704bc059f8c67012fed69bc8a327a5aafb603.omft.near', decimals: 6, blockchain: 'monad', symbol: 'USDC', price: 1, contractAddress: '0x754704bc059f8c67012fed69bc8a327a5aafb603' }
+  const nearToken = { assetId: 'nep141:token.example.near', decimals: 18, blockchain: 'near', symbol: 'EXT', price: 1, contractAddress: 'token.example.near' }
+  const [usdc, ext] = assetsFromNearTokens([monadUsdc, nearToken])
+  // The NEAR Intents and ShapeShift plugins build the deposit amount this way (no async token lookup).
+  assert.equal(AssetValue.from({ asset: usdc.identifier, value: '1.5' }).getBaseValue('string'), '1500000')
+  assert.equal(AssetValue.from({ asset: ext.identifier, value: '2' }).getBaseValue('string'), '2000000000000000000')
+  assert.equal(AssetValue.from({ asset: ext.identifier, value: '2' }).address, 'token.example.near')
+})
