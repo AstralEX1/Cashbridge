@@ -92,12 +92,6 @@ const WALLETS: [string, string?][] = [
   ['Trezor', '/wallets/trezor.svg']
 ]
 
-const AGENTS = [
-  { name: 'Eliza', href: 'https://github.com/elizaOS/eliza' },
-  { name: 'OpenClaw', href: 'https://openclaw.ai' },
-  { name: 'Moltbot', href: 'https://molt.bot' }
-]
-
 const AGENT_KIT: AgentKitItem[] = [
   { id: 'prompt', label: 'Prompt', file: 'prompt.md', text: AGENT_PROMPT },
   { id: 'skill', label: 'Skill', file: 'SKILL.md', command: SKILL_INSTALL_COMMAND, text: SKILL_MD, download: SKILL_PATH },
@@ -255,15 +249,6 @@ export default function Page() {
               For agents
             </h2>
             <p className="landing-lead">MCP and HTTP so bots can quote and bridge without a browser.</p>
-            <ul className="landing-integrations">
-              {AGENTS.map(agent => (
-                <li key={agent.name}>
-                  <a href={agent.href} target="_blank" rel="noopener noreferrer">
-                    {agent.name}
-                  </a>
-                </li>
-              ))}
-            </ul>
             <div className="landing-actions">
               <Link href="/docs/agents" className="landing-button landing-button-ghost">
                 Agent docs <ArrowRight size={18} aria-hidden />

@@ -766,9 +766,6 @@
 .landing-agents {
   align-items: start;
 }
-.landing-agents .landing-integrations {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
 /* One height for every tab: the file takes whatever the command row leaves. */
 .agent-kit {
   display: flex;
