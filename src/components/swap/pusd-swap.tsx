@@ -1098,7 +1098,7 @@ const ForwardOperationPanel = ({ uid, onClose }: { uid?: string; onClose: () => 
     .reverse()
 
   const common = {
-    waitGame: <BridgeHero key={active.uid} eligible={bridgeHeroEligible(op)} />,
+    waitGame: <BridgeHero key={active.uid} eligible={bridgeHeroEligible(op)} chain={active.assetFrom.chain} />,
     sourceChain: active.assetFrom.chain,
     sourceAddress: active.addressFrom,
     bchAddress: op.binding.cashAddress,

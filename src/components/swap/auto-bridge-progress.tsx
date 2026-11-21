@@ -370,7 +370,7 @@ export const AutomaticOrderDialog = ({ id, isOpen, onOpenChange }: { id: string;
         secondBar={secondBar}
         details={details}
         actions={actions}
-        waitGame={<BridgeHero key={id} eligible={handsOff && !receipt && !order?.error} />}
+        waitGame={<BridgeHero key={id} eligible={handsOff && !receipt && !order?.error} chain={source?.chain} />}
         completion={receipt && order ? {
           received: { amount: receipt.amount, ticker: receipt.ticker, icon: receipt.refund ? <BchMark size={48} /> : <TokenMark token={token} size={48} /> },
           transactions: automaticTransactions(order),
