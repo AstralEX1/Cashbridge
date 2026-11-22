@@ -247,11 +247,11 @@ export const isReverseOperation = (op: Pick<BridgeOperation, 'direction'>) => op
 
 const TERMINAL_STAGES: BridgeStage[] = ['completed', 'kept_bch', 'refunded', 'failed']
 export const isBridgeTerminal = (op: BridgeOperation) => TERMINAL_STAGES.includes(op.stage)
-// Only the network is left: the reverse deposit is out, or THORChain is paying plain BCH. Nothing
-// more to sign and no wallet needed, so a new operation may start while this one runs on.
+// Only the network is left: the reverse deposit is out, the Cashbridge Router has the coins, or THORChain is paying
+// plain BCH. Nothing more to sign and no wallet needed, so a new operation may start while this one runs on.
 export const isBridgeWaiting = (op: BridgeOperation) =>
   isReverseOperation(op)
-    ? op.stage === 'second_leg_pending'
+    ? op.stage === 'second_leg_pending' || (op.stage === 'first_leg_pending' && !!op.reverse?.router?.sendTxid)
     : op.destinationAsset === 'BCH' && (op.stage === 'first_leg_pending' || op.stage === 'bch_unconfirmed')
 
 export const bridgeTxStatus = (op: BridgeOperation): TxStatus => {

@@ -51,7 +51,9 @@ test('an operation only waiting on the network lets a new one start; one still n
     [reverse('bch_ready', 'PUSD'), true, 'reverse deposit still to sign'],
     [reverse('second_leg_unknown'), true, 'reverse deposit to resend'],
     [forward('first_leg_pending', 'PUSD'), true, 'forward swap (2/2) still to sign'],
-    [forward('first_leg_pending', undefined), true, 'an older record without a destination is a token one']
+    [forward('first_leg_pending', undefined), true, 'an older record without a destination is a token one'],
+    [{ ...reverse('first_leg_pending', 'TOKEN'), reverse: { router: { sendTxid: 'ab'.repeat(32) } } }, false, 'the Cashbridge Router has the coins'],
+    [{ ...reverse('first_leg_pending', 'TOKEN'), reverse: {} }, true, 'a manual sale still to follow']
   ]
   for (const [bridge, blocks, label] of cases) {
     await restore([tx(bridge)])
