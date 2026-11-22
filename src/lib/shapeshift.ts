@@ -2,7 +2,7 @@ import { ProviderName } from '@tcswap/helpers'
 import type { QuoteResponseRoute } from '@tcswap/helpers/api'
 import { addressToLockingBytecode } from '@/lib/bch'
 import { formatBaseUnits, toBaseUnits } from '@/lib/bridge'
-import { getNearStatus, getNearTokens, NEAR_BCH, nearTokenFor } from '@/lib/near-intents'
+import { getNearStatus, getNearTokens, NEAR_BCH, nearTokenFor, PLACEHOLDERS } from '@/lib/near-intents'
 import { sameAddress } from '@/lib/payout-chains'
 import type { NearLeg } from '@/store/transaction-store'
 
@@ -210,14 +210,26 @@ export const shapeShiftRoute = (
 
 const MAX_SWAPPERS_TRIED = 3
 
-// Dry: the best deposit-address rate, nothing created. With addresses: an executable quote from the best swapper
-// that really hands back a deposit address (the rate's flag is advisory), trying the next on a refusal.
+// A valid address on the asset's chain for a dry quote (1Click's placeholders); undefined where none is kept.
+const dryAddress = (identifier: string) => {
+  const prefix = identifier.split('.')[0].toUpperCase()
+  return PLACEHOLDERS[EVM_PREFIXES.includes(prefix) ? 'evm' : prefix.toLowerCase()]
+}
+
+// An executable quote from the best swapper that really hands back a deposit address (the rate's flag is advisory),
+// trying the next on a refusal. Dry (no addresses): the same quote for placeholder addresses, its deposit address
+// dropped, because a rate leaves out fees the quote takes (0.01 BCH → Solana USDC was rated 1.96 but quoted 1.78
+// after 1Click's withdrawal fee) and routes are compared on what is really paid out.
 export const getShapeShiftQuote = async (req: ShapeShiftRateRequest & Partial<Pick<ShapeShiftQuoteRequest, 'sourceAddress' | 'destinationAddress'>>, signal?: AbortSignal): Promise<ShapeShiftRoute | undefined> => {
   const pair = ids(req)
   if (!pair) return undefined
   const candidates = await getShapeShiftRates(req, signal)
   const seconds = (ms?: number) => (ms ? Math.round(ms / 1000) : undefined)
-  if (!req.sourceAddress || !req.destinationAddress) {
+  const dry = !req.sourceAddress || !req.destinationAddress
+  const sendAddress = dry ? dryAddress(req.sellAsset) : req.sourceAddress
+  const receiveAddress = dry ? dryAddress(req.buyAsset) : req.destinationAddress
+  if (!sendAddress || !receiveAddress) {
+    // shortcut: a chain with no placeholder (Cosmos, MAYA, THOR) is ranked by its rate, which may leave fees out.
     const best = candidates[0]
     return best && shapeShiftRoute(req, { swapper: best.swapperName, sell: best.sellAmountCryptoBaseUnit, buy: best.buyAmountCryptoBaseUnit, seconds: seconds(best.estimatedExecutionTimeMs) })
   }
@@ -231,22 +243,20 @@ export const getShapeShiftQuote = async (req: ShapeShiftRateRequest & Partial<Pi
         body: {
           ...pair,
           sellAmountCryptoBaseUnit: sell,
-          receiveAddress: req.destinationAddress,
-          sendAddress: req.sourceAddress,
+          receiveAddress,
+          sendAddress,
           swapperName: candidate.swapperName,
           slippageTolerancePercentageDecimal: slippageDecimal(req.slippage)
         }
       })
       if (!quote.depositAddress || quote.sellAmountCryptoBaseUnit !== sell) continue
-      return shapeShiftRoute(req, {
+      const answer = {
         swapper: quote.swapperName,
         sell: quote.sellAmountCryptoBaseUnit,
         buy: quote.buyAmountAfterFeesCryptoBaseUnit,
-        seconds: seconds(quote.steps?.reduce((sum, step) => sum + (step.estimatedExecutionTimeMs ?? 0), 0)),
-        quoteId: quote.quoteId,
-        depositAddress: quote.depositAddress,
-        expiresAt: quote.expiresAt
-      })
+        seconds: seconds(quote.steps?.reduce((sum, step) => sum + (step.estimatedExecutionTimeMs ?? 0), 0))
+      }
+      return shapeShiftRoute(req, dry ? answer : { ...answer, quoteId: quote.quoteId, depositAddress: quote.depositAddress, expiresAt: quote.expiresAt })
     } catch (error) {
       failure = error
     }

@@ -143,6 +143,47 @@ describe('getShapeShiftBridgeRoute', async () => {
   })
 })
 
+// Routes are ranked on what they really pay: a dry ShapeShift figure is its executable quote (after the swap's fees)
+// for placeholder addresses, not the rate, and carries no deposit address. Live: 0.01 BCH → Solana USDC rated 1.96, quoted 1.78.
+describe('getShapeShiftQuote dry', async () => {
+  const { getShapeShiftQuote } = await import('../src/lib/shapeshift.ts')
+  const SOL_USDC = 'SOL.USDC-EPJFWDD5AUFQSSQEM2QN1XZYBAPC8G4WEGGKZWYTDT1V'
+  const request = { sellAsset: 'BCH.BCH', buyAsset: SOL_USDC, sellAmount: '0.01', sellDecimals: 8, buyDecimals: 6 }
+  const run = async (fake, req = request) => {
+    const original = globalThis.fetch
+    globalThis.fetch = fake
+    try {
+      return await getShapeShiftQuote(req)
+    } finally {
+      globalThis.fetch = original
+    }
+  }
+  const rates = () => Response.json({ rates: [{ swapperName: 'NEAR Intents', buyAmountCryptoBaseUnit: '1961573', sellAmountCryptoBaseUnit: '1000000', supportsExternalPayment: true }] })
+
+  it('takes the quote after fees for placeholder addresses and drops its deposit address', async () => {
+    let asked
+    const route = await run(async (input, init) => {
+      const url = String(input)
+      if (url.includes('/v1/swap/rates')) return rates()
+      asked = JSON.parse(init.body)
+      return Response.json({ quoteId: 'q-1', swapperName: 'NEAR Intents', sellAmountCryptoBaseUnit: '1000000', buyAmountAfterFeesCryptoBaseUnit: '1775621', depositAddress: 'qdeposit', expiresAt: 1 })
+    })
+    assert.equal(route.expectedBuyAmount, '1.775621')
+    assert.equal(asked.swapperName, 'NEAR Intents')
+    assert.match(asked.sendAddress, /^bitcoincash:q/)
+    assert.equal(asked.receiveAddress, '13QkxhNMrTPxoCkRdYdJ65tFuwXPhL5gLS2Z5Nr6gjRK')
+    assert.equal(route.inboundAddress, undefined, 'a dry route is never paid')
+    assert.equal(route.shapeshift.quoteId, undefined)
+  })
+
+  it('gives no route when no swapper hands back a deposit address', async () => {
+    const route = await run(async input =>
+      String(input).includes('/v1/swap/rates') ? rates() : Response.json({ quoteId: 'q-1', swapperName: 'NEAR Intents', sellAmountCryptoBaseUnit: '1000000', buyAmountAfterFeesCryptoBaseUnit: '1' })
+    )
+    assert.equal(route, undefined)
+  })
+})
+
 describe('ShapeShift route times', async () => {
   const { timedLikeNear } = await import('../src/hooks/use-quote.ts')
 

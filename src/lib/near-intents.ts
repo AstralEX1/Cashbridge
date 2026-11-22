@@ -260,7 +260,7 @@ export const mergeNearAssets = (assets: Map<string, Asset>, nearList: OneClickTo
 
 // Valid addresses for a dry quote, which needs a recipient and a refund address but creates nothing.
 // Real quotes always carry the user's own addresses.
-const PLACEHOLDERS: Record<string, string> = {
+export const PLACEHOLDERS: Record<string, string> = {
   bch: 'bitcoincash:qq9nq4t6nlzwjr3ntp7693lvzym9hq99egut9wk68z',
   btc: '122ALQhLw63cHbrSnTG9uuUao8SNd3S7K2',
   cardano: 'addr1v8wfpcg4qfhmnzprzysj6j9c53u5j56j8rvhyjp08s53s6g07rfjm',
