@@ -452,6 +452,23 @@ test('ShapeShift prepares a plain deposit-address transfer', async () => {
   assert.equal(status.structuredContent.status, 'pending')
 })
 
+test('a token name with an extra dash still pays the token contract, never the gas coin', async () => {
+  const result = await call('prepare_bridge', {
+    from_asset: 'BASE.USDC-X-0X833589FCD6EDB6E08F4C7C32D4F71B54BDA02913',
+    to_asset: 'BCH.BCH',
+    amount: '25',
+    source_address: SOURCE,
+    destination_address: recipient.cashAddress,
+    route: 'shapeshift'
+  })
+  assert.equal(result.isError, undefined, result.content[0].text)
+  const [transfer] = result.structuredContent.transactions
+  assert.equal(transfer.to.toLowerCase(), '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913')
+  assert.equal(transfer.value, '0')
+  const sent = new Interface(['function transfer(address to, uint256 amount)']).decodeFunctionData('transfer', transfer.data)
+  assert.deepEqual([sent.to, sent.amount], [SHAPE_DEPOSIT, 25_000_000n])
+})
+
 test('an Any-network free pair quotes all three routes, and NEAR prepares a plain deposit there', async () => {
   const quote = await call('get_bridge_quote', { from_asset: 'ETH.ETH', to_asset: 'BTC.BTC', amount: '1' })
   assert.equal(quote.isError, undefined, quote.content[0].text)

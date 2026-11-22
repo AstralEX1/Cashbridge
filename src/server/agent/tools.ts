@@ -590,14 +590,23 @@ const freshInbound = (inbounds: InboundAddress[], chain: string, vault: string) 
 }
 
 
+// An EVM token's contract, read after the last dash as NEAR Intents and ShapeShift read it (`BASE.USDC-0X8335…`);
+// undefined for the gas coin. A contract part that is no address is refused, never paid as the gas coin.
+const evmTokenOf = (asset: string) => {
+  const dash = asset.lastIndexOf('-')
+  if (dash < 0) return undefined
+  const contract = asset.slice(dash + 1).toLowerCase()
+  if (!isAddress(contract)) throw new ToolError(`${asset} names no valid token contract`)
+  return getAddress(contract)
+}
+
 // The EVM deposit, built here from THORNode's current router and vault and the quoted memo and expiry. The
 // aggregator's ready-made transaction is simulated against the wallet, so it fails before the token is approved.
 const evmTransactions = async (route: QuoteResponseRoute, chain: string, inbound: InboundAddress) => {
   if (!inbound.router) throw new ToolError(`THORChain has no ${chain} router right now`)
   const expiry = Number(route.expiration)
   if (!Number.isSafeInteger(expiry) || expiry * 1000 <= Date.now()) throw new ToolError('THORChain gave this quote no valid expiry; ask for a new one')
-  const token = route.sellAsset.split('-')[1]?.toLowerCase()
-  const asset = token && isAddress(token) ? getAddress(token) : ZeroAddress
+  const asset = evmTokenOf(route.sellAsset) ?? ZeroAddress
   // Every EVM gas asset THORChain carries has 18 decimals.
   const decimals = asset === ZeroAddress ? 18 : await poolDecimals(route.sellAsset)
   let amount: bigint
@@ -984,13 +993,13 @@ const TRANSFER_ABI = new Interface(['function transfer(address to, uint256 amoun
 
 const plainTransferTxs = (sellAsset: string, source: string, deposit: string, units: bigint) => {
   const chain = sellAsset.split('.')[0].toUpperCase()
-  const token = sellAsset.split('-')[1]?.toLowerCase()
   const evm = (EVMChains as readonly string[]).includes(chain)
   if (!evm) return undefined
+  const token = evmTokenOf(sellAsset)
   const chainId = Number(getChainConfig(chain as Chain).chainId)
   return [
-    token && isAddress(token)
-      ? { step: 'transfer', to: getAddress(token), from: source, data: TRANSFER_ABI.encodeFunctionData('transfer', [deposit, units]), value: '0', chain_id: chainId }
+    token
+      ? { step: 'transfer', to: token, from: source, data: TRANSFER_ABI.encodeFunctionData('transfer', [deposit, units]), value: '0', chain_id: chainId }
       : { step: 'transfer', to: deposit, from: source, data: '0x', value: units.toString(), chain_id: chainId }
   ]
 }
