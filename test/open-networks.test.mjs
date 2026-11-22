@@ -70,7 +70,7 @@ test('a THORChain quote is refused while THORChain holds payouts on either end, 
 
 test('reverse bridge destination picks still update the stored non-BCH asset', () => {
   const source = readFileSync(new URL('../src/components/swap/bridge-asset-picker.tsx', import.meta.url), 'utf8')
-  const handler = source.match(/if \(halted\) return\s+([\s\S]*?)\s+onClose\(\)/)?.[1]
+  const handler = source.match(/const pickAsset = \(asset: Asset\) => \{\s+([\s\S]*?)\s+onClose\(\)/)?.[1]
   assert.ok(handler)
   let changed
   const choose = new Function('openNetworks', 'side', 'asset', 'setAssetTo', 'setAssetFrom', handler)

@@ -439,6 +439,13 @@
   opacity: 1;
   transition: opacity 420ms ease-out 40ms;
 }
+.bridge-picker-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding-bottom: 4px;
+  background: #f8fdff;
+}
 .bridge-picker-back {
   gap: 3px;
   padding-left: 8px;

@@ -112,6 +112,7 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
   const searchInput = useRef<HTMLInputElement>(null)
   const picker = useRef<HTMLElement>(null)
   const tokensLabel = useRef<HTMLParagraphElement>(null)
+  const head = useRef<HTMLDivElement>(null)
   const [chainTap, setChainTap] = useState(0)
   const assets = useMemo(() => {
     if (!modeAssets) return []
@@ -158,17 +159,26 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
     searchInput.current?.focus()
   }, [open, selected?.chain])
 
-  // A tapped chain glides the picker itself (never the page) down to that chain's tokens, after they render.
+  // A tapped chain glides the picker itself (never the page) down to that chain's tokens, after they render,
+  // stopping under the pinned back button so the way out stays in sight.
   useEffect(() => {
     const box = picker.current
     const label = tokensLabel.current
     if (!chainTap || !box || !label) return
-    const top = box.scrollTop + label.getBoundingClientRect().top - box.getBoundingClientRect().top
+    const top = box.scrollTop + label.getBoundingClientRect().top - box.getBoundingClientRect().top - (head.current?.offsetHeight ?? 0)
     box.scrollTo({ top, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
   }, [chainTap])
 
   const pickBch = (token: CauldronToken | null) => {
     setBchToken(token)
+    onClose()
+  }
+
+  const assetHalted = (asset: Asset) => isAssetHalted(openNetworks ? { ...asset, providers: [ProviderName.THORCHAIN] } : asset, mimir, mayaMimir)
+
+  const pickAsset = (asset: Asset) => {
+    if (openNetworks && side === 'to') setAssetTo(asset)
+    else setAssetFrom(asset)
     onClose()
   }
 
@@ -184,11 +194,13 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
         }
       }}
     >
-      <button type="button" className="bridge-pill bridge-picker-back" onClick={onClose}>
-        <ChevronLeft size={16} aria-hidden="true" />
-        {t(side === 'from' ? 'from' : 'to')}
-        {activeChain && <img src={`/networks/${activeChain.toLowerCase()}.svg`} width={18} height={18} alt="" />}
-      </button>
+      <div ref={head} className="bridge-picker-head">
+        <button type="button" className="bridge-pill bridge-picker-back" onClick={onClose}>
+          <ChevronLeft size={16} aria-hidden="true" />
+          {t(side === 'from' ? 'from' : 'to')}
+          {activeChain && <img src={`/networks/${activeChain.toLowerCase()}.svg`} width={18} height={18} alt="" />}
+        </button>
+      </div>
       <div className="bridge-search">
         <Search size={19} aria-hidden="true" />
         <input
@@ -212,6 +224,9 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
               aria-pressed={item === activeChain && !openNetworks}
               onClick={e => {
                 if (bch && openNetworks) setOpenNetworks(false)
+                // A chain with a single live token (Bitcoin, Dogecoin, Litecoin...) is the whole choice: take it and close.
+                const only = bch ? [] : assets.filter(a => a.chain === item)
+                if (only.length === 1 && !assetHalted(only[0])) return pickAsset(only[0])
                 setChain(item)
                 // Keyboard picks (detail 0) keep the focused chain in view.
                 if (e.detail > 0) setChainTap(n => n + 1)
@@ -266,7 +281,7 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
           </>
         ) : (
           tokens.map((asset, i) => {
-            const halted = isAssetHalted(openNetworks ? { ...asset, providers: [ProviderName.THORCHAIN] } : asset, mimir, mayaMimir)
+            const halted = assetHalted(asset)
             const nearOnly = isNearOnlyAsset(asset)
             return (
               <HaltedTip key={asset.identifier} halted={halted}>
@@ -278,10 +293,7 @@ export const BridgeAssetPicker = ({ side, bch, open, onClose }: { side: 'from' |
                   aria-disabled={halted || undefined}
                   title={halted ? undefined : nearOnly ? `${asset.identifier} · NEAR Intents` : asset.identifier}
                   onClick={() => {
-                    if (halted) return
-                    if (openNetworks && side === 'to') setAssetTo(asset)
-                    else setAssetFrom(asset)
-                    onClose()
+                    if (!halted) pickAsset(asset)
                   }}
                 >
                   <AssetIcon asset={asset} className="size-5 [&_img]:size-5" showNetworkIcons={false} />
