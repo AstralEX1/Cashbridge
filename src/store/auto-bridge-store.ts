@@ -22,12 +22,25 @@ interface AutoBridgeStore {
   orders: SavedAutoOrder[]
   save: (reference: SavedAutoOrder) => void
   patch: (id: string, patch: Partial<Omit<SavedAutoOrder, 'id' | 'capability' | 'intent'>>) => void
+  // Forgets an order the user never sent anything to.
+  remove: (id: string) => void
+}
+const ORDER_PREFIX = 'cashbridge-auto-order-'
+const SOURCE_PREFIX = 'cashbridge-auto-source-'
+// Long enough for another tab's open Confirm; any older draft is left over from a closed page.
+const DRAFT_TTL_MS = 30 * 60_000
+// The source wallet was never opened for it (a declined request clears the mark) and no chain has paid it.
+export const isAutomaticDraft = (ref: SavedAutoOrder) =>
+  !ref.sourceAttempted && !ref.sourceHash && !ref.order?.sourceHash && !ref.order?.inboundHash && BigInt(ref.order?.receivedSats || '0') === 0n
+const forgetOrder = (id: string) => {
+  localStorage.removeItem(ORDER_PREFIX + id)
+  localStorage.removeItem(SOURCE_PREFIX + id)
 }
 // Per-order records keep a stale tab's history write from deleting another tab's order.
 // Read the original B array as well, so existing browser references migrate without a reset.
 const orderStorage = (): StateStorage => {
   const previous = new Map<string, string>()
-  const prefix = 'cashbridge-auto-order-'
+  const prefix = ORDER_PREFIX
   return {
     getItem(name) {
       const legacy = JSON.parse(localStorage.getItem(name) ?? '{}')
@@ -40,7 +53,13 @@ const orderStorage = (): StateStorage => {
         }
       }
       for (const ref of orders.values()) {
-        if (localStorage.getItem(`cashbridge-auto-source-${ref.id}`) === 'attempted') ref.sourceAttempted = true
+        if (localStorage.getItem(SOURCE_PREFIX + ref.id) === 'attempted') ref.sourceAttempted = true
+        // Automatic transfers keep no drafts: one the user never sent is dropped.
+        if (isAutomaticDraft(ref) && ref.createdAt !== undefined && Date.now() - ref.createdAt > DRAFT_TTL_MS) {
+          forgetOrder(ref.id)
+          orders.delete(ref.id)
+          continue
+        }
         previous.set(ref.id, JSON.stringify(ref))
         if (!localStorage.getItem(prefix + ref.id)) localStorage.setItem(prefix + ref.id, JSON.stringify(ref))
       }
@@ -68,7 +87,11 @@ export const autoBridgeStore = create<AutoBridgeStore>()(
     set => ({
       orders: [],
       save: reference => set(state => ({ orders: state.orders.some(order => order.id === reference.id) ? state.orders : [...state.orders, reference] })),
-      patch: (id, patch) => set(state => ({ orders: state.orders.map(order => order.id === id ? { ...order, ...patch } : order) }))
+      patch: (id, patch) => set(state => ({ orders: state.orders.map(order => order.id === id ? { ...order, ...patch } : order) })),
+      remove: id => {
+        if (typeof localStorage !== 'undefined') forgetOrder(id)
+        set(state => ({ orders: state.orders.filter(order => order.id !== id) }))
+      }
     }),
     { name: 'cashbridge-auto-orders', storage: createJSONStorage(orderStorage), partialize: state => ({ orders: state.orders }) }
   )

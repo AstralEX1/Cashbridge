@@ -170,11 +170,22 @@ test('a stale tab cannot erase source authorization or another tab order', async
     autoBridgeStore.getState().patch(reference.id, { sourceAttempted: false })
     await assert.rejects(startAutomaticSource(reference, route, 'ETH.ETH', async () => { calls++; return 'ab'.repeat(32) }, async () => {}))
     assert.equal(calls, 1)
-    const external = { id: randomUUID(), capability: randomBytes(32).toString('hex') }
+    const external = { id: randomUUID(), capability: randomBytes(32).toString('hex'), createdAt: Date.now() }
     data.set(`cashbridge-auto-order-${external.id}`, JSON.stringify(external))
     autoBridgeStore.getState().patch(reference.id, { sourceHash: 'cd'.repeat(32) })
     await autoBridgeStore.persist.rehydrate()
     assert.ok(autoBridgeStore.getState().orders.some(ref => ref.id === external.id))
+    // Automatic transfers keep no drafts: one left by a closed page is dropped, a sent one stays.
+    const stale = Date.now() - 31 * 60_000
+    const leftover = { id: randomUUID(), capability: randomBytes(32).toString('hex'), createdAt: stale }
+    const sent = { id: randomUUID(), capability: randomBytes(32).toString('hex'), createdAt: stale, sourceHash: 'ef'.repeat(32) }
+    for (const ref of [leftover, sent]) data.set(`cashbridge-auto-order-${ref.id}`, JSON.stringify(ref))
+    await autoBridgeStore.persist.rehydrate()
+    assert.equal(data.has(`cashbridge-auto-order-${leftover.id}`), false)
+    assert.ok(!autoBridgeStore.getState().orders.some(ref => ref.id === leftover.id))
+    assert.ok(autoBridgeStore.getState().orders.some(ref => ref.id === sent.id))
+    autoBridgeStore.getState().remove(external.id)
+    assert.equal(data.has(`cashbridge-auto-order-${external.id}`), false)
   } finally {
     if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow
     if (navigatorDescriptor) Object.defineProperty(globalThis, 'navigator', navigatorDescriptor); else delete globalThis.navigator

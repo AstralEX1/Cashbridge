@@ -27,28 +27,38 @@ import { checkNewOrder } from '@/lib/auto-bridge-order'
 import { firstLegSeconds } from '@/lib/bridge-summary'
 import { getQuotes, isBridgeRoute } from '@/lib/api'
 import { assertAutomaticSaved, createAutomaticOrder, orderRequest, RouterUnavailableError, startAutomaticSource } from '@/lib/auto-bridge-client'
-import { FORWARD_DEADLINE_MS, getNearQuote, isNearRoute, nearLegOf, nearSlippageBps, submitNearDeposit } from '@/lib/near-intents'
+import { getNearQuote, isNearRoute, nearLegOf, nearSlippageBps, submitNearDeposit } from '@/lib/near-intents'
 import { getShapeShiftBridgeRoute, isShapeShiftRoute, SHAPESHIFT_PROVIDER } from '@/lib/shapeshift'
 import { getUSwap } from '@/lib/wallets'
 import { newPageKey } from '@/lib/page-settle'
 import { resolvePriceImpact } from '@/lib/swap-helpers'
-import { autoBridgeStore, type SavedAutoOrder } from '@/store/auto-bridge-store'
-import { nearPaysBeforeRefund, type AutomaticSource, type OrderIntent } from '@/lib/auto-bridge-contract'
+import { autoBridgeStore, isAutomaticDraft, type SavedAutoOrder } from '@/store/auto-bridge-store'
+import type { AutomaticSource, OrderIntent } from '@/lib/auto-bridge-contract'
 
 export interface PreparedAutomatic {
   reference: SavedAutoOrder
   route: QuoteResponseRoute
 }
 
-const sameIntent = (a: OrderIntent | undefined, b: OrderIntent) =>
-  !!a && JSON.stringify(a.source) === JSON.stringify(b.source) && a.recipientAddress === b.recipientAddress && a.refundAddress === b.refundAddress && a.category === b.category
+type PrepareArgs = Parameters<typeof prepareOrder>[0]
 
-// Runs behind the main button's "Preparing swap": saves the order reference (before any request, so a
-// lost answer is recoverable), creates the order and takes an executable quote to its deposit
-// address. An unpaid order for the same transfer is reused rather than created again. The BCH
-// fallback is the recipient itself. When the user picked NEAR Intents, that route is prepared —
-// never swapped for a THORChain quote behind the scenes.
-export const prepareAutomatic = async ({
+// Runs behind the main button's "Preparing swap". A transfer that cannot be prepared leaves nothing behind, and one the
+// user does not send is forgotten when its Confirm closes (AutoBridgeDialog): automatic transfers keep no drafts.
+export const prepareAutomatic = async (args: Omit<PrepareArgs, 'id'>): Promise<PreparedAutomatic> => {
+  const id = crypto.randomUUID()
+  try {
+    return await prepareOrder({ ...args, id })
+  } catch (error) {
+    autoBridgeStore.getState().remove(id)
+    throw error
+  }
+}
+
+// Saves the order reference (before any request, so a lost answer is recoverable), creates the order and takes an
+// executable quote to its deposit address. The BCH fallback is the recipient itself. When the user picked NEAR
+// Intents, that route is prepared — never swapped for a THORChain quote behind the scenes.
+const prepareOrder = async ({
+  id,
   source,
   sourceDecimals,
   token,
@@ -58,6 +68,7 @@ export const prepareAutomatic = async ({
   slippage,
   messages
 }: {
+  id: string
   source: AutomaticSource
   // The source asset's decimals, which ShapeShift's quote is asked in.
   sourceDecimals: number
@@ -73,30 +84,19 @@ export const prepareAutomatic = async ({
   const intent: OrderIntent = { recipientAddress: recipient, refundAddress: recipient, source, expectedBchSats: toBaseUnits(expectedBuyAmount, 8).toString() }
   // PUSD orders leave the category out, so a Router that only knows PUSD still accepts them.
   if (token.category !== BridgeConfig.pusd.category) intent.category = token.category
-  // An unpaid draft of the same transfer is reused while any bridge's swap still fits before its refund time.
-  const reusable = autoBridgeStore
-    .getState()
-    .orders.find(
-      ref =>
-        !ref.sourceAttempted &&
-        sameIntent(ref.intent, intent) &&
-        (!ref.order ||
-          (ref.order.state === 'awaiting_deposit' && !ref.order.sourceHash && !ref.order.nearDepositAddress && nearPaysBeforeRefund(ref.order, Date.now() + FORWARD_DEADLINE_MS)))
-    )
-
-  const openOrder = async (reuse?: SavedAutoOrder) => {
-    const page = reuse ? undefined : newPageKey()
-    const reference: SavedAutoOrder = reuse ?? {
-      id: crypto.randomUUID(),
+  const openOrder = async () => {
+    const page = newPageKey()
+    const reference: SavedAutoOrder = {
+      id,
       capability: (crypto.randomUUID() + crypto.randomUUID()).replaceAll('-', ''),
       createdAt: Date.now(),
-      intent: { ...intent, pageKey: page!.pubkey },
+      intent: { ...intent, pageKey: page.pubkey },
       token,
-      pageSecret: page!.secret
+      pageSecret: page.secret
     }
     autoBridgeStore.getState().save(reference)
     assertAutomaticSaved(reference)
-    const created = reference.order ?? (await createAutomaticOrder(reference))
+    const created = await createAutomaticOrder(reference)
     if (created.apiVersion !== 2 || created.recoveryRequired) throw new Error(messages.serviceUpdate)
     const own = await quoteToken({ category: token.category, side: 'buy', amount: secondLegSellAmount(BigInt(created.expectedBchSats)) })
     checkNewOrder(created, own.output)
@@ -104,7 +104,7 @@ export const prepareAutomatic = async ({
     return { reference, order: created }
   }
 
-  const { reference: ref, order } = await openOrder(reusable)
+  const { reference: ref, order } = await openOrder()
   const validFor = (depositAddress: string, candidate?: QuoteResponseRoute): candidate is QuoteResponseRoute =>
     !!candidate &&
     isBridgeRoute(candidate, { sellAsset: source.asset, destinationAddress: depositAddress }) &&
@@ -205,6 +205,12 @@ export const AutoBridgeDialog = ({ prepared, isOpen, onOpenChange }: Props) => {
   const blocked = (needsImpact && !acceptedImpact) || (needsLtc && !acceptedLtc)
   const order = reference.order!
   const source = reference.intent!.source!
+  // Closed without sending: the order is forgotten at once, nothing is kept as a draft.
+  const close = (open: boolean) => {
+    const saved = autoBridgeStore.getState().orders.find(item => item.id === reference.id)
+    if (!open && !busy && saved && isAutomaticDraft(saved)) autoBridgeStore.getState().remove(reference.id)
+    onOpenChange(open)
+  }
 
   const send = async () => {
     if (busy || attempted || blocked) return
@@ -240,7 +246,7 @@ export const AutoBridgeDialog = ({ prepared, isOpen, onOpenChange }: Props) => {
   }
 
   return (
-    <Credenza open={isOpen} onOpenChange={onOpenChange}>
+    <Credenza open={isOpen} onOpenChange={close}>
       <CredenzaContent className="bridge-confirm-dialog flex h-auto max-h-5/6 flex-col md:max-w-[620px]">
         <BridgeConfirm quote={route} token={reference.token ?? PUSD_TOKEN} bchAddress={order.recipientAddress} automatic={{ minPusd: order.minPusd, refundAddress: order.refundAddress, contract: !!order.contract }} />
         <div className="space-y-3 p-4 pt-2 md:px-7 md:pb-7">

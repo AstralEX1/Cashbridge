@@ -103,14 +103,14 @@ test('bestRoute ranks the payout net of each route\'s gas, and only when every r
   assert.match(compareSource, /gas\[key\]/)
 })
 
-test('Automatic prepare keeps a selected NEAR or ShapeShift route on it (no silent THOR fallback), and one refund-time rule covers every bridge', () => {
+test('Automatic prepare keeps a selected NEAR or ShapeShift route on it (no silent THOR fallback), and keeps no drafts', () => {
   const nearBranch = prepareSource.match(/if \(provider === ProviderName\.NEAR \|\| provider === SHAPESHIFT_PROVIDER\) \{([\s\S]*?)\n  \}\n\n  const quotes = await getQuotes/)?.[1]
   assert.ok(nearBranch, 'NEAR prepare must return before getQuotes')
   assert.doesNotMatch(nearBranch, /getQuotes/)
   assert.doesNotMatch(nearBranch, /quote\.deadline \?/, '1Click quote.deadline is the deposit address lifetime, not the refund deadline')
-  // Every bridge reuses an unpaid draft only while its swap still fits before the refund time; otherwise a new order.
-  assert.doesNotMatch(nearBranch, /nearPaysBeforeRefund/)
-  assert.match(prepareSource, /const reusable = [\s\S]*?nearPaysBeforeRefund\(ref\.order, Date\.now\(\) \+ FORWARD_DEADLINE_MS\)[\s\S]*?\n  const openOrder/)
+  // Automatic transfers keep no drafts: every prepare opens a new order, and a failed one is forgotten.
+  assert.doesNotMatch(prepareSource, /const reusable = /)
+  assert.match(prepareSource, /catch \(error\) \{\n    autoBridgeStore\.getState\(\)\.remove\(id\)/)
   assert.match(nearBranch, /return \{ reference: \{ \.\.\.ref, order: result\.order \}, route: result\.route \}/)
 })
 
