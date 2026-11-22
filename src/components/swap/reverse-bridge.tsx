@@ -549,6 +549,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange, onShowBridge }: { i
   const t = useTranslations('bridge.confirm')
   const tReverse = useTranslations('bridge.reverse')
   const tBridge = useTranslations('bridge')
+  const tAuto = useTranslations('automatic')
   const tSwap = useTranslations('swap')
   const asset = useAssetFrom()
   const destination = usePayoutAddress()
@@ -950,7 +951,7 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange, onShowBridge }: { i
           </div>
         </ScrollArea>
         <div className="space-y-3 p-4 pt-2 md:px-7 md:pb-7">
-          {needsImpact && <SwapAddressWarning checked={acceptedImpact} onCheckedChange={setAcceptedImpact} text={tBridge('automatic.highImpact')} />}
+          {needsImpact && <SwapAddressWarning checked={acceptedImpact} onCheckedChange={setAcceptedImpact} text={tAuto('highImpact')} />}
           <GenericButton
             colorType="3"
             size="large"
