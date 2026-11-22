@@ -135,7 +135,7 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
           slippageBps: nearSlippageBps(slippage)
         })
         if (!route) throw new Error(t('button.noValidQuotes'))
-        openDialog(SwapDialog, { provider, quote: route, binding, walletName: destination.pasted ? undefined : (bchWallet.walletName ?? undefined) })
+        openDialog(SwapDialog, { provider, quote: route, binding, walletName: destination.pasted ? undefined : (bchWallet.walletName ?? undefined), onShowBridge })
         return
       }
       if (isShapeShiftRoute(quote)) {
@@ -151,7 +151,7 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
           destinationAddress: binding.cashAddress
         })
         if (!route) throw new Error(t('button.noValidQuotes'))
-        openDialog(SwapDialog, { provider, quote: route, binding, walletName: destination.pasted ? undefined : (bchWallet.walletName ?? undefined) })
+        openDialog(SwapDialog, { provider, quote: route, binding, walletName: destination.pasted ? undefined : (bchWallet.walletName ?? undefined), onShowBridge })
         return
       }
       const quotes = await getQuotes({
@@ -166,7 +166,7 @@ export const SwapButton = ({ instantSwapSupported, instantSwapAvailable, onShowB
         providers: [provider]
       })
       if (!quotes[0]) throw new Error(t('button.noValidQuotes'))
-      openDialog(SwapDialog, { provider, quote: quotes[0], binding, walletName: destination.pasted ? undefined : (bchWallet.walletName ?? undefined) })
+      openDialog(SwapDialog, { provider, quote: quotes[0], binding, walletName: destination.pasted ? undefined : (bchWallet.walletName ?? undefined), onShowBridge })
     } catch (error) {
       console.warn('Preparing the swap failed', error)
       // The form is untouched: the notice offers Try again, which prepares the same transfer once more.

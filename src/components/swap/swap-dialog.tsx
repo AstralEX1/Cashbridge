@@ -27,6 +27,7 @@ import { BridgeBlocked, FirstLegRejected, startBridgeFirstLeg } from '@/componen
 import { useIsLimitSwap, useLimitSwapBuyAmount } from '@/store/limit-swap-store'
 import { useReplacementOrderStore, useSetReplacementOrder } from '@/store/replacement-order-store'
 import { useSwapStore } from '@/store/swap-store'
+import { getActiveBridge } from '@/store/transaction-store'
 import { chainLabel } from '@/components/connect-wallet/config'
 
 interface SwapDialogProps {
@@ -35,11 +36,13 @@ interface SwapDialogProps {
   quote?: QuoteResponseRoute
   binding?: BchBinding
   walletName?: string
+  // Opens the operation that blocks a new one.
+  onShowBridge?: () => void
   isOpen: boolean
   onOpenChange: (isOpen: boolean) => void
 }
 
-export const SwapDialog = ({ provider, quote: prepared, binding: destination, walletName, isOpen, onOpenChange }: SwapDialogProps) => {
+export const SwapDialog = ({ provider, quote: prepared, binding: destination, walletName, onShowBridge, isOpen, onOpenChange }: SwapDialogProps) => {
   const t = useTranslations('swap')
   const tConfirm = useTranslations('bridge.confirm')
   const tBridge = useTranslations('bridge')
@@ -158,6 +161,13 @@ export const SwapDialog = ({ provider, quote: prepared, binding: destination, wa
           toast.dismiss(toastId)
           toast(tBridge('cancelledInWallet'))
           onOpenChange(false)
+          return
+        }
+        // Another operation still needs the user: show it instead of a dead end.
+        if (err instanceof BridgeBlocked && getActiveBridge()) {
+          toast.dismiss(toastId)
+          onOpenChange(false)
+          onShowBridge?.()
           return
         }
         console.warn('Bridge first leg failed', err)

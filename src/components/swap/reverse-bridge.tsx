@@ -91,6 +91,7 @@ import { generateId } from '@/lib/utils'
 import { useSwapStore } from '@/store/swap-store'
 import {
   type BridgeOperation,
+  getActiveBridge,
   isBridgeTerminal,
   isBridgeWaiting,
   operationToken,
@@ -433,7 +434,7 @@ export const ReverseSwapButton = ({ onShowBridge }: { onShowBridge: () => void }
     if (balance.isLoading) return { text: t('button.checkingBalance'), spinner: true, accent: false }
     if (balance.maxUnits === undefined) return { text: t('button.balanceUnavailable'), spinner: false, accent: false, onClick: () => balance.refetch() }
     if (balance.maxUnits < units) return { text: t('button.insufficientBalance'), spinner: false, accent: false }
-    return { text: t('button.send'), spinner: false, accent: true, onClick: () => openDialog(ReverseConfirmDialog, {}) }
+    return { text: t('button.send'), spinner: false, accent: true, onClick: () => openDialog(ReverseConfirmDialog, { onShowBridge }) }
   }
 
   const state = getState()
@@ -544,7 +545,7 @@ const RouteSteps = ({ token, asset, thorMinutes, total, near, shapeshift }: { to
   )
 }
 
-export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean; onOpenChange: (open: boolean) => void }) => {
+export const ReverseConfirmDialog = ({ isOpen, onOpenChange, onShowBridge }: { isOpen: boolean; onOpenChange: (open: boolean) => void; onShowBridge?: () => void }) => {
   const t = useTranslations('bridge.confirm')
   const tReverse = useTranslations('bridge.reverse')
   const tBridge = useTranslations('bridge')
@@ -785,7 +786,11 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
         }
       }
       if (open && uid) onOpenChange(false)
-      else if (error instanceof SignCancelled) setNote(tReverse('signCancelled'))
+      else if (error instanceof ReverseBlocked && getActiveBridge()) {
+        // Another operation still needs this wallet: show it instead of a dead end.
+        onOpenChange(false)
+        onShowBridge?.()
+      } else if (error instanceof SignCancelled) setNote(tReverse('signCancelled'))
       else if (error instanceof SignDeclined) setNote(tReverse('signDeclined', { wallet: walletName }))
       else if (error instanceof SignTimedOut) setNote(tReverse('signTimedOut', { wallet: walletName }))
       else if (error instanceof SignSessionLost) setNote(tReverse('signSessionLost', { wallet: walletName }))
