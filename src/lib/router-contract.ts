@@ -1,4 +1,4 @@
-import { bigIntToVmNumber, binToHex, encodeCashAddress, encodeDataPush, hash160, hexToBin, utf8ToBin } from '@bitauth/libauth'
+import { bigIntToVmNumber, binToHex, encodeCashAddress, encodeDataPush, encodeTransaction, hash160, hexToBin, utf8ToBin, type Transaction } from '@bitauth/libauth'
 import { BCH_PREFIX, type BchBinding } from '@/lib/bch'
 import { minOutputFor } from '@/lib/bridge'
 
@@ -92,6 +92,31 @@ export const orderUnlock = (terms: OrderTerms, fn: ContractFunction, signature?:
 
 // A coin under this at an order's contract is dust; it is never settled or sent back.
 export const MIN_ORDER_COIN_SATS = 1000n
+// The least BCH a relay node takes on an output that carries a CashToken.
+const TOKEN_DUST = 800n
+
+// A give-back pays each coin back at its own index (input i to output i), and the coins share a one sat per byte fee
+// equally. A coin that cannot pay its share and keep dust, such as a stranger's token dust at the contract, is left
+// out so it cannot hold the others back. Answers the transaction and the indexes of the coins it returns, or undefined
+// when no coin can leave within the contract's fee cap.
+export function giveBackFee(tx: Transaction, unlockBytes: number): { tx: Transaction; kept: number[] } | undefined {
+  let kept = tx.inputs.map((_, index) => index)
+  while (kept.length) {
+    const trial = { ...tx, inputs: kept.map(i => ({ ...tx.inputs[i] })), outputs: kept.map(i => ({ ...tx.outputs[i] })) }
+    const fee = BigInt(encodeTransaction(trial).length + kept.length * unlockBytes)
+    const share = (fee + BigInt(kept.length) - 1n) / BigInt(kept.length)
+    // Fewer coins only raise the share.
+    if (share > REFUND_FEE_CAP) return undefined
+    const payable = kept.filter(i => tx.outputs[i].valueSatoshis - share >= (tx.outputs[i].token ? TOKEN_DUST : 546n))
+    if (payable.length === kept.length) {
+      trial.outputs.forEach(output => (output.valueSatoshis -= share))
+      return { tx: trial, kept }
+    }
+    kept = payable
+  }
+  return undefined
+}
+
 // The coin a contract order settles: its largest coin of at least half the quoted BCH (the page and the Router pick the
 // same one). A bridge pays within its slippage, so a smaller coin is someone else's: it can neither settle the order nor
 // send it back, and goes back to the customer as BCH once the order is done.

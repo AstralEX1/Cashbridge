@@ -8,7 +8,7 @@ import { interpretNearStatus, NEAR_BCH, nearTxHash, nudgeNearDeposit, type NearS
 import { SALE_ROUTE_DEPOSIT_MS, saleRouteProblem } from '@/server/auto-bridge/sale-route'
 import { OrderStore } from '@/server/auto-bridge/store'
 import { isTerminal, orderCategory, type Attempt, type Order, type SaleCoin } from '@/server/auto-bridge/types'
-import { orderMinimum, orderUnlockBytes, WorkerWallet } from '@/server/auto-bridge/wallet'
+import { orderMinimum, orderUnlockBytes, returnableCoins, WorkerWallet } from '@/server/auto-bridge/wallet'
 import { sourceIdFromMemo, sourceTransactionId, sameSourceTransaction } from '@/lib/source-transaction'
 import { MIN_ORDER_COIN_SATS, settlingCoin } from '@/lib/router-contract'
 
@@ -661,8 +661,9 @@ export async function processSale(
   store.assertWritable()
   let order = store.get(original.id)
   if (!order?.sale) return
-  // A stranger's BCH dust at the contract is no coin of the order: it can neither be sold nor given back.
-  const coins = (await contractCoins(gateway, order)).filter(coin => coin.token || BigInt(coin.value) >= MIN_ORDER_COIN_SATS)
+  // A stranger's dust at the contract (BCH, or a token too small for its fee share) is no coin of the order: it can
+  // neither be sold nor given back.
+  const coins = returnableCoins(order, (await contractCoins(gateway, order)).filter(coin => coin.token || BigInt(coin.value) >= MIN_ORDER_COIN_SATS))
   const set = (patch: Parameters<OrderStore['update']>[2]) => {
     store.update(order!.id, order!.version, patch, clock())
     order = store.get(order!.id)!

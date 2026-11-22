@@ -442,3 +442,35 @@ test("a stranger's BCH beside the tokens neither stops the sale nor stays at the
     store.close()
   }
 })
+
+test("a stranger's token dust at the contract holds back neither the tokens' return nor the order's end", async () => {
+  for (const scenario of ['give back', 'deposit done']) {
+    const { store, net, run, tokens, get } = setup()
+    const dust = () => net.receive([{ lockingBytecode: hexToBin(get().binding.lockingBytecode), valueSatoshis: 800n, token: { category: randomBytes(32), amount: 1n } }])
+    try {
+      tokens()
+      if (scenario === 'give back') {
+        dust()
+        await run(1_500_000 + THORCHAIN_QUOTE_MS)
+        const [back] = store.attempts(get().id)
+        const tx = decodeTx(back.hex)
+        assert.equal(tx.inputs.length, 1, 'the dust token cannot pay its fee share and stays at the contract')
+        assert.equal(binToHex(tx.outputs[0].token.category), category)
+        assert.ok(net.state.sent.some(a => a.txid === back.txid))
+        net.confirm(back.txid)
+        await run()
+        assert.equal(get().state, 'refunded')
+      } else {
+        await run()
+        const deposited = store.attempts(get().id).find(a => a.kind === 'deposit')
+        dust()
+        net.state.status = { out_txs: [{ id: 'aa'.repeat(32), chain: 'ETH', coins: [], memo: `OUT:${deposited.txid}` }], stages: { swap_status: { pending: false } } }
+        await run()
+        assert.equal(get().state, 'completed')
+        assert.ok(!store.attempts(get().id).some(a => a.kind === 'refund'))
+      }
+    } finally {
+      store.close()
+    }
+  }
+})

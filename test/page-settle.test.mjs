@@ -157,3 +157,17 @@ test('a sale whose Router stopped sends its tokens back from the page after the 
   assert.ok(!transaction.outputs[1].token && transaction.outputs[1].valueSatoshis + 2000n >= 58000n)
   transaction.outputs.forEach(output => assert.equal(Buffer.from(output.lockingBytecode).toString('hex'), recipient.lockingBytecode))
 })
+
+test("a stranger's token dust at a sale contract stays there, and the page still sends the tokens back", async () => {
+  const token = { category: BridgeConfig.pusd.category, amount: 500n, nft: false }
+  const coins = [{ ...coin(0, 2000n), hasToken: true, token }, { ...coin(1, 800n), hasToken: true, token: { category: 'ab'.repeat(32), amount: 1n, nft: false } }]
+  let sent
+  const late = (contract.refundAfter + 1) * 1000
+  assert.ok(await returnFromPage({ ...saleOrder, state: 'streaming' }, undefined, { coinsOf: async () => ({ tip: 100, utxos: coins }), send: async (hex, id) => ((sent = hex), id), now: late }))
+  const transaction = decodeTx(sent)
+  const lockingBytecode = Buffer.from(saleBinding(saleTerms, 0).lockingBytecode, 'hex')
+  const sourceOutputs = [{ lockingBytecode, valueSatoshis: 2000n, token: { category: Buffer.from(token.category, 'hex'), amount: 500n } }]
+  assert.equal(transaction.inputs.length, 1, 'the dust token cannot pay its fee share')
+  assert.equal(createVirtualMachineBch2026(true).verify({ transaction, sourceOutputs }), true)
+  assert.equal(transaction.outputs[0].token.amount, 500n)
+})

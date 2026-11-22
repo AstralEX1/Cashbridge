@@ -18,6 +18,7 @@ import { addressToLockingBytecode, bindingFromPubkey, decodeTx, addressPaysScrip
 import { checkPoolCovenants, checkSigned, parseP2pkhUnlock, reviewBuild, sourcesOf, type BuildResult } from '@/lib/cauldron'
 import {
   coinFloor,
+  giveBackFee,
   memoScript,
   orderBinding,
   orderRedeemScript,
@@ -67,9 +68,6 @@ export const orderUnlockBytes = (order: Order) =>
 // The fewest tokens a forward order's swap may pay: a version 2 contract's one coin buys its share of the minimum.
 export const orderMinimum = (order: Order) =>
   order.contract && order.funding.length === 1 ? coinFloor(termsOf(order, order.binding.pubkey), BigInt(order.funding[0].value)) : BigInt(order.minPusd)
-
-// What a token output needs to relay, with room for its larger size.
-const TOKEN_DUST = 800n
 
 const validIndex = (index: number) => {
   if (!Number.isSafeInteger(index) || index < 0 || index >= 2 ** 31) throw new Error('Invalid HD address index')
@@ -298,27 +296,35 @@ export class WorkerWallet extends PublicWallet {
     return { ...this.#sign(order, tx, sources, [0], 'deposit', [coin]), kind: 'deposit', parent: sale.txid, pusdOut: tx.outputs[0].valueSatoshis.toString(), status: 'signed' }
   }
 
-  // The coins at a sale contract back to the customer as they came (tokens, or BCH), each at its own index.
+  // The coins at a sale contract back to the customer as they came (tokens, or BCH), each at its own index; a coin
+  // too small for its fee share stays behind (see returnableCoins).
   signGiveBack(order: Order, coins: SaleCoin[]): Attempt {
-    if (!order.sale) throw new Error('Invalid sale intent')
-    const tokenOf = (coin: SaleCoin): Output['token'] =>
-      coin.token && {
-        category: hexToBin(coin.token.category),
-        amount: BigInt(coin.token.amount),
-        ...(coin.token.nft && { nft: { capability: coin.token.nft.capability, commitment: hexToBin(coin.token.nft.commitment) } })
-      }
-    const tx: Transaction = {
-      version: 2,
-      locktime: 0,
-      inputs: coins.map(coin => ({ outpointTransactionHash: hexToBin(coin.txid), outpointIndex: coin.vout, sequenceNumber: 0xffffffff, unlockingBytecode: new Uint8Array() })),
-      outputs: coins.map(coin => ({ lockingBytecode: hexToBin(order.refundScript), valueSatoshis: BigInt(coin.value), ...(coin.token && { token: tokenOf(coin) }) }))
-    }
-    const unlockBytes = saleUnlock(saleTermsOf(order, order.binding.pubkey), 'giveBack', new Uint8Array(65)).length + 2
-    const fee = BigInt(encodeTransaction(tx).length + tx.inputs.length * unlockBytes)
-    const share = (fee + BigInt(tx.outputs.length) - 1n) / BigInt(tx.outputs.length)
-    if (share > REFUND_FEE_CAP || tx.outputs.some(output => output.valueSatoshis - share < (output.token ? TOKEN_DUST : 546n))) throw new Error('A returned coin would be dust')
-    tx.outputs.forEach(output => (output.valueSatoshis -= share))
-    const sources = coins.map(coin => ({ lockingBytecode: hexToBin(order.binding.lockingBytecode), valueSatoshis: BigInt(coin.value), ...(coin.token && { token: tokenOf(coin) }) }))
-    return { ...this.#sign(order, tx, sources, tx.inputs.map((_, index) => index), 'giveBack', coins), kind: 'refund', pusdOut: '0', status: 'signed' }
+    const given = saleGiveBack(order, coins)
+    if (!given) throw new Error('No coin at the contract can pay its way back')
+    const sources = given.coins.map(coin => ({ lockingBytecode: hexToBin(order.binding.lockingBytecode), valueSatoshis: BigInt(coin.value), ...(coin.token && { token: tokenOf(coin) }) }))
+    return { ...this.#sign(order, given.tx, sources, given.coins.map((_, index) => index), 'giveBack', given.coins), kind: 'refund', pusdOut: '0', status: 'signed' }
   }
 }
+
+const tokenOf = (coin: SaleCoin): Output['token'] =>
+  coin.token && {
+    category: hexToBin(coin.token.category),
+    amount: BigInt(coin.token.amount),
+    ...(coin.token.nft && { nft: { capability: coin.token.nft.capability, commitment: hexToBin(coin.token.nft.commitment) } })
+  }
+
+const saleGiveBack = (order: Order, coins: SaleCoin[]) => {
+  if (!order.sale) throw new Error('Invalid sale intent')
+  const tx: Transaction = {
+    version: 2,
+    locktime: 0,
+    inputs: coins.map(coin => ({ outpointTransactionHash: hexToBin(coin.txid), outpointIndex: coin.vout, sequenceNumber: 0xffffffff, unlockingBytecode: new Uint8Array() })),
+    outputs: coins.map(coin => ({ lockingBytecode: hexToBin(order.refundScript), valueSatoshis: BigInt(coin.value), ...(coin.token && { token: tokenOf(coin) }) }))
+  }
+  const given = giveBackFee(tx, saleUnlock(saleTermsOf(order, order.binding.pubkey), 'giveBack', new Uint8Array(65)).length + 2)
+  return given && { ...given, coins: given.kept.map(index => coins[index]) }
+}
+
+// The coins at a sale contract that its give-back returns. The rest (a stranger's token dust) cannot pay its own fee
+// share and is no coin of the order, like BCH dust.
+export const returnableCoins = (order: Order, coins: SaleCoin[]) => saleGiveBack(order, coins)?.coins ?? []

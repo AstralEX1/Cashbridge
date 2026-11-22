@@ -6,7 +6,7 @@
 import { binToHex, encodeTransaction, generatePrivateKey, generateSigningSerializationBch, hash256, hexToBin, secp256k1, type Output, type Transaction } from '@bitauth/libauth'
 import { decodeTx, listWalletCoins, txidOf } from '@/lib/bch'
 import { broadcastBchTransaction, buildTokenTrade, checkPoolCovenants, checkSigned, reviewBuild, sourcesOf } from '@/lib/cauldron'
-import { coinFloor, MIN_ORDER_COIN_SATS, orderBinding, orderRedeemScript, orderUnlock, parseOrderUnlock, REFUND_FEE_CAP, saleBinding, saleUnlock, settlingCoin, type OrderTerms } from '@/lib/router-contract'
+import { coinFloor, giveBackFee, MIN_ORDER_COIN_SATS, orderBinding, orderRedeemScript, orderUnlock, parseOrderUnlock, saleBinding, saleUnlock, settlingCoin, type OrderTerms } from '@/lib/router-contract'
 import { orderTermsOf, saleTermsOf } from '@/lib/auto-bridge-order'
 import { isTerminal, type PublicOrder } from '@/lib/auto-bridge-contract'
 
@@ -121,24 +121,21 @@ export async function returnFromPage(
   if (!coins.length) return
   const keyed = ownsKey(order, secret)
   const tokenOf = (coin: (typeof coins)[number]) => coin.token && { token: { category: hexToBin(coin.token.category), amount: coin.token.amount } }
-  const transaction: Transaction = {
+  const unsigned: Transaction = {
     version: 2,
     locktime: keyed ? 0 : order.contract!.refundAfter,
     inputs: coins.map(coin => ({ outpointTransactionHash: hexToBin(coin.txid), outpointIndex: coin.vout, sequenceNumber: keyed ? 0xffffffff : 0xfffffffe, unlockingBytecode: new Uint8Array() })),
     outputs: coins.map(coin => ({ lockingBytecode: hexToBin(terms.refundScript), valueSatoshis: coin.value, ...tokenOf(coin) }))
   }
   const unlock = keyed ? orderUnlock(terms, 'giveBack', new Uint8Array(65), terms.pageKey) : sale ? saleUnlock(sale, 'expire') : orderUnlock(terms, 'expire')
-  // One sat per byte, shared by the coins; the contract lets each leave at most REFUND_FEE_CAP.
-  const fee = BigInt(encodeTransaction(transaction).length + coins.length * (unlock.length + 2))
-  const share = (fee + BigInt(coins.length) - 1n) / BigInt(coins.length)
-  if (share > REFUND_FEE_CAP || transaction.outputs.some(output => output.valueSatoshis - share < (output.token ? TOKEN_DUST : 546n))) return
-  transaction.outputs.forEach(output => (output.valueSatoshis -= share))
-  const sourceOutputs = coins.map(coin => ({ lockingBytecode: hexToBin(contract.lockingBytecode), valueSatoshis: coin.value, ...tokenOf(coin) }))
-  if (keyed) signWithPage(terms, secret!, transaction, sourceOutputs, coins.map((_, index) => index), 'giveBack')
+  // One sat per byte, shared by the coins; a coin too small for its share (a stranger's token dust) stays behind.
+  const given = giveBackFee(unsigned, unlock.length + 2)
+  if (!given) return
+  const { tx: transaction } = given
+  const kept = given.kept.map(index => coins[index])
+  const sourceOutputs = kept.map(coin => ({ lockingBytecode: hexToBin(contract.lockingBytecode), valueSatoshis: coin.value, ...tokenOf(coin) }))
+  if (keyed) signWithPage(terms, secret!, transaction, sourceOutputs, kept.map((_, index) => index), 'giveBack')
   else transaction.inputs.forEach(input => (input.unlockingBytecode = unlock))
   const hex = binToHex(encodeTransaction(transaction))
   return send(hex, txidOf(hex))
 }
-
-// The least BCH a relay node takes on an output that carries a CashToken.
-const TOKEN_DUST = 800n
