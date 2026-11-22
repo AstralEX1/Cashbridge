@@ -24,7 +24,7 @@ import { generateId } from '@/lib/utils'
 import { blockchairProxyUrl } from '@/lib/wallets'
 import type { Signable } from '@/lib/bch-signing'
 import { SIGN_REQUEST_EXPIRY_S } from '@/lib/bch-walletconnect'
-import { type BridgeOperation, getActiveBridge, type NearLeg, type ReverseDetails, type SwapTransaction, transactionStore } from '@/store/transaction-store'
+import { type BridgeOperation, bridgeTxStatus, getActiveBridge, type NearLeg, type ReverseDetails, type SwapTransaction, transactionStore } from '@/store/transaction-store'
 
 // The reverse bridge: (token -> BCH on Cauldron, step 1) then a BCH deposit to THORChain paying an
 // THORChain asset's address (step 2). Both transactions are built here, checked, signed in the bound BCH wallet
@@ -399,22 +399,34 @@ export const nearReverseOutcome = async (op: BridgeOperation): Promise<NearRever
 }
 // --- Recording -----------------------------------------------------------------------------------
 
-// Records a reverse operation before anything is signed. One operation at a time per browser.
-export const startReverseOperation = async (
-  record: Omit<SwapTransaction, 'uid' | 'status' | 'bridge' | 'hash'>,
-  bridge: Omit<BridgeOperation, 'id' | 'updatedAt' | 'direction' | 'firstLeg'>
-) => {
+type ReverseRecord = Omit<SwapTransaction, 'uid' | 'status' | 'bridge' | 'hash'>
+type ReverseBridge = Omit<BridgeOperation, 'id' | 'updatedAt' | 'direction' | 'firstLeg'>
+
+const ensureNoActiveBridge = async () => {
+  await transactionStore.persist.rehydrate()
+  if (getActiveBridge()) throw new ReverseBlocked('Finish or close the current bridge operation first')
+}
+
+// Saves an operation whose wallet already signed: it is never refused, as the signed transaction must be tracked.
+export const recordReverseOperation = (record: ReverseRecord, bridge: ReverseBridge, hash?: string) => {
+  const id = generateId()
+  const op: BridgeOperation = { ...bridge, id, direction: 'reverse', firstLeg: { result: 'pending' }, updatedAt: Date.now() }
+  transactionStore.getState().setTransaction({ ...record, uid: id, ...(hash && { hash }), status: bridgeTxStatus(op), bridge: op })
+  return id
+}
+
+// Checks that no other operation needs this wallet before the Cashbridge Router's send is signed: that one is saved only
+// once signed (recordReverseOperation), so a cancelled request leaves nothing behind.
+export const assertReverseFree = async () => {
+  const done = await withLock('bch-bridge-first-leg', async () => (await ensureNoActiveBridge(), true))
+  if (!done) throw new ReverseBlocked('Another tab is starting a bridge operation')
+}
+
+// Records a manual reverse operation before anything is signed. One operation at a time per browser.
+export const startReverseOperation = async (record: ReverseRecord, bridge: ReverseBridge) => {
   const uid = await withLock('bch-bridge-first-leg', async () => {
-    await transactionStore.persist.rehydrate()
-    if (getActiveBridge()) throw new ReverseBlocked('Finish or close the current bridge operation first')
-    const id = generateId()
-    transactionStore.getState().setTransaction({
-      ...record,
-      uid: id,
-      status: 'not_started',
-      bridge: { ...bridge, id, direction: 'reverse', firstLeg: { result: 'pending' }, updatedAt: Date.now() }
-    })
-    return id
+    await ensureNoActiveBridge()
+    return recordReverseOperation(record, bridge)
   })
   if (uid === undefined) throw new ReverseBlocked('Another tab is starting a bridge operation')
   return uid

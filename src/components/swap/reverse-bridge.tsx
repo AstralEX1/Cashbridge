@@ -73,6 +73,8 @@ import {
   prepareSale,
   OPEN_REQUEST_MS,
   type PreparedDeposit,
+  assertReverseFree,
+  recordReverseOperation,
   ReverseBlocked,
   signingInputs,
   signInWallet,
@@ -683,27 +685,13 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
       }
       const reverse = { buyAsset: asset.identifier, destination, ...(via ? { route: via } : {}) }
       if (viaRouter && token) {
+        // Automatic: nothing is saved until the wallet signs, so a cancelled or declined request leaves no transfer.
+        await assertReverseFree()
         const routed = await prepareRouterSale({ token, units, binding, buyAsset: asset.identifier, shortCode: asset.shortCode, buyDecimals: asset.decimals, destination, slippage: slippage ?? 1, route: via })
         if (controller.signal.aborted) throw new SignCancelled('Cancelled')
         const { id, capability, order } = routed.reference
-        uid = await startReverseOperation(
-          { ...record, amountTo: routed.expectedOut },
-          {
-            stage: 'first_leg_signing',
-            destinationAsset: 'TOKEN',
-            token,
-            binding,
-            walletName: wallet.walletName ?? undefined,
-            ...(routed.near && { near: routed.near }),
-            reverse: {
-              ...reverse,
-              signing: signingInputs(routed.send),
-              sale: { attempt: generateId(), sellTokens: routed.sellTokens.toString(), minOutput: routed.minSats.toString(), bchOut: routed.bchOut.toString(), minerFeeSats: routed.send.feeSats.toString() },
-              router: { id, capability, depositAddress: order!.depositAddress, payoutRouter: routed.payoutRouter, startBlock: routed.startBlock, order }
-            }
-          }
-        )
         setPhase('signing')
+        const signing = signingInputs(routed.send)
         const { txid, signedHex } = await signInWallet(
           wallet.signer,
           binding,
@@ -712,8 +700,25 @@ export const ReverseConfirmDialog = ({ isOpen, onOpenChange }: { isOpen: boolean
           { signal: controller.signal }
         )
         setPhase('sending')
-        const saved = uid
-        update(saved, op => ({ stage: 'first_leg_pending', hash: txid, reverse: { ...op.reverse!, router: { ...op.reverse!.router!, sendTxid: txid, signedHex } } }))
+        const saved = recordReverseOperation(
+          { ...record, amountTo: routed.expectedOut },
+          {
+            stage: 'first_leg_pending',
+            destinationAsset: 'TOKEN',
+            token,
+            binding,
+            walletName: wallet.walletName ?? undefined,
+            ...(routed.near && { near: routed.near }),
+            reverse: {
+              ...reverse,
+              signing,
+              sale: { attempt: generateId(), sellTokens: routed.sellTokens.toString(), minOutput: routed.minSats.toString(), bchOut: routed.bchOut.toString(), minerFeeSats: routed.send.feeSats.toString() },
+              router: { id, capability, depositAddress: order!.depositAddress, sendTxid: txid, signedHex, payoutRouter: routed.payoutRouter, startBlock: routed.startBlock, order }
+            }
+          },
+          txid
+        )
+        uid = saved
         await broadcastRouterSend(saved, signedHex, txid, update)
       } else if (token && ready.sale) {
         const reviewed = ready.sale
