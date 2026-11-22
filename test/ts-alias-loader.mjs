@@ -20,7 +20,8 @@ export async function resolve(specifier, context, next) {
 }
 
 export async function load(url, context, next) {
-  if (!/\.tsx?$/.test(url) || url.includes('/node_modules/')) return next(url, context)
+  // A query string (`?reopened`) loads a fresh instance of the same source, as a page opening again would.
+  if (!/\.tsx?(\?.*)?$/.test(url) || url.includes('/node_modules/')) return next(url, context)
   const { outputText } = ts.transpileModule(readFileSync(fileURLToPath(url), 'utf8'), {
     fileName: fileURLToPath(url),
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX }

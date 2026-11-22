@@ -65,23 +65,26 @@ export const recoverSecondSigning = async (op: BridgeOperation, now = Date.now()
         return { txid: binToHex(decoded.inputs[i].outpointTransactionHash), vout: decoded.inputs[i].outpointIndex, value: sources[i].valueSatoshis }
       })
     })
-    let matched: typeof pending[number] | undefined
-    const found = await findWalletTransaction(op.binding.lockingBytecode, raw => {
-      matched = pending.find(a => matchesSigningRequest(a.signing, raw.hex, op.binding.pubkey))
-      return !!matched
-    })
-    if (found && matched) {
-      if (reverse) {
-        const deposit = matched as ReverseDeposit
-        return { stage: 'second_leg_pending', error: undefined, ...(deposit.near ? { near: deposit.near } : {}), reverse: {
-          ...op.reverse!, deposit: { ...deposit, txid: found.txid, signedHex: found.hex, signedAt: deposit.signedAt ?? deposit.signing!.sentAt, error: undefined }
-        } }
-      }
-      return { stage: 'completed', error: undefined, secondLeg: { ...matched as SecondLeg, txid: found.txid, signedHex: found.hex, confirmations: 0, error: undefined } }
-    }
+    // The coins first: while every authorized input is unspent nothing was sent, and the history scan (which a busy
+    // wallet's long history can exceed) is not needed.
     const { utxos } = await listWalletCoins(op.binding.lockingBytecode)
-    if (!inputs.every(p => utxos.some(u => u.txid === p.txid && u.vout === p.vout && u.value === p.value && !u.hasToken)))
+    if (!inputs.every(p => utxos.some(u => u.txid === p.txid && u.vout === p.vout && u.value === p.value && !u.hasToken))) {
+      let matched: typeof pending[number] | undefined
+      const found = await findWalletTransaction(op.binding.lockingBytecode, raw => {
+        matched = pending.find(a => matchesSigningRequest(a.signing, raw.hex, op.binding.pubkey))
+        return !!matched
+      })
+      if (found && matched) {
+        if (reverse) {
+          const deposit = matched as ReverseDeposit
+          return { stage: 'second_leg_pending', error: undefined, ...(deposit.near ? { near: deposit.near } : {}), reverse: {
+            ...op.reverse!, deposit: { ...deposit, txid: found.txid, signedHex: found.hex, signedAt: deposit.signedAt ?? deposit.signing!.sentAt, error: undefined }
+          } }
+        }
+        return { stage: 'completed', error: undefined, secondLeg: { ...matched as SecondLeg, txid: found.txid, signedHex: found.hex, confirmations: 0, error: undefined } }
+      }
       return uncertain('Some authorized inputs are spent, but the saved transaction has not been found. The wallet may have sent it; checking continues.')
+    }
     if (pending.some(a => !a.txid && now - a.signing.sentAt <= REQUEST_WAIT_MS)) return uncertain(OPEN_SECOND_REQUEST_NOTE)
     // Expiry permits another quote only with intact inputs; every old authorization remains saved and watched.
     if (!active?.txid) return { stage: 'bch_ready', error: 'The earlier wallet request expired and its inputs are still available. Its authorization remains saved; review your wallet before signing again.' }

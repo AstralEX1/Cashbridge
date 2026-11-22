@@ -27,9 +27,18 @@ const restore = async transactions => {
 }
 
 test('a page closed while the wallet was signing the source swap restores as "unknown", never "not sent"', async () => {
+  storage.set('tc-transactions', JSON.stringify({ state: { transactions: [tx(op('first_leg_signing'))] }, version: 1 }))
+  // A fresh module instance is the page opening again.
+  const reopened = await import('../src/store/transaction-store.ts?reopened')
+  assert.equal(reopened.transactionStore.getState().transactions[0].bridge.stage, 'first_leg_unknown')
+  assert.equal(reopened.getActiveBridge()?.uid, 'u1', 'and it still blocks a new operation')
+})
+
+test('a later read of storage keeps a signing step, so a declined request can still be dropped', async () => {
   const restored = await restore([tx(op('first_leg_signing'))])
-  assert.equal(restored.bridge.stage, 'first_leg_unknown')
-  assert.equal(getActiveBridge()?.uid, 'u1', 'and it still blocks a new operation')
+  assert.equal(restored.bridge.stage, 'first_leg_signing')
+  transactionStore.getState().removeTransaction('u1')
+  await restore([])
 })
 
 test('an operation only waiting on the network lets a new one start; one still needing the user blocks', async () => {

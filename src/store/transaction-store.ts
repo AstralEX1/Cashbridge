@@ -294,16 +294,20 @@ interface TransactionStore {
   updateBridge: (uid: string, update: (op: BridgeOperation, tx: SwapTransaction) => Partial<BridgeOperation> & Partial<Pick<SwapTransaction, 'hash' | 'addressFrom'>>) => void
 }
 
-const sanitizeBridge = (op: BridgeOperation): BridgeOperation => {
+const sanitizeBridge = (op: BridgeOperation, pageLoad: boolean): BridgeOperation => {
   if (!op || typeof op !== 'object') return { stage: 'failed', error: 'Unreadable saved operation' } as BridgeOperation
   if (!isValidBinding(op.binding)) return { ...op, stage: isBridgeTerminal(op) ? op.stage : 'failed', error: 'Saved BCH address failed validation' }
-  // Mid-signing when the page went away: the source wallet may have sent it.
-  if (op.stage === 'first_leg_signing') return { ...op, stage: 'first_leg_unknown' }
-  if (op.stage === 'second_leg_signing') return { ...op, stage: 'second_leg_unknown' }
+  // Mid-signing when the page went away: the source wallet may have sent it. Only the page's first read can tell: a
+  // later one (a check before a send, another tab's write) finds a wallet request that is still open.
+  if (pageLoad && op.stage === 'first_leg_signing') return { ...op, stage: 'first_leg_unknown' }
+  if (pageLoad && op.stage === 'second_leg_signing') return { ...op, stage: 'second_leg_unknown' }
   // A completed operation carries no error (an older version could leave a stale one behind).
   if (op.stage === 'completed' && op.error) return { ...op, error: undefined }
   return op
 }
+
+// Set by the first read of saved operations, when the page opens.
+let restored = false
 
 export const transactionStore = create<TransactionStore>()(
   persist(
@@ -411,9 +415,15 @@ export const transactionStore = create<TransactionStore>()(
       // Restored bridge operations are rechecked before use: a corrupted or edited record cannot
       // name another address, and a page closed mid-signing is never treated as "not sent".
       merge: (persisted, current) => {
+        const pageLoad = !restored
+        restored = true
+        // This tab's own open wallet requests: another tab's first read may have marked them unknown.
+        const signing = new Map(current.transactions.filter(tx => tx.kind !== 'send' && tx.bridge?.stage.endsWith('_signing')).map(tx => [tx.uid, tx]))
         const transactions = ((persisted as Partial<TransactionStore>)?.transactions ?? []).map(tx => {
           if (tx.kind === 'send' || !tx.bridge) return tx
-          const bridge = sanitizeBridge(tx.bridge)
+          const own = signing.get(tx.uid)
+          if (own && tx.bridge.stage?.endsWith('_unknown')) return own
+          const bridge = sanitizeBridge(tx.bridge, pageLoad)
           return { ...tx, bridge, status: bridgeTxStatus(bridge) }
         })
         return { ...current, transactions }

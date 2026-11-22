@@ -144,15 +144,17 @@ test('reload turns an in-flight second-leg signature into durable uncertainty wi
     },
     version: 1
   }))
-  await transactionStore.persist.rehydrate()
-  const op = transactionStore.getState().transactions[0].bridge
+  // A fresh module instance is the page opening again: only that first read marks a signing step unknown.
+  const { transactionStore: reopened } = await import('../src/store/transaction-store.ts?reopened')
+  const op = reopened.getState().transactions[0].bridge
   assert.equal(op.stage, 'second_leg_unknown')
   assert.equal(op.secondLeg.signing.unsignedHex, reviewed.unsignedHex)
   assert.equal(hasSecondAuthorization(op), true)
 })
 
 test('recoverSecondSigning matches only the authorized wallet signature and completes the forward swap', async t => {
-  mockNode(t, { history: [signedTxid], raw: { [signedTxid]: signedHex } })
+  // Sent: the signed transaction spends the authorized inputs.
+  mockNode(t, { history: [signedTxid], raw: { [signedTxid]: signedHex }, unspent: false })
   const op = forwardOp('second_leg_unknown', {
     attempt: 'match',
     signing: request,
@@ -167,6 +169,44 @@ test('recoverSecondSigning matches only the authorized wallet signature and comp
   assert.equal(recovery.secondLeg.txid, signedTxid)
   assert.equal(recovery.secondLeg.signedHex, signedHex)
   assert.equal(recovery.error, undefined)
+})
+
+test('intact inputs settle a request without reading a wallet history too long to scan', async t => {
+  const history = Array.from({ length: 120 }, (_, i) => ({ tx_hash: i.toString(16).padStart(64, '0'), height: 100 }))
+  mockNode(t, { history, unspent: true })
+  const leg = {
+    attempt: 'busy-wallet',
+    signing: request,
+    category: PUSD,
+    sellSats: reviewed.sell.toString(),
+    minOutput: reviewed.minOutput.toString(),
+    routerFeeSats: '0',
+    minerFeeSats: reviewed.minerFeeSats.toString()
+  }
+  const expired = await recoverSecondSigning(forwardOp('second_leg_unknown', leg), request.sentAt + REQUEST_WAIT_MS + 1)
+  assert.equal(expired.stage, 'bch_ready')
+  assert.match(expired.error, /expired/)
+})
+
+test('a later read of storage keeps a signing step: the wallet request may still be open in this or another tab', async () => {
+  const saved = forwardOp('second_leg_signing', {
+    attempt: 'live',
+    signing: request,
+    category: PUSD,
+    sellSats: reviewed.sell.toString(),
+    minOutput: reviewed.minOutput.toString(),
+    routerFeeSats: '0',
+    minerFeeSats: reviewed.minerFeeSats.toString()
+  })
+  storage.set('tc-transactions', JSON.stringify({ state: { transactions: [{ uid: 'live', kind: 'swap', status: 'not_started', timestamp: new Date().toISOString(), bridge: saved }] }, version: 1 }))
+  await transactionStore.persist.rehydrate()
+  assert.equal(transactionStore.getState().transactions[0].bridge.stage, 'second_leg_signing')
+  // Another tab's first read marked it unknown; this tab, still waiting on the wallet, keeps its own step.
+  storage.set('tc-transactions', JSON.stringify({ state: { transactions: [{ uid: 'live', kind: 'swap', status: 'unknown', timestamp: new Date().toISOString(), bridge: { ...saved, stage: 'second_leg_unknown' } }] }, version: 1 }))
+  await transactionStore.persist.rehydrate()
+  assert.equal(transactionStore.getState().transactions[0].bridge.stage, 'second_leg_signing')
+  storage.delete('tc-transactions')
+  await transactionStore.persist.rehydrate()
 })
 
 test('still-open and expiry leave uncertainty; expiry alone never proves non-broadcast', async t => {
@@ -221,7 +261,7 @@ test('a missing saved authorization cannot safely request another signature', as
 })
 
 test('reverse recovery attaches a matched deposit without treating expiry as non-broadcast', async t => {
-  mockNode(t, { history: [signedTxid], raw: { [signedTxid]: signedHex }, unspent: true })
+  mockNode(t, { history: [signedTxid], raw: { [signedTxid]: signedHex }, unspent: false })
   const deposit = {
     attempt: 'reverse',
     signing: request,
