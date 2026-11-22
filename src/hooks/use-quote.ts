@@ -224,15 +224,10 @@ export const useQuote = (): UseQuote => {
 
   const saleError = reverse && bchToken ? sale.error : null
   const gas = useSourceGas(routes && { thorchain: routes.thorchain, near: routes.near, shapeshift: routes.shapeshift })
-  const best = bestRoute(routes, gas)
-  // NEAR-only legs have no THORChain route to fall back to (and must not deposit into one).
-  const quote =
-    routes &&
-    (nearOnly
-      ? routes.near
-      : choice === 'auto'
-        ? best && routes[best]
-        : (routes[choice] ?? routes.thorchain ?? routes.near ?? routes.shapeshift))
+  // NEAR-only legs must never deposit into THORChain; NEAR Intents and ShapeShift (over 1Click) are ranked as usual.
+  const usable = nearOnly && routes ? { ...routes, thorchain: undefined } : routes
+  const best = bestRoute(usable, gas)
+  const quote = usable && (choice === 'auto' ? best && usable[best] : (usable[choice] ?? usable.thorchain ?? usable.near ?? usable.shapeshift))
   // First paint only: keep last routes/quote on screen through refetches and Cauldron sale reloads.
   const waiting = isLoading && !isPlaceholderData && !routes
   const saleLoading = reverse && !!bchToken && sale.isLoading
@@ -241,7 +236,7 @@ export const useQuote = (): UseQuote => {
     refetch,
     quote: error || waiting ? undefined : quote,
     routes: error ? undefined : routes,
-    best: nearOnly ? (routes?.near ? 'near' : undefined) : best,
+    best,
     gas: error ? {} : gas,
     nearAllowed,
     shapeshiftAllowed,

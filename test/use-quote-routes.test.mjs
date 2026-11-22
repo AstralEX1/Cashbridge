@@ -99,7 +99,7 @@ test('bestRoute ranks the payout net of each route\'s gas, and only when every r
   assert.equal(bestRoute(routes, { thorchain: { buy: 0.0003 }, near: { buy: 0.0002 } }), 'thorchain')
   // One route without a price: gross amounts decide, as before.
   assert.equal(bestRoute(routes, { thorchain: { buy: 0.0008 } }), 'thorchain')
-  assert.match(quoteSource, /const best = bestRoute\(routes, gas\)/)
+  assert.match(quoteSource, /const best = bestRoute\(usable, gas\)/)
   assert.match(compareSource, /gas\[key\]/)
 })
 
@@ -124,4 +124,11 @@ test('a forward route whose BCH cannot fund the token sale is not offered', () =
 
 test('Any network route cards name the asset bought, not BCH', () => {
   assert.match(compareSource, /openNetworks \? buyAsset\?\.ticker : reverse \? payout\?\.ticker : 'BCH'/)
+})
+
+test('NEAR-only rows rank NEAR Intents and ShapeShift alike and only drop THORChain', () => {
+  assert.match(quoteSource, /nearOnly && routes \? \{ \.\.\.routes, thorchain: undefined \} : routes/)
+  assert.doesNotMatch(quoteSource, /nearOnly \? \(routes\?\.near \? 'near'/)
+  assert.equal(bestRoute({ near: { expectedBuyAmount: '1.77102' }, shapeshift: { expectedBuyAmount: '1.93766' } }), 'shapeshift')
+  assert.equal(bestRoute({ near: { expectedBuyAmount: '1.797605' }, shapeshift: { expectedBuyAmount: '1.775621' } }), 'near')
 })
